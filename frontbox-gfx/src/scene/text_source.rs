@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use serde::{Deserialize, Serialize};
 
-use crate::scene::{Env, Inputs, NamedValue, VariableType, Prop, Value};
+use crate::scene::{Env, Inputs, NamedValue, Prop, Value, VariableType};
 
 /// Where a [`ShapeNode::Text`]'s text comes from
 ///
@@ -160,7 +160,11 @@ fn abbreviated(number: i64, length: usize) -> String {
   if suffix == 0 {
     return written(0);
   }
-  (1..=2).rev().map(written).find(|text| text.len() <= length).unwrap_or_else(|| written(0))
+  (1..=2)
+    .rev()
+    .map(written)
+    .find(|text| text.len() <= length)
+    .unwrap_or_else(|| written(0))
 }
 
 #[cfg(test)]
@@ -195,19 +199,31 @@ mod tests {
   #[test]
   fn abbreviated_truncates_without_float_error() {
     // 0.29 * 100 is 28.999... in floating point
-    assert_eq!(NumberFormat::Abbreviated { length: 5 }.write(1_290), "1.29k");
-    assert_eq!(NumberFormat::Abbreviated { length: 5 }.write(1_999), "1.99k");
+    assert_eq!(
+      NumberFormat::Abbreviated { length: 5 }.write(1_290),
+      "1.29k"
+    );
+    assert_eq!(
+      NumberFormat::Abbreviated { length: 5 }.write(1_999),
+      "1.99k"
+    );
   }
 
   #[test]
   fn abbreviated_drops_trailing_zeros() {
-    assert_eq!(NumberFormat::Abbreviated { length: 5 }.write(1_000_000), "1M");
+    assert_eq!(
+      NumberFormat::Abbreviated { length: 5 }.write(1_000_000),
+      "1M"
+    );
     assert_eq!(NumberFormat::Abbreviated { length: 5 }.write(1_204), "1.2k");
   }
 
   #[test]
   fn param_text_is_read_and_numbers_are_written_out() {
-    let variables = Variables::from([("name".into(), Value::Text("TOM".into())), ("ball".into(), Value::Int(3))]);
+    let variables = Variables::from([
+      ("name".into(), Value::Text("TOM".into())),
+      ("ball".into(), Value::Int(3)),
+    ]);
     let env = env(0.0, &variables);
     assert_eq!(TextSource::Variable("name".into()).resolve(&env), "TOM");
     assert_eq!(TextSource::Variable("ball".into()).resolve(&env), "3");
@@ -217,14 +233,26 @@ mod tests {
   #[test]
   fn a_number_param_is_exact_past_what_a_float_holds() {
     let variables = Variables::from([("score".into(), Value::Int(123_456_789))]);
-    let number = TextSource::Number(NumberText { value: Prop::Variable("score".into()), format: NumberFormat::Grouped });
+    let number = TextSource::Number(NumberText {
+      value: Prop::Variable("score".into()),
+      format: NumberFormat::Grouped,
+    });
     assert_eq!(number.resolve(&env(0.0, &variables)), "123,456,789");
   }
 
   #[test]
   fn a_number_counts_up_on_keyframes() {
-    let keys = Keyframes::new(vec![Key::new(0.0, 0.0, Curve::Linear), Key::new(1.0, 1000.0, Curve::Linear)], Cycle::Once);
-    let number = TextSource::Number(NumberText { value: Prop::Keyframes(keys), format: NumberFormat::Grouped });
+    let keys = Keyframes::new(
+      vec![
+        Key::new(0.0, 0.0, Curve::Linear),
+        Key::new(1.0, 1000.0, Curve::Linear),
+      ],
+      Cycle::Once,
+    );
+    let number = TextSource::Number(NumberText {
+      value: Prop::Keyframes(keys),
+      format: NumberFormat::Grouped,
+    });
     assert!(number.is_animated());
     assert_eq!(number.resolve(&env(0.5, &Variables::new())), "500");
   }

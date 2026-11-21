@@ -25,7 +25,7 @@ fn insert(t: &mut TestContext, group: GroupId, system: impl System + 'static) ->
 
 fn add_group(t: &mut TestContext) -> GroupId {
   let group = GroupId::next();
-  t.groups.insert(group, SystemGroup::new("player"));
+  t.groups.insert(group, SystemGroup::new());
   group
 }
 
@@ -43,8 +43,8 @@ fn changes(events: Vec<EventBox>) -> Vec<(Phase, Phase)> {
     .collect()
 }
 
-fn read(t: &TestContext, handle: SystemHandle) -> Phase {
-  t.svc_ctx().state::<Phase>(handle)
+fn read(t: &TestContext, _handle: SystemHandle) -> Phase {
+  t.svc_ctx().state::<Phase>()
 }
 
 #[test]
@@ -112,24 +112,20 @@ fn only_the_owner_can_set_a_state() {
 }
 
 #[test]
-fn a_group_reads_its_own_value_before_the_roots() {
+fn a_state_set_in_a_group_has_one_value_for_the_whole_machine() {
   let mut t = TestContext::default();
-  let owner = insert(&mut t, ROOT_GROUP, Owner);
   let group = add_group(&mut t);
-  let player = insert(&mut t, group, Other);
+  let player = insert(&mut t, group, Owner);
+  let root = insert(&mut t, ROOT_GROUP, Other);
 
-  t.svc_ctx().for_system(owner).states.set(Phase::Active);
+  t.svc_ctx().for_system(player).states.set(Phase::Active);
   t.apply_states();
-  assert_eq!(read(&t, player), Phase::Active);
+  assert_eq!(read(&t, root), Phase::Active);
 
-  // a separate state of its own, rather than the root's, so it's the player system's to set
-  t.svc_ctx().for_system(player).states.set(Phase::Ending);
-  assert_eq!(
-    changes(t.apply_states()),
-    vec![(Phase::Idle, Phase::Ending)]
-  );
-  assert_eq!(read(&t, player), Phase::Ending);
-  assert_eq!(read(&t, owner), Phase::Active);
+  // still the player system's, so the root system can't set it
+  t.svc_ctx().for_system(root).states.set(Phase::Ending);
+  assert_eq!(changes(t.apply_states()), vec![]);
+  assert_eq!(read(&t, player), Phase::Active);
 }
 
 #[test]

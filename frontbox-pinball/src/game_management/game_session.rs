@@ -184,8 +184,12 @@ impl GameSession {
 
   pub(crate) fn player_score_mut(&mut self, player_index: u8) -> Option<&mut u64> {
     match self {
-      GameSession::Competitive { player_scores, .. } => player_scores.get_mut(player_index as usize),
-      GameSession::Cooperative { player_scores, .. } => player_scores.get_mut(player_index as usize),
+      GameSession::Competitive { player_scores, .. } => {
+        player_scores.get_mut(player_index as usize)
+      }
+      GameSession::Cooperative { player_scores, .. } => {
+        player_scores.get_mut(player_index as usize)
+      }
     }
   }
 

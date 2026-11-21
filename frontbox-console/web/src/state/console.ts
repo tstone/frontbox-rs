@@ -3,7 +3,10 @@ import { createStore, produce, reconcile } from 'solid-js/store'
 import type { ServerMessage } from '../types/generated/ServerMessage'
 import type { Snapshot } from '../types/generated/Snapshot'
 import type { TraceRecord } from '../types/generated/TraceRecord'
-import { groupLabel, shortName } from '../lib/format'
+import type { HistoryEntry } from '../types/generated/HistoryEntry'
+import type { StepEnding } from '../types/generated/StepEnding'
+import type { System } from '../types/generated/System'
+import { shortName } from '../lib/format'
 import type { ClientMessage } from '../types/generated/ClientMessage'
 import type { DriverMode } from '../types/generated/DriverMode'
 import { receiveMetricTotals } from './metricsQuery'
@@ -14,6 +17,12 @@ import { type Connection, connect, type ConnectionStatus } from './socket'
 /** How many trace records the log keeps. Mirrors the hub; LED color changes aren't logged. */
 const LOG_CAPACITY = 2500
 const RECENT_EVENTS_PER_SYSTEM = 10
+/** Mirrors the hub */
+const RECENT_STATUSES_PER_SYSTEM = 10
+/** Mirrors the hub */
+const HISTORY_PER_SYSTEM = 300
+/** Despawned systems kept to look back at. Mirrors the hub */
+const DESPAWNED_KEPT = 50
 
 export type ConsoleState = Snapshot & {
   connection: ConnectionStatus
@@ -31,7 +40,8 @@ const firedTimers = new Map<number, ReturnType<typeof setTimeout>>()
 const [state, setState] = createStore<ConsoleState>({
   connection: 'connecting',
   hardware: null,
-  groups: [],
+  systems: [],
+  states: {},
   switches: {},
   drivers: {},
   driver_modes: {},
@@ -41,6 +51,7 @@ const [state, setState] = createStore<ConsoleState>({
   displays: [],
   led_colors: {},
   configs: {},
+  clear_on_game_start: true,
   log: [],
   firing: {},
 })
@@ -66,7 +77,8 @@ export function sendToMachine(message: ClientMessage) {
 function handleMessage(message: ServerMessage) {
   switch (message.type) {
     case 'Init': {
-      const { hardware, groups, switches, drivers, driver_modes, game, planes, displays, led_colors, configs, log } = message
+      const { hardware, systems, states, switches, drivers, driver_modes, game, planes, displays, led_colors, configs, log } =
+        message
       // Hardware rarely changes between snapshots (they also arrive on every game start and end, and when a client
       // falls behind), so reconcile it and the LED colors into what's already there instead of replacing them, which
       // would rebuild everything that reads them.
@@ -74,7 +86,7 @@ function handleMessage(message: ServerMessage) {
         setState('hardware', reconcile(hardware))
         setState('led_colors', reconcile(led_colors))
         setState('configs', reconcile(configs))
-        setState({ groups, switches, drivers, driver_modes, game, planes, displays, log })
+        setState({ systems, states, switches, drivers, driver_modes, game, planes, displays, log })
       })
       break
     }
@@ -154,38 +166,67 @@ function markFired(id: number) {
  */
 function applyTrace(s: ConsoleState, record: TraceRecord) {
   const event = record.event
-  const group = (id: number) => s.groups.find((g) => g.id === id)
+  const at_ms = record.at_ms
+  // despawned systems are kept for a while, but nothing more happens to them
+  const running = (id: number) => s.systems.find((sys) => sys.id === id && sys.despawned_ms === null)
 
-  if ('SystemGroupSpawned' in event) {
-    const { id, name } = event.SystemGroupSpawned
-    if (!group(id)) s.groups.push({ id, name, active: true, systems: [], states: {} })
-  } else if ('SystemGroupDespawned' in event) {
-    const { id } = event.SystemGroupDespawned
-    s.groups = s.groups.filter((g) => g.id !== id)
-  } else if ('SystemGroupActiveStateChange' in event) {
-    const { id, active } = event.SystemGroupActiveStateChange
-    const g = group(id)
-    if (g) g.active = active
-  } else if ('StateChange' in event) {
-    const { group: groupId, name, value } = event.StateChange
-    const g = group(groupId)
-    if (g) {
-      if (value === null) delete g.states[name]
-      else g.states[name] = value
-    }
+  if ('StateChange' in event) {
+    const { name, value } = event.StateChange
+    if (value === null) delete s.states[name]
+    else s.states[name] = value
     // not logged: the `StateChanged` event it comes with is
     return
   } else if ('SystemSpawned' in event) {
-    const { id, name, group: groupId } = event.SystemSpawned
-    group(groupId)?.systems.push({ id, name, active: true, recent_events: [] })
+    const { id, name, parent, active, group, description } = event.SystemSpawned
+    s.systems.push({
+      id,
+      name,
+      parent,
+      active,
+      group,
+      description,
+      spawned_ms: at_ms,
+      despawned_ms: null,
+      history: [{ kind: 'Spawned', at_ms, active }],
+      recent_events: [],
+      recent_statuses: [],
+    })
   } else if ('SystemDespawned' in event) {
-    const { id, group: groupId } = event.SystemDespawned
-    const g = group(groupId)
-    if (g) g.systems = g.systems.filter((sys) => sys.id !== id)
+    // its children are despawned with it, each traced on its own
+    const { id, cause } = event.SystemDespawned
+    const sys = running(id)
+    if (sys) {
+      sys.despawned_ms = at_ms
+      sys.active = false
+      endOpenSteps(sys, at_ms, 'Stopped')
+      pushHistory(sys, { kind: 'Despawned', at_ms, cause })
+    }
+    forgetOldDespawned(s)
   } else if ('SystemActiveStateChange' in event) {
-    const { id, active } = event.SystemActiveStateChange
-    const sys = s.groups.flatMap((g) => g.systems).find((sys) => sys.id === id)
-    if (sys) sys.active = active
+    const { id, active, cause } = event.SystemActiveStateChange
+    const sys = running(id)
+    if (sys) {
+      sys.active = active
+      pushHistory(sys, { kind: 'ActivityChanged', at_ms, seq: record.seq, active, cause })
+    }
+  } else if ('SystemStatusReported' in event) {
+    const sys = running(event.SystemStatusReported.id)
+    if (sys) {
+      sys.recent_statuses.push(record)
+      if (sys.recent_statuses.length > RECENT_STATUSES_PER_SYSTEM) sys.recent_statuses.shift()
+      pushHistory(sys, { kind: 'StatusReported', at_ms, seq: record.seq })
+    }
+  } else if ('RoutineStepEnded' in event) {
+    const { routine, participant, ending } = event.RoutineStepEnded
+    const sys = s.systems.find((sys) => sys.id === participant)
+    const open = sys?.history.findLast(
+      (entry): entry is Extract<HistoryEntry, { kind: 'RoutineStep' }> =>
+        entry.kind === 'RoutineStep' && entry.routine === routine && entry.ended_ms === null,
+    )
+    if (open) {
+      open.ended_ms = at_ms
+      open.ending = ending
+    }
   } else if ('SwitchStateChange' in event) {
     const { switch_id, state } = event.SwitchStateChange
     s.switches[switch_id] = state
@@ -199,9 +240,11 @@ function applyTrace(s: ConsoleState, record: TraceRecord) {
     const { routine, origin } = event.RoutineStarted
     s.routines.push({ routine, origin, current: null })
   } else if ('RoutineStep' in event) {
-    const { routine, participant, group } = event.RoutineStep
+    const { routine, participant } = event.RoutineStep
     const progress = s.routines.find((r) => r.routine === routine)
-    if (progress) progress.current = { id: participant, group }
+    if (progress) progress.current = participant
+    const sys = running(participant)
+    if (sys) pushHistory(sys, { kind: 'RoutineStep', routine, started_ms: at_ms, ended_ms: null, ending: null })
   } else if ('RoutinePaused' in event || 'RoutineHalted' in event) {
     // paused once the step in progress is over, and a halt ends it, so no one holds it
     const { routine } = 'RoutinePaused' in event ? event.RoutinePaused : event.RoutineHalted
@@ -216,11 +259,11 @@ function applyTrace(s: ConsoleState, record: TraceRecord) {
     // never sent as traces: the hub keeps LEDs and configs as current state and sends them as `Leds` and `Configs`
     return
   } else if (event.Event.sender !== null) {
-    const sender = event.Event.sender
-    const sys = s.groups.flatMap((g) => g.systems).find((sys) => sys.id === sender)
+    const sys = running(event.Event.sender)
     if (sys) {
       sys.recent_events.push(record)
       if (sys.recent_events.length > RECENT_EVENTS_PER_SYSTEM) sys.recent_events.shift()
+      pushHistory(sys, { kind: 'Emitted', at_ms, seq: record.seq, event: event.Event.type_name })
     }
   }
 
@@ -229,29 +272,41 @@ function applyTrace(s: ConsoleState, record: TraceRecord) {
   if (s.log.length > LOG_CAPACITY) s.log.splice(0, s.log.length - LOG_CAPACITY)
 }
 
+function pushHistory(system: System, entry: HistoryEntry) {
+  system.history.push(entry)
+  if (system.history.length > HISTORY_PER_SYSTEM) system.history.shift()
+}
+
+/** Ends the routine steps the system still holds, as when it's despawned mid-step */
+function endOpenSteps(system: System, at_ms: number, how: StepEnding) {
+  for (const entry of system.history) {
+    if (entry.kind === 'RoutineStep' && entry.ended_ms === null) {
+      entry.ended_ms = at_ms
+      entry.ending = how
+    }
+  }
+}
+
+/** Drops the earliest despawned systems beyond the number kept, ties going by place in the list */
+function forgetOldDespawned(s: ConsoleState) {
+  const despawned = s.systems
+    .map((sys, index) => ({ at: sys.despawned_ms, index }))
+    .filter((d): d is { at: number; index: number } => d.at !== null)
+  if (despawned.length <= DESPAWNED_KEPT) return
+  despawned.sort((a, b) => a.at - b.at || a.index - b.index)
+  const dropped = new Set(despawned.slice(0, despawned.length - DESPAWNED_KEPT).map((d) => d.index))
+  s.systems = s.systems.filter((_, index) => !dropped.has(index))
+}
+
 /**
  * A system's short name by id: from the running systems, or, for one that has since despawned,
  * from its spawn record in the log.
  */
 export function systemName(id: number): string {
-  for (const group of state.groups) {
-    const system = group.systems.find((s) => s.id === id)
-    if (system) return shortName(system.name)
-  }
+  const system = state.systems.find((s) => s.id === id)
+  if (system) return shortName(system.name)
   const spawned = state.log.find((r) => 'SystemSpawned' in r.event && r.event.SystemSpawned.id === id)
   if (spawned && 'SystemSpawned' in spawned.event) return shortName(spawned.event.SystemSpawned.name)
   return `System #${id}`
-}
-
-/**
- * A group's label by id: from the running groups, or, for one that has since despawned, from its spawn record in the
- * log.
- */
-export function groupName(id: number): string {
-  const group = state.groups.find((g) => g.id === id)
-  if (group) return groupLabel(group.id, group.name)
-  const spawned = state.log.find((r) => 'SystemGroupSpawned' in r.event && r.event.SystemGroupSpawned.id === id)
-  if (spawned && 'SystemGroupSpawned' in spawned.event) return groupLabel(id, spawned.event.SystemGroupSpawned.name)
-  return `Group #${id}`
 }
 

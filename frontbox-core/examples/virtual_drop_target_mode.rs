@@ -92,7 +92,9 @@ impl DropTargetDownUp {
         .all(|&target| ctx.switches.is_closed(target).unwrap_or(false));
 
       if all_down {
-        ctx.timers.start(DropUp, Timer::Once(Duration::from_millis(250)));
+        ctx
+          .timers
+          .start(DropUp, Timer::Once(Duration::from_millis(250)));
       }
     }
   }
@@ -105,7 +107,9 @@ impl DropTargetDownUp {
 impl System for DropTargetDownUp {
   fn on_spawn(&mut self, ctx: &SystemContext) {
     // bring up all targets on startup
-    ctx.drivers.activate(drivers::BANK_COIL.name, ActivationMode::Tap);
+    ctx
+      .drivers
+      .activate(drivers::BANK_COIL.name, ActivationMode::Tap);
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {

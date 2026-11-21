@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use tokio::sync::mpsc;
 
-use crate::app::{GroupsExt, ROOT_GROUP};
+use crate::app::ROOT_GROUP;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
 
@@ -178,10 +178,7 @@ impl<'a> ContextLights<'a> {
   pub fn set_all(&self, address: ExpAddress, color: Rgb) {
     let mut groups = group_by_order(self.machine.base.lights.orders_on(address));
     groups.sort_by_key(|(_, indexes)| std::cmp::Reverse(indexes.len()));
-    let base = groups
-      .first()
-      .map(|(order, _)| *order)
-      .unwrap_or_default();
+    let base = groups.first().map(|(order, _)| *order).unwrap_or_default();
 
     self.machine.with(|machine, _| {
       machine.set_all_leds(address, base.reorder(color));
@@ -217,19 +214,14 @@ struct MachineAccess<'a> {
 }
 
 impl MachineAccess<'_> {
-  /// Run `f` on the machine, which the framework runs in the root group. Logs an error and returns `None` if it isn't
+  /// Run `f` on the machine, which the framework runs at the top level. Logs an error and returns `None` if it isn't
   /// running.
   fn with<R>(&self, f: impl FnOnce(&mut MachineSystem, &ServiceContext) -> R) -> Option<R> {
     let ctx = ServiceContext::new(self.base, self.groups, self.app_sender);
     let machine = self
       .groups
-      .nearest(ROOT_GROUP, std::any::TypeId::of::<MachineSystem>())
-      .and_then(|found| {
-        self
-          .groups
-          .get(&found.group)?
-          .get_by_type::<MachineSystem>()
-      });
+      .get(&ROOT_GROUP)
+      .and_then(|root| root.get_by_type::<MachineSystem>());
     match machine {
       Some(mut machine) => Some(f(&mut machine, &ctx)),
       None => {

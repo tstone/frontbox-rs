@@ -26,7 +26,9 @@ const LEDS_PER_BREAKOUT: usize = 200;
 const COLUMNS: usize = 20;
 const PLAYFIELD_SIZE: Vec2 = Vec2::new(50.0, 100.0);
 
-static PLAYFIELD: ReferencePlane = ReferencePlane::new("Playfield").extent(PLAYFIELD_SIZE).build();
+static PLAYFIELD: ReferencePlane = ReferencePlane::new("Playfield")
+  .extent(PLAYFIELD_SIZE)
+  .build();
 
 /// What a frame has to do, besides drawing nothing
 fn cases() -> Vec<(&'static str, fn(&TestContext))> {
@@ -66,14 +68,19 @@ fn machine(count: usize) -> TestContext {
       ..Default::default()
     });
   }
-  context.sys_ctx().systems.with::<LayeredLightManager, _>(|lights| lights.on_spawn(&context.sys_ctx()));
+  context
+    .sys_ctx()
+    .systems
+    .with::<LayeredLightManager, _>(|lights| lights.on_spawn(&context.sys_ctx()));
   context
 }
 
 /// Ticks scenes and lights, and renders the lights
 fn frame(context: &TestContext) {
   let ctx = context.sys_ctx();
-  ctx.systems.with::<SceneSystem, _>(|scenes| scenes.on_tick(FRAME, &ctx));
+  ctx
+    .systems
+    .with::<SceneSystem, _>(|scenes| scenes.on_tick(FRAME, &ctx));
   ctx.systems.with::<LayeredLightManager, _>(|lights| {
     lights.on_tick(FRAME, &ctx);
     lights.on_render(black_box(&ctx));
@@ -84,39 +91,75 @@ fn frame(context: &TestContext) {
 /// on every other light
 fn declare_status(context: &TestContext) {
   let ctx = context.sys_ctx();
-  let all: Vec<_> = ctx.lights.values().map(|light| light.address.clone()).collect();
-  let colored = |color: Rgba<u8>, lights: &[LightAddress]| lights.iter().map(|light| (light.clone(), color)).collect::<Vec<_>>();
+  let all: Vec<_> = ctx
+    .lights
+    .values()
+    .map(|light| light.address.clone())
+    .collect();
+  let colored = |color: Rgba<u8>, lights: &[LightAddress]| {
+    lights
+      .iter()
+      .map(|light| (light.clone(), color))
+      .collect::<Vec<_>>()
+  };
   let every_other: Vec<_> = all.iter().step_by(2).cloned().collect();
   ctx.systems.with::<LayeredLightManager, _>(|lights| {
     lights.declare(1, 0, &colored(Rgba::blue(), &all), LightMode::Solid);
-    lights.declare(2, 1, &colored(Rgba([255, 0, 0, 128]), &all), LightMode::Solid);
-    lights.declare(3, 2, &colored(Rgba::white(), &every_other), LightMode::Flashing);
+    lights.declare(
+      2,
+      1,
+      &colored(Rgba([255, 0, 0, 128]), &all),
+      LightMode::Solid,
+    );
+    lights.declare(
+      3,
+      2,
+      &colored(Rgba::white(), &every_other),
+      LightMode::Flashing,
+    );
   });
 }
 
 fn play(context: &TestContext, scene: Scene) {
-  context.sys_ctx().systems.with::<SceneSystem, _>(|scenes| scenes.start(0, &PlayableScene::new(scene)));
+  context
+    .sys_ctx()
+    .systems
+    .with::<SceneSystem, _>(|scenes| scenes.start(0, &PlayableScene::new(scene)));
 }
 
 /// A gradient turning across the playfield, changing every light each frame
 fn area_sweep() -> Scene {
   let fill = gradient().transform(Transform::Rotate(over_time(0.0, 360.0)));
-  Scene::new(vec![LightLayer::area(LightQ::every(), "Playfield", Layer::new(fill)).into()])
-    .timing(Timing::new(1.0, Cycle::Forever))
+  Scene::new(vec![
+    LightLayer::area(LightQ::every(), "Playfield", Layer::new(fill)).into(),
+  ])
+  .timing(Timing::new(1.0, Cycle::Forever))
 }
 
 /// A gradient along every light, its hue moving
 fn sequence() -> Scene {
   let fill = gradient().adjust(ColorAdjust::HueShift(over_time(0.0, 360.0)));
-  let layer = LightLayer { z: 1, ..LightLayer::sequence(LightQ::every(), Layer::new(fill)) };
+  let layer = LightLayer {
+    z: 1,
+    ..LightLayer::sequence(LightQ::every(), Layer::new(fill))
+  };
   Scene::new(vec![layer.into()]).timing(Timing::new(1.0, Cycle::Forever))
 }
 
 /// Red spreading out from a corner over the lights' graph, fading behind
 fn graph_wave() -> Scene {
-  let shown = Prop::Visit(VisitResponse { smooth_out: Some(1.0), ..VisitResponse::new("wave", 0.0, 1.0) });
-  let wave = Traversal::new("wave", NodeRef::name("light0"), TraversalAlgorithm::BreadthFirst { wander: 0.0.into() }, 20.0);
-  let fill = Fill::new(FillNode::Solid(Color(Rgba::red()).into())).adjust(ColorAdjust::Opacity(shown));
+  let shown = Prop::Visit(VisitResponse {
+    smooth_out: Some(1.0),
+    ..VisitResponse::new("wave", 0.0, 1.0)
+  });
+  let wave = Traversal::new(
+    "wave",
+    NodeRef::name("light0"),
+    TraversalAlgorithm::BreadthFirst { wander: 0.0.into() },
+    20.0,
+  );
+  let fill =
+    Fill::new(FillNode::Solid(Color(Rgba::red()).into())).adjust(ColorAdjust::Opacity(shown));
   let layer = LightLayer {
     lights: Some(LightQ::every()),
     z: 2,
@@ -138,7 +181,13 @@ fn gradient() -> Fill {
 }
 
 fn over_time(from: f32, to: f32) -> Prop<f32> {
-  Prop::Keyframes(Keyframes::new(vec![Key::new(0.0, from, Curve::Linear), Key::new(1.0, to, Curve::Linear)], Cycle::Once))
+  Prop::Keyframes(Keyframes::new(
+    vec![
+      Key::new(0.0, from, Curve::Linear),
+      Key::new(1.0, to, Curve::Linear),
+    ],
+    Cycle::Once,
+  ))
 }
 
 fn frames(c: &mut Criterion) {
@@ -149,7 +198,9 @@ fn frames(c: &mut Criterion) {
       setup(&context);
       // the first frame places each playback's lights, which later frames reuse
       frame(&context);
-      group.bench_with_input(BenchmarkId::new(name, count), &context, |b, context| b.iter(|| frame(context)));
+      group.bench_with_input(BenchmarkId::new(name, count), &context, |b, context| {
+        b.iter(|| frame(context))
+      });
     }
   }
   group.finish();

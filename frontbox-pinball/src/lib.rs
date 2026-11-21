@@ -41,7 +41,7 @@
 //!    - `Active`: steps 3 to 5.
 //!    - `Ending`: it's waited for, and can't be saved. Once no ball is left in play and `TurnEnding` has completed, the turn advances.
 //! 3. If the coin door is open (`CoinDoor::Open`) and `configs::IGNORE_DRAINS_WITH_COIN_DOOR_OPEN` is on, the drain doesn't count: no `BallDraining` is started, so no ball save is used and the turn doesn't end, and the balls are put back into play (`Launch::Auto`). An operator is most likely taking out a stuck ball.
-//! 4. Otherwise the game manager starts the `BallDraining` routine in the current player's group. Its participants, in the order the app lists them, each get the chance to save the drain (ball save puts a ball back into play), and one that does halts the routine. Only one drain is decided at a time; the next waits its turn.
+//! 4. Otherwise the game manager starts the `BallDraining` routine. Only the current player's group is active, so the participants from the player template are that player's. In the order the app lists them, each gets the chance to save the drain (ball save puts a ball back into play), and one that does halts the routine. Only one drain is decided at a time; the next waits its turn.
 //! 5. The game manager hears `RoutineCompleted<BallDraining>` first. `RoutineCompletion::Halted` means the drain was saved. `RoutineCompletion::AllSteps` means it stands, and if no ball is in play then and none is on its way in, `TurnEnding` starts with `TurnEndReason::Drained`. Everyone else hears it next: a multiball ends on a drain that stands with one ball left (`in_play`).
 //!
 //! Systems that should only react to drains that stand watch `RoutineCompleted<BallDraining>`, not `BallsExitedPlay`.
@@ -123,10 +123,10 @@ mod attract_system;
 pub mod ball_management;
 mod ball_save;
 mod coin_door;
+pub mod configs;
 mod cradle;
 mod credits;
 mod dmd;
-pub mod configs;
 mod game_management;
 mod high_scores;
 pub mod metrics;

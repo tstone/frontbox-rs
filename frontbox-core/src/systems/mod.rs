@@ -36,14 +36,16 @@
 //!
 //! - `System` - System which can be started on boot
 //! - `SpawnableSystem` - System which can be dynamically started at runtime. Must be `Send + Sync` compatible
-//! - `ChildSystem` - System which can be managed within a group (see "System Groups" below). Must implement `Clone`.
+//! - `ChildSystem` - System which can be copied from a template, such as each player's systems in a [`Group`]. Must
+//!   implement `Clone`.
 //!
 //! ## Lifecycle
 //!
 //! Systems include four lifecycle handlers:
 //!
 //! - `on_spawn` - Runs once, always, when the system is started up. This lifecycle hook does NOT respect active state.
-//! - `on_deactivate` - Runs once when a system was active, but has lost its active state OR its parent group has been deactivated.
+//! - `on_deactivate` - Runs once when a system was active, but has lost its active state, been deactivated by its
+//!   parent, or one of its ancestors has stopped being active.
 //! - `on_reactivate` - Runs once when a system regains active state. Does not run on_spawn.
 //! - `on_despawn` - Runs once, always, when the system is being stopped. This lifecycle hook does NOT respect active state.
 //!
@@ -61,8 +63,11 @@
 //! # impl ExampleSystem { fn new() -> Self { Self } }
 //! # impl System for ExampleSystem {}
 //! # fn example(ctx: &SystemContext) {
-//! // Start a new system
-//! ctx.systems.spawn(ExampleSystem::new());
+//! // Start a new system, as a child of this one
+//! let child = ctx.systems.spawn(ExampleSystem::new());
+//!
+//! // Stop the child
+//! ctx.systems.despawn(child);
 //!
 //! // Stop the current system and immediately spawn a replacement
 //! ctx.systems.replace_self(ExampleSystem::new());
@@ -71,6 +76,35 @@
 //! ctx.systems.despawn_self();
 //! # }
 //! ```
+//!
+//! ## The system tree
+//!
+//! Systems form a tree. The systems given to the app at startup are the top level, and a system spawned by another is
+//! its child. Four rules follow from it:
+//!
+//! 1. **A system controls only its children.** `ctx.systems.activate`, `deactivate`, and `despawn` take the id
+//!    `spawn` returned, and do nothing for any other system. Whatever is done to a system is done to its children too:
+//!    despawning it despawns them, and they're active only while it is.
+//! 2. **A lookup by type searches the caller's children, then its parent's children, then that system's parent's, up
+//!    to the top level.** The first match wins. So a system finds what it spawned, its siblings, and every top-level
+//!    system. `ctx.systems.get_in` looks among a named system's children instead.
+//! 3. **A type can run once among one parent's children.** A second is refused. [`Group`] is an exception, so a
+//!    system can spawn one per player, each holding that player's copy of the same systems. To run several copies of
+//!    one type side by side, put them in a [`Multi`]. Lookups and routines don't find a `Multi`'s copies, so there's
+//!    never a question of which one was meant.
+//! 4. **Events, routines, and states don't depend on where a system is.** Every event reaches every active system, a
+//!    parent before its children. A routine is handed to every active system of each type it lists. A state has one
+//!    value for the whole machine.
+//!
+//! ```text
+//! BallManager ── TroughSystem
+//! Game ──────┬── Group "player1" ── ModeSystem
+//!            └── Group "player2" ── ModeSystem
+//! ```
+//!
+//! Here, player 1's `ModeSystem` asks for `TroughSystem` and finds none: it's the ball manager's child, which only
+//! the ball manager and its other children see. Deactivating `Group "player1"` stops player 1's `ModeSystem`, and a
+//! routine listing `ModeSystem` is handed only to player 2's.
 //!
 //! ### Active
 //!
@@ -96,16 +130,18 @@
 //! same value for every system while an event is broadcast. Another system's own fields can change partway through
 //! the broadcast, so whether a system hears an event would depend on whether it's handled before or after that change.
 //!
-//! Systems active state can also be controlled by a [parent group](mod@crate::systems::system_group).
+//! A system is also inactive while its parent has deactivated it, or while any of its ancestors is inactive (see
+//! [the system tree](#the-system-tree)).
 //!
 //! ### Services
 //!
-//! Systems can choose to expose public (`pub`) functions that are accessible to other systems. There are a few rules as to which other systems a system can access:
+//! Systems can choose to expose public (`pub`) functions that are accessible to other systems.
 //!
-//! - Systems can interact with any sibling systems
-//! - Systems can interact with any root systems
+//! #### Lookups
 //!
-//! There are several ways to access another system, depending on the situation:
+//! A lookup searches the caller's children, then its siblings, then its parent's siblings, and so on up to the top
+//! level, and the first match wins (see [the system tree](#the-system-tree)). There are several ways to access
+//! another system, depending on the situation:
 //!
 //! 1. `ctx.systems.get::<S>` - Returns a mutable reference to `Option<S>`
 //! 2. `ctx.systems.expect::<S>` - Returns mutable reference to `S`, also panics if it does not exist
@@ -170,42 +206,46 @@
 //! ```
 mod context_namespaces;
 mod contextual;
-pub mod timer;
-mod timer_ext;
 pub mod event;
-mod group_handle;
-pub mod routine;
+mod group;
+mod multi;
 mod provides;
+pub mod routine;
 mod service_context;
 pub mod state;
 mod system;
 mod system_container;
 mod system_context;
-pub mod system_group;
+mod system_group;
+mod status_reporter;
 mod system_handle;
 #[cfg(any(test, feature = "testing"))]
 mod test_context;
+pub mod timer;
+mod timer_ext;
 
 pub use context_namespaces::*;
 pub use contextual::*;
-pub use timer::*;
-pub use timer_ext::*;
 pub use event::*;
-pub use group_handle::*;
+pub use group::Group;
+pub use multi::Multi;
+pub(crate) use provides::ProvidedTraits;
+pub use provides::Provides;
 pub use routine::{
   RoutineBuilder, RoutineCompleted, RoutineCompletion, RoutineDefinition, RoutineStarted,
 };
-pub use provides::Provides;
-pub(crate) use provides::ProvidedTraits;
 pub use service_context::*;
 pub use state::{State, StateChanged};
 pub use system::*;
 pub use system_container::*;
 pub use system_context::*;
-pub use system_group::*;
+pub(crate) use system_group::*;
+pub use status_reporter::StatusReporter;
 pub use system_handle::*;
 #[cfg(any(test, feature = "testing"))]
 pub use test_context::*;
+pub use timer::*;
+pub use timer_ext::*;
 
 use std::any::TypeId;
 use std::cell::{RefCell, RefMut};
@@ -239,7 +279,11 @@ impl Systems {
   }
 
   pub fn names(&self) -> Vec<&'static str> {
-    self.systems.keys().filter_map(|id| self.name_of(id)).collect()
+    self
+      .systems
+      .keys()
+      .filter_map(|id| self.name_of(id))
+      .collect()
   }
 
   /// The system's name, readable even while the system is borrowed
@@ -256,6 +300,13 @@ impl Systems {
       self.type_to_id.insert(*type_id, system.id());
     }
     self.id_to_types.insert(system.id(), types);
+    self.id_to_name.insert(system.id(), system.name());
+    self.systems.insert(system.id(), RefCell::new(system));
+  }
+
+  /// Insert the system without entering its type in the type table, so lookups by type and routines don't find it
+  pub(crate) fn insert_unlisted(&mut self, system: SystemContainer) {
+    self.id_to_types.insert(system.id(), Vec::new());
     self.id_to_name.insert(system.id(), system.name());
     self.systems.insert(system.id(), RefCell::new(system));
   }

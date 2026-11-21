@@ -89,7 +89,10 @@ pub(crate) fn layout_text(
   spacing: Vec2,
   moved_to: Option<Vec2>,
 ) -> TextOutline {
-  let pixel = font.pixel_size().filter(|_| size > 0.0).map(|pixels| size / pixels);
+  let pixel = font
+    .pixel_size()
+    .filter(|_| size > 0.0)
+    .map(|pixels| size / pixels);
   let whole = |length: f32| pixel.map_or(length, |pixel| (length / pixel).round() * pixel);
   let kerning = whole(spacing.x);
   let lines = match overflow {
@@ -102,7 +105,11 @@ pub(crate) fn layout_text(
     Some(center) => (pixel.min(1.0), -center),
     None => (pixel, corner),
   });
-  let snap = |point: Vec2| grid.map_or(point, |(step, from)| from + ((point - from) / step).round() * step);
+  let snap = |point: Vec2| {
+    grid.map_or(point, |(step, from)| {
+      from + ((point - from) / step).round() * step
+    })
+  };
   let cap = font.cap_height(size).unwrap_or_else(|| font.ascent(size));
   // whole font pixels apart, so every line is on the grid the first is
   let advance = whole(font.line_height(size) + spacing.y);
@@ -120,7 +127,10 @@ pub(crate) fn layout_text(
 /// `kerning` between characters. A word wider than `width` is a line to itself. Always at least one line.
 pub fn wrap_text(font: &Font, text: &str, size: f32, kerning: f32, width: f32) -> Vec<String> {
   let mut lines = Vec::new();
-  for paragraph in text.split('\n').map(|paragraph| paragraph.trim_end_matches('\r')) {
+  for paragraph in text
+    .split('\n')
+    .map(|paragraph| paragraph.trim_end_matches('\r'))
+  {
     let mut line: Option<String> = None;
     for word in paragraph.split(' ') {
       line = Some(match line {
@@ -151,9 +161,15 @@ pub fn cut_text(font: &Font, text: &str, size: f32, kerning: f32, width: f32) ->
       return line.to_owned();
     }
     let ends = line.char_indices().map(|(at, _)| at).rev();
-    ends.map(|end| format!("{}{ellipsis}", line[..end].trim_end())).find(|cut| fits(cut)).unwrap_or_else(|| ellipsis.into())
+    ends
+      .map(|end| format!("{}{ellipsis}", line[..end].trim_end()))
+      .find(|cut| fits(cut))
+      .unwrap_or_else(|| ellipsis.into())
   };
-  text.split('\n').map(|line| cut(line.trim_end_matches('\r'))).collect()
+  text
+    .split('\n')
+    .map(|line| cut(line.trim_end_matches('\r')))
+    .collect()
 }
 
 #[cfg(test)]
@@ -165,11 +181,23 @@ mod tests {
   fn lines_break_at_line_breaks_and_between_words_that_run_past_the_width() {
     let font = pixel_font();
     let letter = font.measure("A", 16.0, 0.0).x;
-    assert_eq!(wrap_text(&font, "AB CD\nEF", 16.0, 0.0, 100.0 * letter), ["AB CD", "EF"]);
-    assert_eq!(wrap_text(&font, "AB CD EF", 16.0, 0.0, 5.0 * letter), ["AB CD", "EF"]);
-    assert_eq!(wrap_text(&font, "ABCDEFG H", 16.0, 0.0, 3.0 * letter), ["ABCDEFG", "H"]);
+    assert_eq!(
+      wrap_text(&font, "AB CD\nEF", 16.0, 0.0, 100.0 * letter),
+      ["AB CD", "EF"]
+    );
+    assert_eq!(
+      wrap_text(&font, "AB CD EF", 16.0, 0.0, 5.0 * letter),
+      ["AB CD", "EF"]
+    );
+    assert_eq!(
+      wrap_text(&font, "ABCDEFG H", 16.0, 0.0, 3.0 * letter),
+      ["ABCDEFG", "H"]
+    );
     assert_eq!(wrap_text(&font, "", 16.0, 0.0, 0.0), [""]);
-    assert_eq!(wrap_text(&font, "A\r\n\nB", 16.0, 0.0, 10.0), ["A", "", "B"]);
+    assert_eq!(
+      wrap_text(&font, "A\r\n\nB", 16.0, 0.0, 10.0),
+      ["A", "", "B"]
+    );
   }
 
   #[test]
@@ -184,7 +212,10 @@ mod tests {
   fn a_cut_drops_the_space_before_the_ellipsis_and_keeps_line_breaks() {
     let font = pixel_font();
     let width = font.measure("AB...", 8.0, 0.0).x;
-    assert_eq!(cut_text(&font, "AB CDEF\nA", 8.0, 0.0, width), ["AB...", "A"]);
+    assert_eq!(
+      cut_text(&font, "AB CDEF\nA", 8.0, 0.0, width),
+      ["AB...", "A"]
+    );
   }
 
   #[test]
@@ -196,7 +227,13 @@ mod tests {
   fn kerning_counts_toward_where_lines_break() {
     let font = pixel_font();
     let letter = font.measure("A", 16.0, 0.0).x;
-    assert_eq!(wrap_text(&font, "AB CD", 16.0, 0.0, 5.0 * letter), ["AB CD"]);
-    assert_eq!(wrap_text(&font, "AB CD", 16.0, 1.0, 5.0 * letter), ["AB", "CD"]);
+    assert_eq!(
+      wrap_text(&font, "AB CD", 16.0, 0.0, 5.0 * letter),
+      ["AB CD"]
+    );
+    assert_eq!(
+      wrap_text(&font, "AB CD", 16.0, 1.0, 5.0 * letter),
+      ["AB", "CD"]
+    );
   }
 }

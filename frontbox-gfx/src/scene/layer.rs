@@ -4,7 +4,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::color::RgbaColor;
 use crate::layout::Grid;
-use crate::scene::{Bounds, Env, Fill, LayerFrame, Graph, GraphMask, Mask, Cover, PreparedFill, PreparedMask, PreparedShape, Sample, SceneError, Shape, ShapePose, Speed, Surface, Timing, Transform, Visits, Prop, Inputs};
+use crate::scene::{
+  Bounds, Cover, Env, Fill, Graph, GraphMask, Inputs, LayerFrame, Mask, PreparedFill, PreparedMask,
+  PreparedShape, Prop, Sample, SceneError, Shape, ShapePose, Speed, Surface, Timing, Transform,
+  Visits,
+};
 
 /// A fill drawn in a region
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -41,7 +45,15 @@ pub struct Layer {
 
 impl Layer {
   pub fn new(fill: Fill) -> Self {
-    Self { name: None, hidden: false, visible: always_visible(), fill, region: None, mask: None, graph: None }
+    Self {
+      name: None,
+      hidden: false,
+      visible: always_visible(),
+      fill,
+      region: None,
+      mask: None,
+      graph: None,
+    }
   }
 
   pub fn name(mut self, name: impl Into<String>) -> Self {
@@ -95,37 +107,61 @@ impl Layer {
   pub fn read_inputs(&self, inputs: &mut Inputs) {
     self.visible.read_inputs(inputs);
     self.fill.read_inputs(inputs);
-    self.region.iter().for_each(|region| region.read_inputs(inputs));
+    self
+      .region
+      .iter()
+      .for_each(|region| region.read_inputs(inputs));
     self.mask.iter().for_each(|mask| mask.read_inputs(inputs));
-    self.graph.iter().for_each(|graph| graph.read_inputs(inputs));
+    self
+      .graph
+      .iter()
+      .for_each(|graph| graph.read_inputs(inputs));
   }
 
   /// Names of the images the layer and its mask use
   pub fn image_names(&self) -> impl Iterator<Item = &str> {
-    let masked = self.mask.as_ref().and_then(|mask| mask.fill.base.image_name());
+    let masked = self
+      .mask
+      .as_ref()
+      .and_then(|mask| mask.fill.base.image_name());
     self.fill.base.image_name().into_iter().chain(masked)
   }
 
   /// Names of the fonts the layer's region and its mask's region use
   pub fn font_names(&self) -> impl Iterator<Item = &str> {
     let masked = self.mask.as_ref().and_then(|mask| mask.region.as_ref());
-    self.region.iter().chain(masked).filter_map(|shape| shape.base.font_name())
+    self
+      .region
+      .iter()
+      .chain(masked)
+      .filter_map(|shape| shape.base.font_name())
   }
 
   /// Validates what the types can't enforce, for the layer at `index` in a scene with `timing`
   pub fn check(&self, index: usize, timing: Option<Timing>) -> Result<(), SceneError> {
     if timing.is_none() && self.is_animated() {
-      return Err(SceneError::NoTiming { layer: self.label(index) });
+      return Err(SceneError::NoTiming {
+        layer: self.label(index),
+      });
     }
     let traversals = self.graph.as_ref().map_or(&[][..], |mask| &mask.traversals);
     for (i, traversal) in traversals.iter().enumerate() {
-      if traversals[..i].iter().any(|other| other.name == traversal.name) {
-        return Err(SceneError::SameTraversalName { layer: self.label(index), traversal: traversal.name.clone() });
+      if traversals[..i]
+        .iter()
+        .any(|other| other.name == traversal.name)
+      {
+        return Err(SceneError::SameTraversalName {
+          layer: self.label(index),
+          traversal: traversal.name.clone(),
+        });
       }
       if let Speed::Rate(Prop::Fixed(amount)) | Speed::Duration(Some(amount)) = traversal.speed
         && !(amount.is_finite() && amount > 0.0)
       {
-        return Err(SceneError::NoSpeed { layer: self.label(index), traversal: traversal.name.clone() });
+        return Err(SceneError::NoSpeed {
+          layer: self.label(index),
+          traversal: traversal.name.clone(),
+        });
       }
     }
     Ok(())
@@ -143,10 +179,19 @@ impl Layer {
   /// except for a layer with a graph, whose visits differ from node to node.
   pub fn prepare<'a>(&'a self, frame: &LayerFrame<'a>, radius: f32) -> PreparedLayer<'a> {
     let by_node = self.graph.is_some() && frame.visits.is_some();
-    let env = Env { lap: lap(frame.surface, radius), ..env(frame) };
+    let env = Env {
+      lap: lap(frame.surface, radius),
+      ..env(frame)
+    };
     let shown = !self.hidden && self.visible.resolve(&env);
     let drawn = (shown && !by_node).then(|| Drawn::new(self, radius, &env));
-    PreparedLayer { layer: self, frame: *frame, radius, shown, drawn }
+    PreparedLayer {
+      layer: self,
+      frame: *frame,
+      radius,
+      shown,
+      drawn,
+    }
   }
 
   /// Draws the layer over `pixels`, a row at a time from the top left of `grid`
@@ -170,7 +215,12 @@ impl Layer {
   pub fn visits(&self, graph: &Graph, frame: &LayerFrame) -> Visits {
     let env = env(frame);
     let traversals = self.graph.as_ref().map_or(&[][..], |mask| &mask.traversals);
-    Visits { traversals: traversals.iter().map(|traversal| traversal.visits(graph, &env)).collect() }
+    Visits {
+      traversals: traversals
+        .iter()
+        .map(|traversal| traversal.visits(graph, &env))
+        .collect(),
+    }
   }
 
   /// The area the layer draws in, as closed polygons in scene units for editor overlays: one for each copy of its shape.
@@ -188,7 +238,10 @@ impl Layer {
   /// Like [`Self::outline`], for the layer's mask. None with no mask.
   pub fn mask_outline(&self, frame: &LayerFrame) -> Vec<Vec<Vec2>> {
     let env = env(frame);
-    self.mask.as_ref().map_or_else(Vec::new, |mask| mask.outline(env.viewport, &env))
+    self
+      .mask
+      .as_ref()
+      .map_or_else(Vec::new, |mask| mask.outline(env.viewport, &env))
   }
 
   /// Like [`Self::shape_pose`], for the mask's shape
@@ -223,8 +276,16 @@ impl PreparedLayer<'_> {
     match &self.drawn {
       Some(drawn) if at.radius == self.radius => drawn.sample(at),
       _ => {
-        let visits = self.frame.visits.zip(at.node).map(|(visits, node)| visits.at(node));
-        let env = Env { lap: lap(self.frame.surface, at.radius), visits, ..env(&self.frame) };
+        let visits = self
+          .frame
+          .visits
+          .zip(at.node)
+          .map(|(visits, node)| visits.at(node));
+        let env = Env {
+          lap: lap(self.frame.surface, at.radius),
+          visits,
+          ..env(&self.frame)
+        };
         if by_node && !self.layer.visible.resolve(&env) {
           return Rgba([0, 0, 0, 0]);
         }
@@ -244,8 +305,17 @@ struct Drawn<'a> {
 impl<'a> Drawn<'a> {
   fn new(layer: &'a Layer, radius: f32, env: &Env<'a>) -> Self {
     Self {
-      fill: prepare_area(&layer.fill, layer.region.as_ref(), env.viewport, radius, env),
-      mask: layer.mask.as_ref().map(|mask| mask.prepare(env.viewport, radius, env)),
+      fill: prepare_area(
+        &layer.fill,
+        layer.region.as_ref(),
+        env.viewport,
+        radius,
+        env,
+      ),
+      mask: layer
+        .mask
+        .as_ref()
+        .map(|mask| mask.prepare(env.viewport, radius, env)),
     }
   }
 
@@ -282,8 +352,16 @@ impl PreparedArea<'_> {
 
   /// The fill where a shape covers it, with the shape's colored strokes over it
   fn covered(&self, shape: &PreparedShape, cover: Cover) -> Rgba<u8> {
-    let color = covering(self.fill.color(shape.bounds.to_unit(cover.local)), cover.amount);
-    cover.strokes.into_iter().fold(color, |color, (amount, stroke)| Rgba::over(covering(stroke, amount), color))
+    let color = covering(
+      self.fill.color(shape.bounds.to_unit(cover.local)),
+      cover.amount,
+    );
+    cover
+      .strokes
+      .into_iter()
+      .fold(color, |color, (amount, stroke)| {
+        Rgba::over(covering(stroke, amount), color)
+      })
   }
 }
 
@@ -311,8 +389,12 @@ fn is_always_visible(visible: &Prop<bool>) -> bool {
 /// spacing doesn't matter.
 pub(crate) fn env<'a>(frame: &LayerFrame<'a>) -> Env<'a> {
   Env {
-    time: frame.timing.map_or(0.0, |timing| timing.local_time(frame.time)),
-    cycle: frame.timing.map_or(0, |timing| timing.cycle_index(frame.time)),
+    time: frame
+      .timing
+      .map_or(0.0, |timing| timing.local_time(frame.time)),
+    cycle: frame
+      .timing
+      .map_or(0, |timing| timing.cycle_index(frame.time)),
     timing: frame.timing,
     playback_seed: frame.playback_seed,
     variables: frame.variables,
@@ -335,22 +417,39 @@ fn lap(surface: Surface, radius: f32) -> Option<f32> {
 
 /// The fill clipped to the region (or the viewport, with none), for samples of `radius`. `None` if either is collapsed,
 /// so it draws nothing.
-pub(crate) fn prepare_area<'a>(fill: &'a Fill, region: Option<&Shape>, viewport: Bounds, radius: f32, env: &Env<'a>) -> Option<PreparedArea<'a>> {
+pub(crate) fn prepare_area<'a>(
+  fill: &'a Fill,
+  region: Option<&Shape>,
+  viewport: Bounds,
+  radius: f32,
+  env: &Env<'a>,
+) -> Option<PreparedArea<'a>> {
   let (clip, footprint) = match region {
     None => (Clip::Viewport(viewport), viewport.to_unit_length(radius)),
     Some(shape) => {
       let shape = shape.prepare(env)?;
-      let footprint = shape.to_local.matrix2.abs() * Vec2::splat(radius) * shape.bounds.to_unit_length(1.0);
+      let footprint =
+        shape.to_local.matrix2.abs() * Vec2::splat(radius) * shape.bounds.to_unit_length(1.0);
       (Clip::Shape(shape), footprint)
     }
   };
-  let env = &Env { fill_frame: fill_frame(fill, &clip), ..*env };
-  Some(PreparedArea { fill: fill.prepare(footprint, env)?, clip })
+  let env = &Env {
+    fill_frame: fill_frame(fill, &clip),
+    ..*env
+  };
+  Some(PreparedArea {
+    fill: fill.prepare(footprint, env)?,
+    clip,
+  })
 }
 
 /// Scene units to the unit box the fill is stretched over, for `Transform::Fit`. Identity for a fill that doesn't use it.
 fn fill_frame(fill: &Fill, clip: &Clip) -> Affine2 {
-  if !fill.transform.iter().any(|transform| matches!(transform, Transform::Fit(_))) {
+  if !fill
+    .transform
+    .iter()
+    .any(|transform| matches!(transform, Transform::Fit(_)))
+  {
     return Affine2::IDENTITY;
   }
   match clip {
@@ -364,7 +463,12 @@ pub(crate) fn fill_outline(shape: Option<&Shape>, viewport: Bounds, env: &Env) -
   match shape {
     None => {
       let Bounds { min, max } = viewport;
-      vec![vec![min, Vec2::new(max.x, min.y), max, Vec2::new(min.x, max.y)]]
+      vec![vec![
+        min,
+        Vec2::new(max.x, min.y),
+        max,
+        Vec2::new(min.x, max.y),
+      ]]
     }
     Some(shape) => shape.outline(env),
   }

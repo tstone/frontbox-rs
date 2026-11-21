@@ -1,8 +1,9 @@
 import { JsonTreeView } from '@ark-ui/solid/json-tree-view'
 import { createSignal, Show } from 'solid-js'
-import { formatElapsed, groupLabel, shortName, traceBody, traceCategory, traceType, type TraceCategory } from '../lib/format'
+import { formatElapsed, shortName, traceBody, traceCategory, traceType, type TraceCategory } from '../lib/format'
+import { activityCause, despawnCause, stepEnding } from '../lib/causes'
 import { hexAddress } from '../lib/hardwareConfig'
-import { groupName, machine, systemName } from '../state/console'
+import { machine, systemName } from '../state/console'
 import type { TraceRecord } from '../types/generated/TraceRecord'
 import './TraceRow.css'
 
@@ -70,16 +71,21 @@ function summary(record: TraceRecord): string {
     return `${hw?.drivers.by_id[driver_id]?.name ?? `Driver ${driver_id}`} set to ${Object.keys(mode)[0]}`
   }
   if ('SystemSpawned' in event) return shortName(event.SystemSpawned.name)
-  if ('SystemDespawned' in event) return systemName(event.SystemDespawned.id)
-  if ('SystemActiveStateChange' in event) {
-    const { id, active } = event.SystemActiveStateChange
-    return `${systemName(id)} ${active ? 'activated' : 'deactivated'}`
+  if ('SystemDespawned' in event) {
+    const { id, cause } = event.SystemDespawned
+    return `${systemName(id)} ${despawnCause(cause)}`
   }
-  if ('SystemGroupSpawned' in event) return groupLabel(event.SystemGroupSpawned.id, event.SystemGroupSpawned.name)
-  if ('SystemGroupDespawned' in event) return groupLabel(event.SystemGroupDespawned.id, event.SystemGroupDespawned.name)
-  if ('SystemGroupActiveStateChange' in event) {
-    const { id, active } = event.SystemGroupActiveStateChange
-    return `${groupName(id)} ${active ? 'activated' : 'deactivated'}`
+  if ('SystemActiveStateChange' in event) {
+    const { id, active, cause } = event.SystemActiveStateChange
+    return `${systemName(id)} ${active ? 'activated' : 'deactivated'} ${activityCause(cause)}`
+  }
+  if ('SystemStatusReported' in event) {
+    const { id, status } = event.SystemStatusReported
+    return `${systemName(id)}: ${JSON.stringify(status)}`
+  }
+  if ('RoutineStepEnded' in event) {
+    const { routine, participant, ending } = event.RoutineStepEnded
+    return `${systemName(participant)} ${stepEnding(ending)} its step in ${shortName(routine)}`
   }
   if ('LedsRGBChange' in event) {
     const { expansion, states } = event.LedsRGBChange
@@ -95,7 +101,7 @@ function summary(record: TraceRecord): string {
   }
   if ('RoutineSkipped' in event) {
     const { routine, participant, reason } = event.RoutineSkipped
-    const why = reason === 'Missing' ? 'not in reach' : 'inactive'
+    const why = reason === 'Missing' ? 'not running' : 'inactive'
     return `${shortName(routine)} skipped ${shortName(participant)} (${why})`
   }
   if ('RoutineRejected' in event) {

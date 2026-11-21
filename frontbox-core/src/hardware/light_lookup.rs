@@ -21,7 +21,10 @@ pub struct LightLookup {
 impl LightLookup {
   /// The LEDs on the expansion boards, and a light for each driver powering a bulb (one with a
   /// [`bulb`](DriverDefinition::bulb))
-  pub fn new(boards: &Vec<ResolvedExpansionBoard>, drivers: &[IoAddressed<DriverDefinition>]) -> Self {
+  pub fn new(
+    boards: &Vec<ResolvedExpansionBoard>,
+    drivers: &[IoAddressed<DriverDefinition>],
+  ) -> Self {
     let mut by_name = HashMap::new();
     let mut configs = HashMap::new();
     let mut order_by_index = HashMap::new();
@@ -43,7 +46,10 @@ impl LightLookup {
             led.definition.name.to_string(),
             Light {
               name: led.definition.name.to_string(),
-              address: LightAddress::Exp { led: address, channels: led.definition.channels },
+              address: LightAddress::Exp {
+                led: address,
+                channels: led.definition.channels,
+              },
               tags: led.definition.tags.clone(),
               location: led.definition.location,
               color: None,
@@ -68,7 +74,9 @@ impl LightLookup {
         definition.name.to_string(),
         Light {
           name: definition.name.to_string(),
-          address: LightAddress::Driver { driver: definition.name },
+          address: LightAddress::Driver {
+            driver: definition.name,
+          },
           tags: definition.tags.clone(),
           location: definition.location,
           color: Some(bulb),
@@ -118,7 +126,10 @@ impl LightLookup {
       LightQ::Tag(tag) => light.has_tag_named(tag),
       LightQ::And(qs) => qs.iter().all(|q| self.matches(q, light)),
       LightQ::Or(qs) => qs.iter().any(|q| self.matches(q, light)),
-      LightQ::Location(plane, region) => self.plane(plane).zip(light.location).is_some_and(|(plane, location)| region.within(plane.to_relative(location))),
+      LightQ::Location(plane, region) => self
+        .plane(plane)
+        .zip(light.location)
+        .is_some_and(|(plane, location)| region.within(plane.to_relative(location))),
       LightQ::Reverse(other) => self.matches(other, light),
       LightQ::Skip(other, _) => self.query_iter(other).contains(light),
       LightQ::Take(other, _) => self.query_iter(other).contains(light),
@@ -180,7 +191,10 @@ impl LightLookup {
   }
 
   /// The index and channel order of every LED defined on a board's breakout
-  pub(crate) fn orders_on(&self, address: ExpAddress) -> impl Iterator<Item = (u8, ChannelOrder)> + '_ {
+  pub(crate) fn orders_on(
+    &self,
+    address: ExpAddress,
+  ) -> impl Iterator<Item = (u8, ChannelOrder)> + '_ {
     self
       .order_by_index
       .iter()
@@ -195,7 +209,9 @@ impl LightLookup {
     for (led, lights) in self.by_led_address() {
       let mut users: [Option<&str>; 3] = [None, None, None];
       for light in lights {
-        let LightAddress::Exp { channels, .. } = &light.address else { continue };
+        let LightAddress::Exp { channels, .. } = &light.address else {
+          continue;
+        };
         for channel in channels_used(*channels) {
           let user = &mut users[channel as usize];
           match user {
@@ -215,14 +231,24 @@ impl LightLookup {
   pub(crate) fn reordered_single_channels(&self) -> Vec<(LedAddress, String)> {
     let mut reordered = Vec::new();
     for (led, lights) in self.by_led_address() {
-      let has_single = lights
-        .iter()
-        .any(|light| matches!(light.address, LightAddress::Exp { channels: LedChannels::One(_), .. }));
+      let has_single = lights.iter().any(|light| {
+        matches!(
+          light.address,
+          LightAddress::Exp {
+            channels: LedChannels::One(_),
+            ..
+          }
+        )
+      });
       if !has_single {
         continue;
       }
       for light in lights {
-        let order = self.configs.get(&light.name).map(|config| config.channel_order).unwrap_or_default();
+        let order = self
+          .configs
+          .get(&light.name)
+          .map(|config| config.channel_order)
+          .unwrap_or_default();
         if order != ChannelOrder::default() {
           reordered.push((led.clone(), light.name.clone()));
         }
@@ -233,8 +259,14 @@ impl LightLookup {
 
   /// The lights on each LED address, in hardware order, with a light's name breaking ties
   fn by_led_address(&self) -> Vec<(LedAddress, Vec<&Light>)> {
-    let mut lights: Vec<&Light> = self.by_name.values().filter(|light| light.address.led().is_some()).collect();
-    lights.sort_by(|a, b| (a.address.hardware_order(), &a.name).cmp(&(b.address.hardware_order(), &b.name)));
+    let mut lights: Vec<&Light> = self
+      .by_name
+      .values()
+      .filter(|light| light.address.led().is_some())
+      .collect();
+    lights.sort_by(|a, b| {
+      (a.address.hardware_order(), &a.name).cmp(&(b.address.hardware_order(), &b.name))
+    });
     lights
       .into_iter()
       .chunk_by(|light| light.address.led().cloned())
@@ -280,25 +312,46 @@ mod tests {
     for &(board, breakout, index) in addresses {
       let name = format!("{board}.{}.{index}", breakout.unwrap_or(0));
       let address = LightAddress::rgb(LedAddress::new(ExpAddress::new(board, breakout), 0, index));
-      lights.insert(name.clone(), Light { name, address, ..Default::default() });
+      lights.insert(
+        name.clone(),
+        Light {
+          name,
+          address,
+          ..Default::default()
+        },
+      );
     }
     lights
   }
 
   fn names<'a>(lights: &'a LightLookup, query: &'a LightQ) -> Vec<&'a str> {
-    lights.query_iter(query).map(|light| light.name.as_str()).collect()
+    lights
+      .query_iter(query)
+      .map(|light| light.name.as_str())
+      .collect()
   }
 
   #[test]
   fn lights_come_in_hardware_order() {
-    let lights = lookup(&[(2, Some(0), 0), (1, Some(1), 1), (1, Some(1), 0), (1, Some(0), 5)]);
-    assert_eq!(names(&lights, &LightQ::every()), ["1.0.5", "1.1.0", "1.1.1", "2.0.0"]);
+    let lights = lookup(&[
+      (2, Some(0), 0),
+      (1, Some(1), 1),
+      (1, Some(1), 0),
+      (1, Some(0), 5),
+    ]);
+    assert_eq!(
+      names(&lights, &LightQ::every()),
+      ["1.0.5", "1.1.0", "1.1.1", "2.0.0"]
+    );
   }
 
   #[test]
   fn hardware_order_holds_on_board_zero() {
     let lights = lookup(&[(0, None, 2), (0, None, 0), (0, None, 1)]);
-    assert_eq!(names(&lights, &LightQ::every()), ["0.0.0", "0.0.1", "0.0.2"]);
+    assert_eq!(
+      names(&lights, &LightQ::every()),
+      ["0.0.0", "0.0.1", "0.0.2"]
+    );
   }
 
   #[test]
@@ -308,7 +361,10 @@ mod tests {
       lights.get_mut(name).unwrap().tags.push(Box::new(Insert));
     }
     lights.get_mut("1.1.0").unwrap().tags.push(Box::new(Lane));
-    assert_eq!(names(&lights, &LightQ::Tag("Insert".into())), ["1.0.5", "2.0.0"]);
+    assert_eq!(
+      names(&lights, &LightQ::Tag("Insert".into())),
+      ["1.0.5", "2.0.0"]
+    );
   }
 
   #[test]
@@ -320,7 +376,10 @@ mod tests {
     for name in ["1.0.5", "1.1.0"] {
       lights.get_mut(name).unwrap().tags.push(Box::new(Insert));
     }
-    let lane_first = LightQ::Or(vec![LightQ::Tag("Lane".into()), LightQ::Tag("Insert".into())]);
+    let lane_first = LightQ::Or(vec![
+      LightQ::Tag("Lane".into()),
+      LightQ::Tag("Insert".into()),
+    ]);
     assert_eq!(names(&lights, &lane_first), ["1.1.0", "2.0.0", "1.0.5"]);
   }
 
@@ -339,10 +398,18 @@ mod tests {
 
   #[test]
   fn a_driver_with_a_bulb_is_a_light() {
-    static LAMP: std::sync::LazyLock<DriverDefinition> =
-      std::sync::LazyLock::new(|| DriverDefinition::light("lamp").color(Rgb::new(255, 0, 0)).build());
-    static COIL: std::sync::LazyLock<DriverDefinition> = std::sync::LazyLock::new(|| DriverDefinition::new("coil").build());
-    let network = IoNetwork::new(vec![IoBoard::cabinet().wire_driver(0, &LAMP).wire_driver(1, &COIL)]);
+    static LAMP: std::sync::LazyLock<DriverDefinition> = std::sync::LazyLock::new(|| {
+      DriverDefinition::light("lamp")
+        .color(Rgb::new(255, 0, 0))
+        .build()
+    });
+    static COIL: std::sync::LazyLock<DriverDefinition> =
+      std::sync::LazyLock::new(|| DriverDefinition::new("coil").build());
+    let network = IoNetwork::new(vec![
+      IoBoard::cabinet()
+        .wire_driver(0, &LAMP)
+        .wire_driver(1, &COIL),
+    ]);
 
     let lights = LightLookup::new(&vec![], &network.drivers);
     let lamp = lights.by_name("lamp").unwrap();
@@ -371,7 +438,14 @@ mod tests {
 
   fn insert(lights: &mut LightLookup, name: &str, led: LedAddress, channels: LedChannels) {
     let address = LightAddress::Exp { led, channels };
-    lights.insert(name.into(), Light { name: name.into(), address, ..Default::default() });
+    lights.insert(
+      name.into(),
+      Light {
+        name: name.into(),
+        address,
+        ..Default::default()
+      },
+    );
   }
 
   #[test]
@@ -388,7 +462,10 @@ mod tests {
     let mut lights = LightLookup::default();
     insert(&mut lights, "a", led(0), LedChannels::One(LedChannel::G));
     insert(&mut lights, "b", led(0), LedChannels::One(LedChannel::G));
-    assert_eq!(lights.shared_channels(), vec![(led(0), "a".to_string(), "b".to_string())]);
+    assert_eq!(
+      lights.shared_channels(),
+      vec![(led(0), "a".to_string(), "b".to_string())]
+    );
   }
 
   #[test]
@@ -412,13 +489,18 @@ mod tests {
       .g(LedDefinition::single("reordered").channel_order(ChannelOrder::GRB))
       .build()
   });
-  static REORDERED_RGB: std::sync::LazyLock<LedDefinition> =
-    std::sync::LazyLock::new(|| LedDefinition::single("rgb").channel_order(ChannelOrder::GRB).build());
+  static REORDERED_RGB: std::sync::LazyLock<LedDefinition> = std::sync::LazyLock::new(|| {
+    LedDefinition::single("rgb")
+      .channel_order(ChannelOrder::GRB)
+      .build()
+  });
 
   #[test]
   fn a_channel_order_on_single_channel_lights_is_reported() {
-    let board = ExpBoard::fp_exp0061(JumperState::Open, JumperState::Open)
-      .wire_led_port(1, LedPort::ws2812().leds(vec![&*REORDERED, &*REORDERED_RGB]));
+    let board = ExpBoard::fp_exp0061(JumperState::Open, JumperState::Open).wire_led_port(
+      1,
+      LedPort::ws2812().leds(vec![&*REORDERED, &*REORDERED_RGB]),
+    );
     let lights = LightLookup::new(&Hardware::resolve_expansion_boards(&vec![board]), &[]);
 
     let reordered = lights.reordered_single_channels();
@@ -430,6 +512,9 @@ mod tests {
   #[test]
   fn reverse_is_hardware_order_backwards() {
     let lights = lookup(&[(1, Some(0), 5), (1, Some(1), 0), (2, Some(0), 0)]);
-    assert_eq!(names(&lights, &LightQ::every().reverse()), ["2.0.0", "1.1.0", "1.0.5"]);
+    assert_eq!(
+      names(&lights, &LightQ::every().reverse()),
+      ["2.0.0", "1.1.0", "1.0.5"]
+    );
   }
 }

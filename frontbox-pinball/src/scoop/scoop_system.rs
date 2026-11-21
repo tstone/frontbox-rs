@@ -232,11 +232,10 @@ impl<S: 'static> ScoopSystem<S> {
 
     scene.restart(ctx);
     let length = scene.scene().length();
-    self.eject_timer = Some(
-      ctx
-        .timers
-        .start(ScoopSignal::<S>::new(Step::EjectSceneCompleted), length.once()),
-    );
+    self.eject_timer = Some(ctx.timers.start(
+      ScoopSignal::<S>::new(Step::EjectSceneCompleted),
+      length.once(),
+    ));
   }
 
   /// Fire the coil, then check the scoop is empty once the kick has had time to work
@@ -331,6 +330,10 @@ impl<S: 'static> ScoopSystem<S> {
 }
 
 impl<S: 'static> System for ScoopSystem<S> {
+  fn description() -> Option<&'static str> {
+    Some("A scoop on the playfield: notes when a ball lands in it, and kicks it back out")
+  }
+
   fn on_spawn(&mut self, ctx: &SystemContext) {
     self.handle = ctx.handle();
 

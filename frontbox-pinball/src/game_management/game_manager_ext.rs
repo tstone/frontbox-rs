@@ -88,7 +88,10 @@ impl<'a> GameManagerExt for SystemContext<'a> {
   }
 }
 
-fn with_game_manager<T>(ctx: &SystemContext, f: impl FnOnce(&mut dyn GameManager) -> T) -> Option<T> {
+fn with_game_manager<T>(
+  ctx: &SystemContext,
+  f: impl FnOnce(&mut dyn GameManager) -> T,
+) -> Option<T> {
   if let Some(mut system) = ctx.game_manager() {
     Some(f(&mut *system))
   } else {

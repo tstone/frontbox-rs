@@ -29,7 +29,13 @@ pub struct DmdPointsSystem {
 
 impl DmdPointsSystem {
   pub fn new() -> Self {
-    Self { z: 0, points: None, transition: None, sent: Vec::new(), player: None }
+    Self {
+      z: 0,
+      points: None,
+      transition: None,
+      sent: Vec::new(),
+      player: None,
+    }
   }
 
   /// Draws the points at `z` among everything on the display, and the transition just beneath them. 0 unless this says
@@ -47,13 +53,19 @@ impl Default for DmdPointsSystem {
 }
 
 impl System for DmdPointsSystem {
+  fn description() -> Option<&'static str> {
+    Some("Shows each player's score and ball on the DMD during a game")
+  }
+
   fn is_active(&self, ctx: &SystemContext) -> bool {
     !ctx.states.is(GamePhase::None)
   }
 
   fn on_spawn(&mut self, ctx: &SystemContext) {
     let content = content_with_bundled(ctx.content_path.clone());
-    let open = |name, sends, z| open_scene(&content, name, sends, z).map(|scene| ScenePlayer::new(PlayableScene::new(scene)));
+    let open = |name, sends, z| {
+      open_scene(&content, name, sends, z).map(|scene| ScenePlayer::new(PlayableScene::new(scene)))
+    };
     self.points = open(POINTS_SCENE, POINTS_SENDS, self.z);
     self.transition = open(TRANSITION_SCENE, TRANSITION_SENDS, self.z.saturating_sub(1));
   }
@@ -76,7 +88,11 @@ impl System for DmdPointsSystem {
     if self.player.is_some_and(|last| last != player)
       && let Some(transition) = &mut self.transition
     {
-      transition.set_variable("center", Value::named(format!("player_{}", player + 1)), ctx);
+      transition.set_variable(
+        "center",
+        Value::named(format!("player_{}", player + 1)),
+        ctx,
+      );
       transition.restart(ctx);
     }
     self.player = Some(player);
@@ -101,35 +117,120 @@ fn points_variables(state: &GameSession) -> Vec<(String, Value)> {
   let mut variables = vec![
     ("score".to_string(), Value::Int(score(current))),
     ("player".to_string(), Value::Int(current as i64 + 1)),
-    ("ball".to_string(), Value::Int(state.current_player_turn() as i64 + 1)),
+    (
+      "ball".to_string(),
+      Value::Int(state.current_player_turn() as i64 + 1),
+    ),
   ];
   for player in 0..PLAYERS {
     let n = player + 1;
-    let color = if player == current { "current" } else { "waiting" };
+    let color = if player == current {
+      "current"
+    } else {
+      "waiting"
+    };
     variables.push((format!("score_{n}"), Value::Int(score(player))));
     variables.push((format!("player_{n}_color"), Value::named(color)));
-    variables.push((format!("player_{n}_visible"), Value::Bool(count > 1 && player < count)));
+    variables.push((
+      format!("player_{n}_visible"),
+      Value::Bool(count > 1 && player < count),
+    ));
   }
   variables
 }
 
 const POINTS_SENDS: Sends = Sends {
   variables: &[
-    SentVariable { name: "score", sent_as: VariableType::Number, values: &[], about: "The current player's score" },
-    SentVariable { name: "player", sent_as: VariableType::Number, values: &[], about: "The current player, from 1" },
-    SentVariable { name: "ball", sent_as: VariableType::Number, values: &[], about: "The current player's ball, from 1" },
-    SentVariable { name: "score_1", sent_as: VariableType::Number, values: &[], about: "Player 1's score" },
-    SentVariable { name: "score_2", sent_as: VariableType::Number, values: &[], about: "Player 2's score" },
-    SentVariable { name: "score_3", sent_as: VariableType::Number, values: &[], about: "Player 3's score" },
-    SentVariable { name: "score_4", sent_as: VariableType::Number, values: &[], about: "Player 4's score" },
-    SentVariable { name: "player_1_color", sent_as: VariableType::Color, values: &["current", "waiting"], about: "Player 1's score's color" },
-    SentVariable { name: "player_2_color", sent_as: VariableType::Color, values: &["current", "waiting"], about: "Player 2's score's color" },
-    SentVariable { name: "player_3_color", sent_as: VariableType::Color, values: &["current", "waiting"], about: "Player 3's score's color" },
-    SentVariable { name: "player_4_color", sent_as: VariableType::Color, values: &["current", "waiting"], about: "Player 4's score's color" },
-    SentVariable { name: "player_1_visible", sent_as: VariableType::Bool, values: &[], about: "Whether player 1's score is shown" },
-    SentVariable { name: "player_2_visible", sent_as: VariableType::Bool, values: &[], about: "Whether player 2's score is shown" },
-    SentVariable { name: "player_3_visible", sent_as: VariableType::Bool, values: &[], about: "Whether player 3's score is shown" },
-    SentVariable { name: "player_4_visible", sent_as: VariableType::Bool, values: &[], about: "Whether player 4's score is shown" },
+    SentVariable {
+      name: "score",
+      sent_as: VariableType::Number,
+      values: &[],
+      about: "The current player's score",
+    },
+    SentVariable {
+      name: "player",
+      sent_as: VariableType::Number,
+      values: &[],
+      about: "The current player, from 1",
+    },
+    SentVariable {
+      name: "ball",
+      sent_as: VariableType::Number,
+      values: &[],
+      about: "The current player's ball, from 1",
+    },
+    SentVariable {
+      name: "score_1",
+      sent_as: VariableType::Number,
+      values: &[],
+      about: "Player 1's score",
+    },
+    SentVariable {
+      name: "score_2",
+      sent_as: VariableType::Number,
+      values: &[],
+      about: "Player 2's score",
+    },
+    SentVariable {
+      name: "score_3",
+      sent_as: VariableType::Number,
+      values: &[],
+      about: "Player 3's score",
+    },
+    SentVariable {
+      name: "score_4",
+      sent_as: VariableType::Number,
+      values: &[],
+      about: "Player 4's score",
+    },
+    SentVariable {
+      name: "player_1_color",
+      sent_as: VariableType::Color,
+      values: &["current", "waiting"],
+      about: "Player 1's score's color",
+    },
+    SentVariable {
+      name: "player_2_color",
+      sent_as: VariableType::Color,
+      values: &["current", "waiting"],
+      about: "Player 2's score's color",
+    },
+    SentVariable {
+      name: "player_3_color",
+      sent_as: VariableType::Color,
+      values: &["current", "waiting"],
+      about: "Player 3's score's color",
+    },
+    SentVariable {
+      name: "player_4_color",
+      sent_as: VariableType::Color,
+      values: &["current", "waiting"],
+      about: "Player 4's score's color",
+    },
+    SentVariable {
+      name: "player_1_visible",
+      sent_as: VariableType::Bool,
+      values: &[],
+      about: "Whether player 1's score is shown",
+    },
+    SentVariable {
+      name: "player_2_visible",
+      sent_as: VariableType::Bool,
+      values: &[],
+      about: "Whether player 2's score is shown",
+    },
+    SentVariable {
+      name: "player_3_visible",
+      sent_as: VariableType::Bool,
+      values: &[],
+      about: "Whether player 3's score is shown",
+    },
+    SentVariable {
+      name: "player_4_visible",
+      sent_as: VariableType::Bool,
+      values: &[],
+      about: "Whether player 4's score is shown",
+    },
   ],
 };
 
@@ -147,7 +248,11 @@ mod tests {
   use super::*;
 
   fn variable<'a>(variables: &'a [(String, Value)], name: &str) -> &'a Value {
-    &variables.iter().find(|(variable, _)| variable == name).unwrap().1
+    &variables
+      .iter()
+      .find(|(variable, _)| variable == name)
+      .unwrap()
+      .1
   }
 
   fn game(players: u8) -> GameSession {
@@ -163,8 +268,14 @@ mod tests {
     let variables = points_variables(&state);
     assert_eq!(variable(&variables, "player"), &Value::Int(2));
     assert_eq!(variable(&variables, "ball"), &Value::Int(1));
-    assert_eq!(variable(&variables, "player_2_color"), &Value::named("current"));
-    assert_eq!(variable(&variables, "player_1_color"), &Value::named("waiting"));
+    assert_eq!(
+      variable(&variables, "player_2_color"),
+      &Value::named("current")
+    );
+    assert_eq!(
+      variable(&variables, "player_1_color"),
+      &Value::named("waiting")
+    );
   }
 
   #[test]
@@ -179,8 +290,15 @@ mod tests {
   #[test]
   fn the_bundled_scenes_fit_what_is_sent() {
     let content = content_with_bundled(None);
-    for (name, sends) in [(POINTS_SCENE, POINTS_SENDS), (TRANSITION_SCENE, TRANSITION_SENDS)] {
-      assert_eq!(sends.check(&Scene::open(&content, name).unwrap()), [], "{name}");
+    for (name, sends) in [
+      (POINTS_SCENE, POINTS_SENDS),
+      (TRANSITION_SCENE, TRANSITION_SENDS),
+    ] {
+      assert_eq!(
+        sends.check(&Scene::open(&content, name).unwrap()),
+        [],
+        "{name}"
+      );
     }
   }
 }

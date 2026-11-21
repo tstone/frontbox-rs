@@ -1,6 +1,6 @@
 use glam::Vec2;
 
-use crate::scene::{Assets, Variables, Surface, Timing, Values, Visits};
+use crate::scene::{Assets, Surface, Timing, Values, Variables, Visits};
 
 /// A point to get a color for: a position in scene units and the radius of the area it covers
 ///
@@ -17,7 +17,11 @@ pub struct Sample {
 
 impl Sample {
   pub fn new(pos: Vec2, radius: f32) -> Self {
-    Self { pos, radius, node: None }
+    Self {
+      pos,
+      radius,
+      node: None,
+    }
   }
 
   pub fn at_node(mut self, node: usize) -> Self {

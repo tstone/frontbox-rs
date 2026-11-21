@@ -208,15 +208,27 @@ mod tests {
       let row = store.db.query(sql, ()).unwrap().next().unwrap().unwrap();
       row.get::<i64>(0).unwrap()
     };
-    assert_eq!(total("SELECT SUM(count) FROM counts WHERE metric = 'hits'"), 4);
-    assert_eq!(total("SELECT COUNT(*) FROM counts WHERE game_id IS NOT NULL"), 1);
+    assert_eq!(
+      total("SELECT SUM(count) FROM counts WHERE metric = 'hits'"),
+      4
+    );
+    assert_eq!(
+      total("SELECT COUNT(*) FROM counts WHERE game_id IS NOT NULL"),
+      1
+    );
     assert_eq!(total("SELECT COUNT(*) FROM metrics"), 2);
     assert_eq!(total("SELECT player_count FROM games"), 2);
-    assert_eq!(total("SELECT player FROM samples WHERE metric = 'score'"), 1);
+    assert_eq!(
+      total("SELECT player FROM samples WHERE metric = 'score'"),
+      1
+    );
 
     let row = store
       .db
-      .query("SELECT kind, category FROM metrics WHERE metric = 'hits'", ())
+      .query(
+        "SELECT kind, category FROM metrics WHERE metric = 'hits'",
+        (),
+      )
       .unwrap()
       .next()
       .unwrap()
@@ -252,7 +264,9 @@ mod tests {
     let dir = TempDir::new("totals");
     let mut store = MetricsDb::open(&dir.0).unwrap();
 
-    let sling = Counter::new("left_sling", "").key("switch_hits.left_sling").category("Switches");
+    let sling = Counter::new("left_sling", "")
+      .key("switch_hits.left_sling")
+      .category("Switches");
     let saves = Counter::new("Ball Saves", "Drains saved");
     let unused = Counter::new("Tilts", "");
     let metrics = MetricsCollection::default();
@@ -299,7 +313,8 @@ mod tests {
 
   impl TempDir {
     fn new(name: &str) -> Self {
-      let dir = std::env::temp_dir().join(format!("frontbox-metrics-{name}-{}", std::process::id()));
+      let dir =
+        std::env::temp_dir().join(format!("frontbox-metrics-{name}-{}", std::process::id()));
       let _ = std::fs::remove_dir_all(&dir);
       Self(dir)
     }

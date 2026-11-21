@@ -67,14 +67,23 @@ impl<T: Animatable> VisitResponse<T> {
     let Some((visits, rate)) = env.visits.and_then(|visits| visits.of(&self.traversal)) else {
       return self.from.clone();
     };
-    self.from.interpolate(&self.to, self.level(visits, rate, env.time))
+    self
+      .from
+      .interpolate(&self.to, self.level(visits, rate, env.time))
   }
 
   /// The response at `time` to visits at the sorted times `visits`, from 0 to 1, or more where `Add` stacks them
   fn level(&self, visits: &[f32], rate: f32, time: f32) -> f32 {
-    let length = self.smooth_out.map_or(f32::INFINITY, |out| self.smooth_in + self.hold + out);
+    let length = self
+      .smooth_out
+      .map_or(f32::INFINITY, |out| self.smooth_in + self.hold + out);
     let passed = &visits[..visits.partition_point(|&at| at <= time)];
-    let levels = passed.iter().rev().map(|&at| (time - at) * rate).take_while(|&steps| steps < length).map(|steps| self.single(steps));
+    let levels = passed
+      .iter()
+      .rev()
+      .map(|&at| (time - at) * rate)
+      .take_while(|&steps| steps < length)
+      .map(|steps| self.single(steps));
     match self.overlap {
       Overlap::Max => levels.fold(0.0, f32::max),
       Overlap::Add => levels.sum(),
@@ -98,20 +107,35 @@ impl<T: Animatable> VisitResponse<T> {
 mod tests {
   use super::*;
   use crate::scene::value::tests::env;
-  use crate::scene::{Variables, TraversalVisits, Visits};
+  use crate::scene::{TraversalVisits, Variables, Visits};
 
   /// Visits at these seconds to node 0 from traversal "t", stepping twice a second
   fn visited(at: &[f32]) -> Visits {
-    Visits { traversals: vec![TraversalVisits { name: "t".into(), rate: 2.0, by_node: vec![at.to_vec()], ends: None }] }
+    Visits {
+      traversals: vec![TraversalVisits {
+        name: "t".into(),
+        rate: 2.0,
+        by_node: vec![at.to_vec()],
+        ends: None,
+      }],
+    }
   }
 
   fn at(response: &VisitResponse<f32>, visits: &Visits, time: f32) -> f32 {
     let variables = Variables::new();
-    response.resolve(&Env { visits: Some(visits.at(0)), ..env(time, &variables) })
+    response.resolve(&Env {
+      visits: Some(visits.at(0)),
+      ..env(time, &variables)
+    })
   }
 
   fn response() -> VisitResponse<f32> {
-    VisitResponse { smooth_in: 1.0, hold: 1.0, smooth_out: Some(2.0), ..VisitResponse::new("t", 0.0, 10.0) }
+    VisitResponse {
+      smooth_in: 1.0,
+      hold: 1.0,
+      smooth_out: Some(2.0),
+      ..VisitResponse::new("t", 0.0, 10.0)
+    }
   }
 
   #[test]
@@ -119,19 +143,34 @@ mod tests {
     let visits = visited(&[1.0]);
     let response = response();
     // twice a second: in from 1.0 to 1.5, held to 2.0, out by 3.0
-    let samples: Vec<f32> = [0.5, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0].iter().map(|&time| at(&response, &visits, time)).collect();
-    assert_eq!(samples, [0.0, 0.0, 5.0, 10.0, 10.0, 10.0, 7.5, 5.0, 2.5, 0.0]);
+    let samples: Vec<f32> = [0.5, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0]
+      .iter()
+      .map(|&time| at(&response, &visits, time))
+      .collect();
+    assert_eq!(
+      samples,
+      [0.0, 0.0, 5.0, 10.0, 10.0, 10.0, 7.5, 5.0, 2.5, 0.0]
+    );
   }
 
   #[test]
   fn with_no_smooth_out_it_stays() {
-    let response = VisitResponse { smooth_out: None, ..response() };
+    let response = VisitResponse {
+      smooth_out: None,
+      ..response()
+    };
     assert_eq!(at(&response, &visited(&[1.0]), 50.0), 10.0);
   }
 
   #[test]
   fn the_out_curve_plays_backwards() {
-    let response = VisitResponse { smooth_in: 0.0, hold: 0.0, smooth_out: Some(2.0), curve_out: Curve::EaseIn, ..response() };
+    let response = VisitResponse {
+      smooth_in: 0.0,
+      hold: 0.0,
+      smooth_out: Some(2.0),
+      curve_out: Curve::EaseIn,
+      ..response()
+    };
     // half way out: EaseIn at 0.5 is 0.25
     assert_eq!(at(&response, &visited(&[0.0]), 0.5), 2.5);
   }
@@ -140,7 +179,10 @@ mod tests {
   fn overlapping_visits_take_the_strongest_or_add_up() {
     let visits = visited(&[0.0, 0.25]);
     let max = response();
-    let add = VisitResponse { overlap: Overlap::Add, ..response() };
+    let add = VisitResponse {
+      overlap: Overlap::Add,
+      ..response()
+    };
     // 0.5s in: the first visit is a step in, at 10; the second half a step in, at 5
     assert_eq!(at(&max, &visits, 0.5), 10.0);
     assert_eq!(at(&add, &visits, 0.5), 15.0);
@@ -148,7 +190,10 @@ mod tests {
 
   #[test]
   fn adding_with_no_smooth_out_counts_visits() {
-    let response = VisitResponse { overlap: Overlap::Add, ..VisitResponse::new("t", 1.0, 1.1) };
+    let response = VisitResponse {
+      overlap: Overlap::Add,
+      ..VisitResponse::new("t", 1.0, 1.1)
+    };
     assert!((at(&response, &visited(&[0.0, 1.0, 2.0]), 5.0) - 1.3).abs() < 1e-5);
   }
 
@@ -156,7 +201,10 @@ mod tests {
   fn without_visits_or_with_another_traversal_it_stays_at_from() {
     let variables = Variables::new();
     assert_eq!(response().resolve(&env(1.0, &variables)), 0.0);
-    let other = VisitResponse { traversal: "other".into(), ..response() };
+    let other = VisitResponse {
+      traversal: "other".into(),
+      ..response()
+    };
     assert_eq!(at(&other, &visited(&[0.0]), 0.5), 0.0);
   }
 }

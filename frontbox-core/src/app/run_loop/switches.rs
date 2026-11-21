@@ -1,7 +1,12 @@
 use super::*;
 
 impl RunLoop {
-  pub(super) fn switch_state_changed(&mut self, sender: Option<u64>, switch_id: usize, state: SwitchState) {
+  pub(super) fn switch_state_changed(
+    &mut self,
+    sender: Option<u64>,
+    switch_id: usize,
+    state: SwitchState,
+  ) {
     // Update this first so that handled events see the latest state in Context
     self.base.switches.update_switch_state(switch_id, state);
 
@@ -45,7 +50,9 @@ impl RunLoop {
 
     if let Some(event) = outgoing_event {
       self.emit_event(sender, event);
-      self.tracers.send(TraceEvent::SwitchStateChange { switch_id, state });
+      self
+        .tracers
+        .send(TraceEvent::SwitchStateChange { switch_id, state });
     }
   }
 }
@@ -74,10 +81,18 @@ mod tests {
 
   /// A harness whose machine has one switch, `start`, open
   fn with_start_switch() -> Harness {
-    let definition: &'static SwitchDefinition = Box::leak(Box::new(SwitchDefinition::new("start").build()));
-    let start = IoAddressed { definition, assignment: IoAddress::new(0, 0), id: START };
+    let definition: &'static SwitchDefinition =
+      Box::leak(Box::new(SwitchDefinition::new("start").build()));
+    let start = IoAddressed {
+      definition,
+      assignment: IoAddress::new(0, 0),
+      id: START,
+    };
     let switches = SwitchLookup::new(vec![start], vec![]);
-    Harness::with_state(AppState { switches, ..AppState::default() })
+    Harness::with_state(AppState {
+      switches,
+      ..AppState::default()
+    })
   }
 
   /// Records, when it hears `start` close, whether the context already reads it as closed
@@ -103,7 +118,10 @@ mod tests {
     h.send(AppMessage::SwitchStateChange(START, SwitchState::Open));
     h.settle();
 
-    assert_eq!(heard.take(), [Heard::SwitchClosed("start"), Heard::SwitchOpened("start")]);
+    assert_eq!(
+      heard.take(),
+      [Heard::SwitchClosed("start"), Heard::SwitchOpened("start")]
+    );
     assert_eq!(*read.borrow(), [Some(true)]);
   }
 
@@ -142,6 +160,9 @@ mod tests {
     h.settle();
 
     // it starts open, so the first open and the second close do nothing
-    assert_eq!(heard.take(), [Heard::SwitchClosed("start"), Heard::SwitchOpened("start")]);
+    assert_eq!(
+      heard.take(),
+      [Heard::SwitchClosed("start"), Heard::SwitchOpened("start")]
+    );
   }
 }

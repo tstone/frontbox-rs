@@ -3,6 +3,7 @@ use std::ops::Deref;
 use tokio::sync::mpsc;
 
 use crate::prelude::app_message::{AppMessage, ShutdownScope};
+use crate::prelude::app_tracer::TraceEvent;
 use crate::prelude::*;
 
 /// # SystemContext
@@ -25,8 +26,7 @@ use crate::prelude::*;
 ///
 /// The rest of what a system can do is grouped into namespaces, each acting as this system:
 ///
-/// - `ctx.systems`: look up, spawn, and despawn systems
-/// - `ctx.groups`: spawn and manage system groups
+/// - `ctx.systems`: look up systems, and spawn, activate, deactivate, and despawn this system's children
 /// - `ctx.timers`: schedule signals back to this system
 /// - `ctx.routines`: start and take part in routines
 /// - `ctx.states`: read and set states
@@ -39,7 +39,6 @@ pub struct SystemContext<'a> {
   handle: SystemHandle,
   ctx: ServiceContext<'a>,
   pub systems: ContextSystems<'a>,
-  pub groups: ContextGroups<'a>,
   pub timers: ContextTimers<'a>,
   pub routines: ContextRoutines<'a>,
   pub states: ContextStates<'a>,
@@ -49,7 +48,7 @@ pub struct SystemContext<'a> {
 }
 
 impl<'a> SystemContext<'a> {
-  pub fn new(
+  pub(crate) fn new(
     base: &'a AppState,
     handle: SystemHandle,
     groups: &'a Groups,
@@ -60,7 +59,6 @@ impl<'a> SystemContext<'a> {
       handle,
       ctx,
       systems: ContextSystems::new(handle, ctx),
-      groups: ContextGroups::new(handle, ctx),
       timers: ContextTimers::new(handle, ctx),
       routines: ContextRoutines::for_system(handle, ctx),
       states: ContextStates::new(handle, ctx),
@@ -76,7 +74,7 @@ impl<'a> SystemContext<'a> {
     self.handle.id
   }
 
-  /// The complete handle (group + ID) for the current system. A handle lets whoever holds it act as the system, so
+  /// The complete handle for the current system. A handle lets whoever holds it act as the system, so
   /// keep it to the system itself; see [`SystemHandle`].
   pub fn handle(&self) -> SystemHandle {
     self.handle
@@ -85,6 +83,48 @@ impl<'a> SystemContext<'a> {
   /// Dispatch an event to all other active systems
   pub fn emit<E: Event>(&self, event: E) {
     self.ctx.emit(self.id(), event);
+  }
+
+  /// Send this system's status to tracers, such as the console, which shows the latest on the system's page. Any value
+  /// that serializes to JSON works, and only tracers see it: no system hears about it. Report when the status changes,
+  /// rather than every tick, since each report is kept in the system's history.
+  ///
+  /// Nothing is serialized when no tracer is attached, but the value is still built, so pass a reference to what the
+  /// system already has rather than building one to report.
+  ///
+  /// ```rust
+  /// # use frontbox_core::prelude::*;
+  /// #[derive(serde::Serialize)]
+  /// struct Progress {
+  ///   targets_hit: u8,
+  ///   lit: bool,
+  /// }
+  ///
+  /// # fn example(progress: &Progress, ctx: &SystemContext) {
+  /// ctx.report_status(progress);
+  /// # }
+  /// ```
+  ///
+  /// This isn't one of the machine's states in `ctx.states`, which other systems read and hear about. To report only
+  /// when the status changes, see [`StatusReporter`].
+  pub fn report_status(&self, status: &impl serde::Serialize) {
+    if !self.is_traced() {
+      return;
+    }
+    match serde_json::to_value(status) {
+      Ok(status) => self.ctx.trace(TraceEvent::SystemStatusReported {
+        id: self.id(),
+        status,
+      }),
+      Err(e) => {
+        log::warn!(target: "frontbox::systems", "System {} reported a status that can't be serialized: {e}", self.id())
+      }
+    }
+  }
+
+  /// Whether a tracer is attached, so a reported status would be seen
+  pub(crate) fn is_traced(&self) -> bool {
+    self.ctx.base.traced
   }
 
   /// Unregisters drivers, clears the EXP network, and halts the framework

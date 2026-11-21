@@ -57,7 +57,11 @@ mod tests {
   #[test]
   fn the_last_point_lands_on_the_end_of_any_line() {
     for count in 2..200 {
-      assert_eq!(positions(Line::new(count)).last(), Some(&1.0), "{count} points");
+      assert_eq!(
+        positions(Line::new(count)).last(),
+        Some(&1.0),
+        "{count} points"
+      );
     }
   }
 

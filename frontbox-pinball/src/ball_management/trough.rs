@@ -14,6 +14,7 @@ pub struct TroughSystem {
   last_occupancy: u8,
   /// Ejects verified since occupancy was last reported, used to separate exits from entries
   exits_since_report: u8,
+  reported: StatusReporter<ReportedStatus>,
 }
 
 impl TroughSystem {
@@ -27,6 +28,7 @@ impl TroughSystem {
       occupancy_state: OccupancyState::Ready,
       last_occupancy: 0, // set on spawn
       exits_since_report: 0,
+      reported: StatusReporter::new(),
     }
   }
 
@@ -76,11 +78,13 @@ impl TroughSystem {
     let empty = self.last_occupancy == 0 && !self.is_jammed(ctx.into());
     if settling || empty || self.eject_state != EjectState::Ready {
       self.eject_queue += 1;
+      self.report(ctx);
       return;
     }
 
     ctx.emit(TroughEjectStarted);
     self.eject_inner(ctx);
+    self.report(ctx);
   }
 
   pub fn eject_many(&mut self, count: u8, ctx: &ServiceContext) {
@@ -96,11 +100,12 @@ impl TroughSystem {
 
   /// Drops ejects waiting to start, including a retry waiting for the trough to settle. An eject already verifying
   /// carries on. Returns true if any were dropped.
-  pub fn cancel_queued_ejects(&mut self) -> bool {
+  pub fn cancel_queued_ejects(&mut self, ctx: &ServiceContext) -> bool {
     let dropped = self.eject_queue > 0;
     self.eject_queue = 0;
     if dropped {
       self.eject_retries = 0;
+      self.report(&ctx.for_system(self.handle));
     }
     dropped
   }
@@ -150,9 +155,13 @@ impl TroughSystem {
   fn eject_inner(&mut self, ctx: &SystemContext) {
     self.eject_state = EjectState::Verifying {
       target_occupancy: self.read_switch_occupancy(ctx.into()).saturating_sub(1),
-      timer_id: ctx.timers.start(VerifyEject, self.config.eject_verification_time.once()),
+      timer_id: ctx
+        .timers
+        .start(VerifyEject, self.config.eject_verification_time.once()),
     };
-    ctx.drivers.activate(self.config.eject_coil_name, ActivationMode::Tap);
+    ctx
+      .drivers
+      .activate(self.config.eject_coil_name, ActivationMode::Tap);
   }
 
   /// Number of balls in the trough according to the switches right now, settled or not
@@ -224,12 +233,16 @@ impl TroughSystem {
         ctx.timers.cancel(timer_id);
         max_timer_id
       }
-      OccupancyState::Ready => ctx.timers.start(MaxSettle, self.config.occupancy_settling_max.once()),
+      OccupancyState::Ready => ctx
+        .timers
+        .start(MaxSettle, self.config.occupancy_settling_max.once()),
     };
 
     self.occupancy_state = OccupancyState::Settling {
       max_timer_id,
-      settling_timer_id: ctx.timers.start(VerifyOccupancy, self.config.occupancy_settling_time.once()),
+      settling_timer_id: ctx
+        .timers
+        .start(VerifyOccupancy, self.config.occupancy_settling_time.once()),
     }
   }
 
@@ -277,13 +290,25 @@ impl TroughSystem {
     self.last_occupancy = current_occupancy;
     self.exits_since_report = 0;
   }
+
+  /// Reports the status to tracers, if it changed. Called at the end of everything that can change it.
+  fn report(&mut self, ctx: &SystemContext) {
+    let mut reported = std::mem::take(&mut self.reported);
+    reported.report(ctx, || ReportedStatus::of(self, ctx));
+    self.reported = reported;
+  }
 }
 
 impl System for TroughSystem {
+  fn description() -> Option<&'static str> {
+    Some("Counts the balls in the trough, and ejects them into play")
+  }
+
   fn on_spawn(&mut self, ctx: &SystemContext) {
     self.handle = ctx.handle();
     self.last_occupancy = self.read_switch_occupancy(ctx.into());
     self.eject_ready(ctx);
+    self.report(ctx);
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
@@ -304,6 +329,7 @@ impl System for TroughSystem {
     {
       self.queue_occupancy_settling(ctx);
     }
+    self.report(ctx);
   }
 }
 
@@ -322,6 +348,50 @@ enum OccupancyState {
 enum EjectState {
   Ready,
   Verifying { target_occupancy: u8, timer_id: u64 },
+  Pending,
+}
+
+/// What the trough reports to tracers about itself
+#[derive(serde::Serialize, PartialEq)]
+struct ReportedStatus {
+  /// Balls in the trough as of the last time it settled
+  occupancy: u8,
+  /// Balls are moving, so occupancy will be read again once they stop
+  settling: bool,
+  eject: ReportedEject,
+  /// Ejects waiting for the trough to be ready
+  queued_ejects: u8,
+  /// Retries of the current eject
+  eject_retries: u8,
+  /// The jam switch is closed
+  jammed: bool,
+}
+
+impl ReportedStatus {
+  fn of(trough: &TroughSystem, ctx: &SystemContext) -> Self {
+    Self {
+      occupancy: trough.last_occupancy,
+      settling: matches!(trough.occupancy_state, OccupancyState::Settling { .. }),
+      eject: match trough.eject_state {
+        EjectState::Ready => ReportedEject::Ready,
+        EjectState::Verifying {
+          target_occupancy, ..
+        } => ReportedEject::Verifying { target_occupancy },
+        EjectState::Pending => ReportedEject::Pending,
+      },
+      queued_ejects: trough.eject_queue,
+      eject_retries: trough.eject_retries,
+      jammed: trough.is_jammed(ctx.into()),
+    }
+  }
+}
+
+/// [`EjectState`] without its timer
+#[derive(serde::Serialize, PartialEq)]
+enum ReportedEject {
+  Ready,
+  /// Fired, and checking the ball left. It has once occupancy falls to `target_occupancy`.
+  Verifying { target_occupancy: u8 },
   Pending,
 }
 

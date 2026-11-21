@@ -132,7 +132,11 @@ impl DisplayDevice for Pin2Dmd {
   fn write(&mut self, frame: &[Rgb<u8>]) -> Result<(), String> {
     let expected = self.size.width as usize * self.size.height as usize;
     if frame.len() != expected {
-      return Err(format!("a frame of {} pixels, where the display has {}", frame.len(), expected));
+      return Err(format!(
+        "a frame of {} pixels, where the display has {}",
+        frame.len(),
+        expected
+      ));
     }
     let buf = self.pack(frame);
     let handle = self.handle.as_ref().ok_or("not open")?;

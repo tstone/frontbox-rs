@@ -31,7 +31,9 @@ impl Modulated {
   /// Where in the current wave `env` is, 0 to 1. Counts the cycles already played, so a fractional rate carries on.
   /// Without a timing, the scene never moves past its start.
   fn position(&self, env: &Env) -> f32 {
-    let cycles = env.timing.map_or(0.0, |timing| env.cycle as f32 + env.time / timing.duration);
+    let cycles = env
+      .timing
+      .map_or(0.0, |timing| env.cycle as f32 + env.time / timing.duration);
     (cycles * self.rate + self.phase.resolve(env)).rem_euclid(1.0)
   }
 }
@@ -53,11 +55,17 @@ pub struct Envelope {
 
 impl Envelope {
   pub fn new(attack: EnvelopeCurve) -> Self {
-    Self { attack, decay: None }
+    Self {
+      attack,
+      decay: None,
+    }
   }
 
   pub fn decay(self, decay: EnvelopeCurve) -> Self {
-    Self { decay: Some(decay), ..self }
+    Self {
+      decay: Some(decay),
+      ..self
+    }
   }
 
   /// Its height at `position` through the wave, 0 to 1. Usually 0 to 1 too, though some curves overshoot.
@@ -82,15 +90,23 @@ pub struct EnvelopeCurve {
 
 impl EnvelopeCurve {
   pub fn new(curve: Curve) -> Self {
-    Self { curve, reversed: false }
+    Self {
+      curve,
+      reversed: false,
+    }
   }
 
   pub fn reversed(self) -> Self {
-    Self { reversed: true, ..self }
+    Self {
+      reversed: true,
+      ..self
+    }
   }
 
   fn sample(&self, phase: f32) -> f32 {
-    self.curve.sample(if self.reversed { 1.0 - phase } else { phase })
+    self
+      .curve
+      .sample(if self.reversed { 1.0 - phase } else { phase })
   }
 }
 
@@ -102,10 +118,15 @@ mod tests {
   use super::*;
   use crate::animation::Cycle;
   use crate::scene::value::tests::env;
-  use crate::scene::{Color, Key, Keyframes, Variables, Timing, Value};
+  use crate::scene::{Color, Key, Keyframes, Timing, Value, Variables};
 
   fn modulated(envelope: Envelope) -> Modulated {
-    Modulated { envelope, spread: Spread::Float(10.0, 20.0), rate: 1.0, phase: Box::new(0.0.into()) }
+    Modulated {
+      envelope,
+      spread: Spread::Float(10.0, 20.0),
+      rate: 1.0,
+      phase: Box::new(0.0.into()),
+    }
   }
 
   fn rising() -> Envelope {
@@ -124,7 +145,11 @@ mod tests {
   fn at(modulated: &Modulated, scene_time: f32) -> f32 {
     let variables = Variables::new();
     let timing = Timing::new(4.0, Cycle::Forever);
-    let env = Env { cycle: timing.cycle_index(scene_time), timing: Some(timing), ..env(timing.local_time(scene_time), &variables) };
+    let env = Env {
+      cycle: timing.cycle_index(scene_time),
+      timing: Some(timing),
+      ..env(timing.local_time(scene_time), &variables)
+    };
     modulated.resolve(&env)
   }
 
@@ -135,7 +160,10 @@ mod tests {
   #[test]
   fn an_attack_alone_takes_the_whole_wave() {
     assert_eq!(samples(rising()), [10.0, 12.5, 15.0, 17.5]);
-    assert_eq!(samples(Envelope::new(EnvelopeCurve::new(Curve::EaseIn))), [10.0, 10.625, 12.5, 15.625]);
+    assert_eq!(
+      samples(Envelope::new(EnvelopeCurve::new(Curve::EaseIn))),
+      [10.0, 10.625, 12.5, 15.625]
+    );
   }
 
   #[test]
@@ -152,13 +180,22 @@ mod tests {
 
   #[test]
   fn rate_is_waves_per_cycle() {
-    let twice = Modulated { rate: 2.0, ..modulated(up_and_down()) };
-    assert_eq!([0.0, 1.0, 2.0, 3.0].map(|time| at(&twice, time)), [10.0, 20.0, 10.0, 20.0]);
+    let twice = Modulated {
+      rate: 2.0,
+      ..modulated(up_and_down())
+    };
+    assert_eq!(
+      [0.0, 1.0, 2.0, 3.0].map(|time| at(&twice, time)),
+      [10.0, 20.0, 10.0, 20.0]
+    );
   }
 
   #[test]
   fn a_fractional_rate_carries_on_into_the_next_cycle() {
-    let half = Modulated { rate: 0.5, ..modulated(rising()) };
+    let half = Modulated {
+      rate: 0.5,
+      ..modulated(rising())
+    };
     assert_eq!(at(&half, 0.0), 10.0);
     assert_eq!(at(&half, 4.0), 15.0);
     assert_eq!(at(&half, 6.0), 17.5);
@@ -167,26 +204,47 @@ mod tests {
 
   #[test]
   fn phase_moves_where_the_scene_starts() {
-    let shifted = Modulated { phase: Box::new(0.5.into()), ..modulated(up_and_down()) };
+    let shifted = Modulated {
+      phase: Box::new(0.5.into()),
+      ..modulated(up_and_down())
+    };
     assert_eq!(at(&shifted, 0.0), 20.0);
     assert_eq!(at(&shifted, 2.0), 10.0);
-    let past_one = Modulated { phase: Box::new(1.25.into()), ..modulated(rising()) };
+    let past_one = Modulated {
+      phase: Box::new(1.25.into()),
+      ..modulated(rising())
+    };
     assert_eq!(at(&past_one, 0.0), 12.5);
   }
 
   #[test]
   fn a_phase_rising_through_the_scene_adds_waves() {
-    let keys = vec![Key::new(0.0, 0.0, Curve::Linear), Key::new(4.0, 1.0, Curve::Linear)];
-    let phase = Prop::Keyframes(Keyframes { keys, cycle: Cycle::Once });
-    let faster = Modulated { phase: Box::new(phase), ..modulated(rising()) };
+    let keys = vec![
+      Key::new(0.0, 0.0, Curve::Linear),
+      Key::new(4.0, 1.0, Curve::Linear),
+    ];
+    let phase = Prop::Keyframes(Keyframes {
+      keys,
+      cycle: Cycle::Once,
+    });
+    let faster = Modulated {
+      phase: Box::new(phase),
+      ..modulated(rising())
+    };
     // a wave from the rate and one from the phase, so two over the scene
-    assert_eq!([0.0, 1.0, 2.0, 3.0].map(|time| at(&faster, time)), [10.0, 15.0, 10.0, 15.0]);
+    assert_eq!(
+      [0.0, 1.0, 2.0, 3.0].map(|time| at(&faster, time)),
+      [10.0, 15.0, 10.0, 15.0]
+    );
   }
 
   #[test]
   fn a_phase_can_be_a_param() {
     let variables = Variables::from([("offset".into(), Value::Float(0.5))]);
-    let shifted = Modulated { phase: Box::new(Prop::Variable("offset".into())), ..modulated(up_and_down()) };
+    let shifted = Modulated {
+      phase: Box::new(Prop::Variable("offset".into())),
+      ..modulated(up_and_down())
+    };
     assert_eq!(shifted.resolve::<f32>(&env(0.0, &variables)), 20.0);
   }
 
@@ -194,27 +252,51 @@ mod tests {
   fn every_part_of_a_vec2_and_a_color_moves_together() {
     let variables = Variables::new();
     let timing = Timing::new(4.0, Cycle::Forever);
-    let env = Env { timing: Some(timing), ..env(2.0, &variables) };
-    let spread = Spread::Vec2 { x: (0.0, 10.0), y: (5.0, 5.0) };
-    let point: Vec2 = Modulated { spread, ..modulated(rising()) }.resolve(&env);
+    let env = Env {
+      timing: Some(timing),
+      ..env(2.0, &variables)
+    };
+    let spread = Spread::Vec2 {
+      x: (0.0, 10.0),
+      y: (5.0, 5.0),
+    };
+    let point: Vec2 = Modulated {
+      spread,
+      ..modulated(rising())
+    }
+    .resolve(&env);
     assert_eq!(point, Vec2::new(5.0, 5.0));
 
-    let spread = Spread::Color { hue: (0.0, 240.0), brightness: (1.0, 1.0), alpha: (0.0, 1.0) };
-    let color: Color = Modulated { spread, ..modulated(rising()) }.resolve(&env);
+    let spread = Spread::Color {
+      hue: (0.0, 240.0),
+      brightness: (1.0, 1.0),
+      alpha: (0.0, 1.0),
+    };
+    let color: Color = Modulated {
+      spread,
+      ..modulated(rising())
+    }
+    .resolve(&env);
     assert_eq!(color.0, Rgba([0, 255, 0, 128]));
   }
 
   #[test]
   fn with_no_timing_it_holds_its_starting_value() {
     let variables = Variables::new();
-    let shifted = Modulated { phase: Box::new(0.5.into()), ..modulated(up_and_down()) };
+    let shifted = Modulated {
+      phase: Box::new(0.5.into()),
+      ..modulated(up_and_down())
+    };
     assert_eq!(shifted.resolve::<f32>(&env(3.0, &variables)), 20.0);
   }
 
   #[test]
   fn a_spread_that_doesnt_match_the_type_is_the_default() {
     let variables = Variables::new();
-    assert_eq!(modulated(rising()).resolve::<Color>(&env(0.0, &variables)), Color::default());
+    assert_eq!(
+      modulated(rising()).resolve::<Color>(&env(0.0, &variables)),
+      Color::default()
+    );
   }
 
   #[test]

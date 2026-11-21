@@ -106,6 +106,7 @@ A: Yes:
 
 ### Core 
 
+- [Neuron setup](frontbox-core/README.md) -- Connecting to the hardware
 - App -- Booting things up
 - Hardware -- Defining what exists
 - Systems -- The behavioral unit everything happens within

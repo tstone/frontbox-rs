@@ -25,7 +25,11 @@ pub struct Timing {
 
 impl Timing {
   pub fn new(duration: f32, cycle: Cycle) -> Self {
-    Self { duration, cycle, end: EndBehavior::Clear }
+    Self {
+      duration,
+      cycle,
+      end: EndBehavior::Clear,
+    }
   }
 
   pub fn end(mut self, end: EndBehavior) -> Self {
@@ -75,7 +79,10 @@ impl Timing {
   /// its edges). One that only plays once is unchanged. Use with [`Self::middle_cycle_time`].
   pub fn middle_cycle(self) -> Self {
     match self.repeats() {
-      true => Self { cycle: Cycle::Times(3), ..self },
+      true => Self {
+        cycle: Cycle::Times(3),
+        ..self
+      },
       false => self,
     }
   }

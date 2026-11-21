@@ -9,7 +9,11 @@ pub struct IoBoard {
 }
 
 impl IoBoard {
-  pub fn custom(switch_count: u16, driver_count: u16, driver_voltage: DriverVoltage) -> IoBoardBuilder {
+  pub fn custom(
+    switch_count: u16,
+    driver_count: u16,
+    driver_voltage: DriverVoltage,
+  ) -> IoBoardBuilder {
     IoBoardBuilder::new(
       Box::leak(
         format!(

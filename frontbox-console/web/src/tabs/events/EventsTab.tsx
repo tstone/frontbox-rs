@@ -61,6 +61,15 @@ export default function EventsTab() {
     }).sort(noneFirst((a, b) => a.label.localeCompare(b.label))),
   )
 
+  // what's typed in the search box, lowercased: events whose type, sender, or body holds it are shown
+  const [search, setSearch] = createSignal('')
+  const matchesSearch = (record: TraceRecord) => {
+    if (search() === '' || !('Event' in record.event)) return true
+    const sender = traceSender(record)
+    const text = [record.event.Event.type_name, sender === null ? 'framework' : systemName(sender), JSON.stringify(record.event.Event.event)]
+    return text.some((part) => part.toLowerCase().includes(search()))
+  }
+
   // newest first
   const visible = createMemo(() => {
     const types = hiddenTypes()
@@ -73,6 +82,7 @@ export default function EventsTab() {
       if (types.includes(traceType(record))) continue
       if (players.includes(playerKey(record))) continue
       if (senders.includes(senderKey(record))) continue
+      if (!matchesSearch(record)) continue
       out.push(record)
     }
     return out
@@ -81,6 +91,15 @@ export default function EventsTab() {
   return (
     <div class="events-tab">
       <div class="events-list pane">
+        <div class="events-search">
+          <input
+            class="search"
+            type="search"
+            placeholder="Search events"
+            onInput={(e) => setSearch(e.currentTarget.value.trim().toLowerCase())}
+            onKeyDown={(e) => e.key === 'Escape' && ((e.currentTarget.value = ''), setSearch(''))}
+          />
+        </div>
         <Show
           when={visible().length > 0}
           fallback={<p class="empty">{events().length > 0 ? 'Everything is filtered out.' : 'No events yet.'}</p>}

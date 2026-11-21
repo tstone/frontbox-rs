@@ -7,7 +7,7 @@ import type { SceneSource } from "./SceneSource";
 /**
  * Messages from the web app to the console server
  */
-export type ClientMessage = { "type": "SetSwitch", switch_id: number, closed: boolean, } | { "type": "SetConfig", key: string, value: ConfigDomainValue, } | { "type": "QueryMetrics" } | { "type": "RenderScene", source: SceneSource, size: SceneSize, 
+export type ClientMessage = { "type": "SetSwitch", switch_id: number, closed: boolean, } | { "type": "SetConfig", key: string, value: ConfigDomainValue, } | { "type": "ClearHistory" } | { "type": "SetClearOnGameStart", clear: boolean, } | { "type": "QueryMetrics" } | { "type": "RenderScene", source: SceneSource, size: SceneSize, 
 /**
  * Seconds into a cycle of the scene
  */

@@ -10,8 +10,8 @@ use crate::prelude::*;
 /// # use frontbox_core::prelude::*;
 /// # #[derive(Serialize, Event, Clone)]
 /// # struct Searching;
-/// # fn example(ctx: &SystemContext, player: &GroupHandle) {
-/// let routine_id = ctx.routines.new(Searching).group(player).interval(Duration::from_millis(250)).start();
+/// # fn example(ctx: &SystemContext) {
+/// let routine_id = ctx.routines.new(Searching).interval(Duration::from_millis(250)).start();
 /// # }
 /// ```
 #[must_use = "a routine doesn't run until `start` is called"]
@@ -23,12 +23,15 @@ pub struct RoutineBuilder<'a> {
   pub(crate) routine: Box<dyn Event>,
   pub(crate) into_started: fn(&dyn Event) -> EventBox,
   pub(crate) into_completed: fn(Box<dyn Event>, RoutineCompletion) -> EventBox,
-  pub(crate) scope: Option<GroupId>,
   pub(crate) interval: Option<Duration>,
 }
 
 impl<'a> RoutineBuilder<'a> {
-  pub(crate) fn new<E: Event + Clone>(origin: SystemHandle, ctx: ServiceContext<'a>, routine: E) -> Self {
+  pub(crate) fn new<E: Event + Clone>(
+    origin: SystemHandle,
+    ctx: ServiceContext<'a>,
+    routine: E,
+  ) -> Self {
     Self {
       origin,
       ctx,
@@ -37,15 +40,8 @@ impl<'a> RoutineBuilder<'a> {
       routine: Box::new(routine),
       into_started: RoutineStarted::<E>::from_routine,
       into_completed: RoutineCompleted::<E>::from_routine,
-      scope: None,
       interval: None,
     }
-  }
-
-  /// Find participants starting in `group` rather than the origin's own group
-  pub fn group(mut self, group: &GroupHandle) -> Self {
-    self.scope = Some(group.id());
-    self
   }
 
   /// Wait this long after a participant completes its step before handing the routine to the next one
@@ -64,7 +60,6 @@ impl<'a> RoutineBuilder<'a> {
     RoutineStart {
       id,
       origin: self.origin,
-      scope: self.scope.unwrap_or(self.origin.group),
       type_id: self.type_id,
       name: self.name,
       routine: self.routine,
@@ -80,8 +75,6 @@ pub struct RoutineStart {
   /// Returned by `ctx.routines.start`, for the origin to cancel it with
   pub(crate) id: u64,
   pub(crate) origin: SystemHandle,
-  /// The group participants are looked up from: the nearest instance, in the group itself, then the root
-  pub(crate) scope: GroupId,
   pub(crate) type_id: TypeId,
   pub(crate) name: &'static str,
   pub(crate) routine: Box<dyn Event>,

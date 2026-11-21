@@ -1,12 +1,12 @@
 use std::any::TypeId;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use indexmap::IndexMap;
 use tokio::sync::mpsc;
 
 use super::{RoutineDefinition, RoutineStart};
 use crate::app::app_message::AppMessage;
-use crate::app::app_tracer::{RoutineSkipReason, TraceEvent, TracerSenders};
+use crate::app::app_tracer::{RoutineSkipReason, StepEnding, TraceEvent, TracerSenders};
 use crate::app::event_box::EventBox;
 use crate::app::run_loop::{apply_to_system, is_system_active};
 use crate::app::{Groups, GroupsExt};
@@ -39,7 +39,6 @@ impl Routines {
     let RoutineStart {
       id,
       origin,
-      scope,
       type_id,
       name,
       routine: event,
@@ -76,12 +75,13 @@ impl Routines {
         id,
         name,
         origin,
-        scope,
         routine: event,
         into_completed,
         interval,
         begun: false,
         next: 0,
+        instances: VecDeque::new(),
+        participant_name: "",
         current: None,
         step_ended: false,
         wait_left: None,
@@ -125,7 +125,8 @@ impl Routines {
     app_sender: &mpsc::UnboundedSender<AppMessage>,
     tracer_txs: &TracerSenders,
   ) {
-    if self.end_step(caller, type_id, "step completion").is_some() {
+    if let Some(routine) = self.end_step(caller, type_id, "step completion") {
+      trace_step_ended(tracer_txs, routine.name, caller, StepEnding::Completed);
       self.advance(type_id, groups, base, app_sender, tracer_txs);
     }
   }
@@ -151,10 +152,10 @@ impl Routines {
       Self::describe(groups, caller)
     );
     routine.halted = true;
+    trace_step_ended(tracer_txs, routine.name, caller, StepEnding::Halted);
     tracer_txs.send(TraceEvent::RoutineHalted {
       routine: routine.name,
       participant: caller.id,
-      group: caller.group,
     });
     self.advance(type_id, groups, base, app_sender, tracer_txs);
   }
@@ -169,7 +170,11 @@ impl Routines {
     app_sender: &mpsc::UnboundedSender<AppMessage>,
     tracer_txs: &TracerSenders,
   ) {
-    let Some((&type_id, routine)) = self.running.iter().find(|(_, routine)| routine.id == routine_id) else {
+    let Some((&type_id, routine)) = self
+      .running
+      .iter()
+      .find(|(_, routine)| routine.id == routine_id)
+    else {
       log::debug!(
         target: "frontbox::routines",
         "Ignoring a cancel of routine {} from system {}: it isn't running",
@@ -191,11 +196,24 @@ impl Routines {
     }
 
     log::debug!(target: "frontbox::routines", "Routine {} cancelled", routine.name);
-    self.complete(type_id, RoutineCompletion::Cancelled, app_sender, tracer_txs);
+    if let Some(current) = routine.current {
+      trace_step_ended(tracer_txs, routine.name, current, StepEnding::Cancelled);
+    }
+    self.complete(
+      type_id,
+      RoutineCompletion::Cancelled,
+      app_sender,
+      tracer_txs,
+    );
   }
 
   /// Ends the caller's step, if it's the current participant of the routine
-  fn end_step(&mut self, caller: SystemHandle, type_id: TypeId, what: &str) -> Option<&mut RunningRoutine> {
+  fn end_step(
+    &mut self,
+    caller: SystemHandle,
+    type_id: TypeId,
+    what: &str,
+  ) -> Option<&mut RunningRoutine> {
     let Some(routine) = self.running.get_mut(&type_id) else {
       log::debug!(
         target: "frontbox::routines",
@@ -288,6 +306,7 @@ impl Routines {
           routine.name,
           current.id
         );
+        trace_step_ended(tracer_txs, routine.name, current, StepEnding::Stopped);
         routine.current = None;
         routine.step_ended = true;
       }
@@ -322,6 +341,9 @@ impl Routines {
             routine.name,
             routine.origin.id
           );
+          if let Some(current) = routine.current {
+            trace_step_ended(tracer_txs, routine.name, current, StepEnding::Abandoned);
+          }
           tracer_txs.send(TraceEvent::RoutineAbandoned {
             routine: routine.name,
             origin: routine.origin.id,
@@ -355,42 +377,49 @@ impl Routines {
         return;
       }
 
-      let next = self
-        .definitions
-        .get(&type_id)
-        .and_then(|definition| definition.participant(routine.next));
-      routine.next += 1;
+      // each listed type in turn, and for each, every instance of it, in delivery order
+      let Some(handle) = routine.instances.pop_front() else {
+        let next = self
+          .definitions
+          .get(&type_id)
+          .and_then(|definition| definition.participant(routine.next));
+        routine.next += 1;
 
-      let Some(participant) = next else {
-        self.complete(type_id, RoutineCompletion::AllSteps, app_sender, tracer_txs);
-        return;
-      };
+        let Some(participant) = next else {
+          self.complete(type_id, RoutineCompletion::AllSteps, app_sender, tracer_txs);
+          return;
+        };
 
-      let Some(handle) = groups.nearest(routine.scope, participant.type_id) else {
-        log::debug!(
-          target: "frontbox::routines",
-          "Routine {}: skipping {}, which has no instance in reach of the routine's group",
-          routine.name,
-          participant.name
-        );
-        tracer_txs.send(TraceEvent::RoutineSkipped {
-          routine: routine.name,
-          participant: participant.name,
-          reason: RoutineSkipReason::Missing,
-        });
+        routine.participant_name = participant.name;
+        routine.instances = groups.instances(participant.type_id).into();
+        if routine.instances.is_empty() {
+          log::debug!(
+            target: "frontbox::routines",
+            "Routine {}: skipping {}, which isn't running",
+            routine.name,
+            participant.name
+          );
+          tracer_txs.send(TraceEvent::RoutineSkipped {
+            routine: routine.name,
+            participant: participant.name,
+            reason: RoutineSkipReason::Missing,
+          });
+        }
         continue;
       };
+      let participant_name = routine.participant_name;
 
       if !is_system_active(handle, groups, base, app_sender, tracer_txs) {
         log::debug!(
           target: "frontbox::routines",
-          "Routine {}: skipping {}, which is inactive",
+          "Routine {}: skipping {} ({}), which is inactive",
           routine.name,
-          participant.name
+          participant_name,
+          handle.id
         );
         tracer_txs.send(TraceEvent::RoutineSkipped {
           routine: routine.name,
-          participant: participant.name,
+          participant: participant_name,
           reason: RoutineSkipReason::Inactive,
         });
         continue;
@@ -399,18 +428,17 @@ impl Routines {
       if std::mem::take(&mut routine.step_ended)
         && let Some(interval) = routine.interval
       {
-        // looked up again once the wait is over, as it may have stopped meanwhile
-        routine.next -= 1;
+        // checked again once the wait is over, as it may have stopped meanwhile
+        routine.instances.push_front(handle);
         routine.wait_left = Some(interval);
         return;
       }
 
-      log::debug!(target: "frontbox::routines", "Routine {}: handing to {}", routine.name, participant.name);
+      log::debug!(target: "frontbox::routines", "Routine {}: handing to {} ({})", routine.name, participant_name, handle.id);
       routine.current = Some(handle);
       tracer_txs.send(TraceEvent::RoutineStep {
         routine: routine.name,
         participant: handle.id,
-        group: handle.group,
       });
 
       // completing only sends a message, so the participant can't re-enter the routine from here
@@ -484,13 +512,24 @@ impl Routines {
   }
 }
 
+fn trace_step_ended(
+  tracer_txs: &TracerSenders,
+  routine: &'static str,
+  participant: SystemHandle,
+  ending: StepEnding,
+) {
+  tracer_txs.send(TraceEvent::RoutineStepEnded {
+    routine,
+    participant: participant.id,
+    ending,
+  });
+}
+
 struct RunningRoutine {
   /// Returned by `ctx.routines.start`, for the origin to cancel it with
   id: u64,
   name: &'static str,
   origin: SystemHandle,
-  /// The group participants are looked up from
-  scope: GroupId,
   /// The routine as started, which participants are handed
   routine: Box<dyn Event>,
   /// Wraps the routine in its `RoutineCompleted`
@@ -499,8 +538,12 @@ struct RunningRoutine {
   interval: Option<Duration>,
   /// `RoutineStarted` has gone out, and the first participant was handed the routine
   begun: bool,
-  /// Index of the next participant in the definition
+  /// Index of the next participant type in the definition
   next: usize,
+  /// The instances of the current participant type still to be handed the routine
+  instances: VecDeque<SystemHandle>,
+  /// The current participant type's name, for logs
+  participant_name: &'static str,
   /// The participant whose step is in progress
   current: Option<SystemHandle>,
   /// A step ended, and the next participant hasn't been handed the routine yet

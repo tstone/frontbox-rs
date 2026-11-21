@@ -4,32 +4,61 @@ use frontbox_gfx::scene::Font;
 /// `assets/fonts/CREDITS.md`.
 const FONTS: [(&str, &[u8]); 13] = [
   ("DMDSmall", include_bytes!("../assets/fonts/DMDSmall.ttf")),
-  ("ImpactBits", include_bytes!("../assets/fonts/ImpactBits.ttf")),
+  (
+    "ImpactBits",
+    include_bytes!("../assets/fonts/ImpactBits.ttf"),
+  ),
   ("LCDBlock", include_bytes!("../assets/fonts/LCDBlock.ttf")),
   ("Minimal4", include_bytes!("../assets/fonts/Minimal4.ttf")),
-  ("MooseNooks", include_bytes!("../assets/fonts/MooseNooks.ttf")),
+  (
+    "MooseNooks",
+    include_bytes!("../assets/fonts/MooseNooks.ttf"),
+  ),
   ("OwlsNInk", include_bytes!("../assets/fonts/OwlsNInk.ttf")),
   ("SirClive", include_bytes!("../assets/fonts/SirClive.ttf")),
-  ("TenFatGuys", include_bytes!("../assets/fonts/TenFatGuys.ttf")),
-  ("TimesNewPixel", include_bytes!("../assets/fonts/TimesNewPixel.ttf")),
+  (
+    "TenFatGuys",
+    include_bytes!("../assets/fonts/TenFatGuys.ttf"),
+  ),
+  (
+    "TimesNewPixel",
+    include_bytes!("../assets/fonts/TimesNewPixel.ttf"),
+  ),
   ("TinyPix", include_bytes!("../assets/fonts/TinyPix.ttf")),
-  ("TinyPixie2", include_bytes!("../assets/fonts/TinyPixie2.ttf")),
-  ("VSansSerif8bold", include_bytes!("../assets/fonts/VSansSerif8bold.ttf")),
-  ("Webslinger", include_bytes!("../assets/fonts/Webslinger.ttf")),
+  (
+    "TinyPixie2",
+    include_bytes!("../assets/fonts/TinyPixie2.ttf"),
+  ),
+  (
+    "VSansSerif8bold",
+    include_bytes!("../assets/fonts/VSansSerif8bold.ttf"),
+  ),
+  (
+    "Webslinger",
+    include_bytes!("../assets/fonts/Webslinger.ttf"),
+  ),
 ];
 
 /// The pixel fonts this crate comes with, by the name a scene uses for them, to give to
 /// [`Content::with_fonts`](frontbox_gfx::scene::Content::with_fonts). Each is crisp at its
 /// [`Font::pixel_size`], or a whole multiple of it: 16 for most, and 6 for `TinyPixie2`.
 pub fn bundled_fonts() -> impl Iterator<Item = (&'static str, Font)> {
-  FONTS.into_iter().map(|(name, bytes)| (name, Font::new(bytes.to_vec()).expect("a bundled font is a font")))
+  FONTS.into_iter().map(|(name, bytes)| {
+    (
+      name,
+      Font::new(bytes.to_vec()).expect("a bundled font is a font"),
+    )
+  })
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
   use frontbox_core::prelude::Vec2;
-  use frontbox_gfx::scene::{Assets, Color, Fill, FillNode, Layer, LayerFrame, Variables, Sample, Shape, ShapeNode, Surface, Transform, no_values, no_variables};
+  use frontbox_gfx::scene::{
+    Assets, Color, Fill, FillNode, Layer, LayerFrame, Sample, Shape, ShapeNode, Surface, Transform,
+    Variables, no_values, no_variables,
+  };
   use image::Rgba;
 
   #[test]
@@ -41,17 +70,40 @@ mod tests {
   fn every_bundled_font_is_on_whole_units_at_its_design_size() {
     let (width, height) = (240, 24);
     for (name, font) in bundled_fonts() {
-      let size = font.pixel_size().unwrap_or_else(|| panic!("{name} is a pixel font"));
+      let size = font
+        .pixel_size()
+        .unwrap_or_else(|| panic!("{name} is a pixel font"));
       let expected = if name == "TinyPixie2" { 6.0 } else { 16.0 };
       assert_eq!(size, expected, "{name}");
       let mut assets = Assets::new();
       assets.insert_font(name, font);
-      let text = Shape::new(ShapeNode::text("Pinball 1,250 EXTRA!", name, size, Vec2::new(width as f32, height as f32)))
-        .transform(Transform::Translate((Vec2::new(width as f32, height as f32) / 2.0).into()));
-      let layer = Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 255, 255, 255])).into()))).region(text);
+      let text = Shape::new(ShapeNode::text(
+        "Pinball 1,250 EXTRA!",
+        name,
+        size,
+        Vec2::new(width as f32, height as f32),
+      ))
+      .transform(Transform::Translate(
+        (Vec2::new(width as f32, height as f32) / 2.0).into(),
+      ));
+      let layer = Layer::new(Fill::new(FillNode::Solid(
+        Color(Rgba([255, 255, 255, 255])).into(),
+      )))
+      .region(text);
       let variables = Variables::new();
       let size = Vec2::new(width as f32, height as f32);
-      let frame = LayerFrame { time: 0.0, playback_seed: 0, variables: &variables, defaults: no_variables(), values: no_values(), assets: &assets, size, surface: Surface::Area, visits: None, timing: None };
+      let frame = LayerFrame {
+        time: 0.0,
+        playback_seed: 0,
+        variables: &variables,
+        defaults: no_variables(),
+        values: no_values(),
+        assets: &assets,
+        size,
+        surface: Surface::Area,
+        visits: None,
+        timing: None,
+      };
       // a sample half a unit across is only partly covered where an edge falls between whole units. A font made on a
       // grid that doesn't divide its em evenly, such as 6 pixels to 1024 units, is a rounding error off, which adds up
       // along a line to a few hundredths of a unit here.

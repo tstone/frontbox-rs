@@ -93,7 +93,7 @@ pub trait BallManager: SpawnableSystem {
 }
 
 /// The intent behind putting a ball into play. How it is carried out depends on the machine's hardware.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum Launch {
   /// The player launches the ball, with the manual plunger or a launch button (e.g. the start of a turn)
   Player,

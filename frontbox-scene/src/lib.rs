@@ -65,7 +65,8 @@ pub mod prelude {
   pub use frontbox_gfx::scene::{Content, EndBehavior, Timing, Value, VariableType};
 
   pub use crate::{
-    Completes, DisplayLayer, LightLayer, LightSurface, PlayableScene, PlaybackId, Scene, SceneLayer, ScenePlaybackCompleted,
-    ScenePlayer, SceneSystem, SceneSystemExt, Sends, SentVariable, SoundLayer,
+    Completes, DisplayLayer, LightLayer, LightSurface, PlayableScene, PlaybackId, Scene,
+    SceneLayer, ScenePlaybackCompleted, ScenePlayer, SceneSystem, SceneSystemExt, Sends,
+    SentVariable, SoundLayer,
   };
 }

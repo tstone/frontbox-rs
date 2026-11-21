@@ -94,7 +94,7 @@ pub static BALLS_INSTALLED: LazyLock<Config<u8>> = LazyLock::new(|| {
   .key("balls_installed")
 });
 
-pub static TROUGH_EJECT_RETRIES:LazyLock<Config<u8>> = LazyLock::new(|| {
+pub static TROUGH_EJECT_RETRIES: LazyLock<Config<u8>> = LazyLock::new(|| {
   Config::new(
     "Trough Eject Retries",
     "How many times a failed trough eject is retried before giving up",

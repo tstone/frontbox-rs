@@ -1,12 +1,13 @@
 use frontbox_core::prelude::ConfigDomainValue;
 use frontbox_core::prelude::DriverMode;
-use frontbox_core::prelude::GroupId;
 use frontbox_core::prelude::Hardware;
 use frontbox_core::prelude::Rgb;
 use frontbox_core::prelude::SwitchState;
-use frontbox_core::prelude::app_tracer::{ConfigView, DriverState, TraceEvent};
-use frontbox_scene::Scene;
+use frontbox_core::prelude::app_tracer::{
+  ActivityCause, ConfigView, DespawnCause, DriverState, StepEnding, TraceEvent,
+};
 use frontbox_metrics::CounterTotal;
+use frontbox_scene::Scene;
 use std::collections::{BTreeMap, VecDeque};
 use ts_rs::TS;
 
@@ -23,16 +24,24 @@ pub enum ServerMessage {
   /// Sent only to the client that asked, in reply to `RenderScene`
   SceneRendered(RenderedScene),
   /// Sent only to the client that asked, when the scene in a `RenderScene` can't be rendered
-  SceneRenderFailed { error: String },
+  SceneRenderFailed {
+    error: String,
+  },
   /// Sent only to the client that asked, when the scene in a `RenderClip` can't be rendered
-  SceneClipFailed { id: u32, error: String },
+  SceneClipFailed {
+    id: u32,
+    error: String,
+  },
 }
 
 #[derive(Clone, Default, serde::Serialize, TS)]
 pub struct Snapshot {
   /// `None` until `AppTracer::init` has been called
   pub hardware: Option<Hardware>,
-  pub groups: Vec<SystemGroup>,
+  /// Every running system, in spawn order. Each names its parent, which together make the system tree.
+  pub systems: Vec<System>,
+  /// Every state that's set, by type name, as JSON. States have one value for the whole machine.
+  pub states: BTreeMap<&'static str, serde_json::Value>,
   pub switches: BTreeMap<usize, SwitchState>,
   pub drivers: BTreeMap<usize, DriverState>,
   /// Modes drivers were re-configured with while running, by id. A driver not here is in its defined mode.
@@ -47,6 +56,8 @@ pub struct Snapshot {
   pub displays: Vec<DisplayView>,
   /// Operator configs in use, by key, with their current values
   pub configs: BTreeMap<&'static str, ConfigView>,
+  /// Whether a game starting clears the history, as `ClientMessage::ClearHistory` does
+  pub clear_on_game_start: bool,
   #[ts(as = "Vec<TraceRecord>")]
   pub log: VecDeque<TraceRecord>, // oldest first
 }
@@ -70,35 +81,78 @@ pub struct GameState {
 pub struct RoutineProgress {
   pub routine: &'static str,
   pub origin: u64,
-  /// The system whose step is in progress
-  pub current: Option<RoutineParticipant>,
-}
-
-#[derive(Clone, serde::Serialize, TS)]
-pub struct RoutineParticipant {
-  pub id: u64,
-  /// Copies of a system in several groups share an id
-  pub group: GroupId,
-}
-
-#[derive(Clone, serde::Serialize, TS)]
-pub struct SystemGroup {
-  pub id: GroupId,
-  /// For display; names don't need to be unique
-  pub name: &'static str,
-  pub active: bool,
-  pub systems: Vec<System>,
-  /// The states set in this group, by type name, as JSON. Reading one falls back to the root's when it isn't here.
-  pub states: BTreeMap<&'static str, serde_json::Value>,
+  /// The id of the system whose step is in progress
+  pub current: Option<u64>,
 }
 
 #[derive(Clone, serde::Serialize, TS)]
 pub struct System {
   pub id: u64,
+  /// Its type's name, or a `Group`'s own name
   pub name: &'static str,
+  /// The system that spawned it, or `None` at the top level
+  pub parent: Option<u64>,
   pub active: bool,
+  /// Whether it's a `Group`, named by its own name rather than its type's
+  pub group: bool,
+  /// What it's for, when it says
+  pub description: Option<&'static str>,
+  /// When it was spawned, in milliseconds since the console started (as `TraceRecord::at_ms`)
+  pub spawned_ms: u64,
+  /// When it was despawned. A despawned system is kept for a while, to look back at.
+  pub despawned_ms: Option<u64>,
+  /// What happened to it, oldest first. Only the latest are kept.
+  #[ts(as = "Vec<HistoryEntry>")]
+  pub history: VecDeque<HistoryEntry>,
   #[ts(as = "Vec<TraceRecord>")]
   pub recent_events: VecDeque<TraceRecord>,
+  /// The latest statuses it reported (`SystemStatusReported`), oldest first. The last is its status now.
+  #[ts(as = "Vec<TraceRecord>")]
+  pub recent_statuses: VecDeque<TraceRecord>,
+}
+
+/// Something that happened to a system, for its history. Times are in milliseconds since the console started.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, TS)]
+#[serde(tag = "kind")]
+pub enum HistoryEntry {
+  Spawned {
+    at_ms: u64,
+    active: bool,
+  },
+  ActivityChanged {
+    at_ms: u64,
+    seq: u64,
+    active: bool,
+    cause: ActivityCause,
+  },
+  /// It held a routine's step, from `started_ms` until `ended_ms`, or still does
+  RoutineStep {
+    routine: &'static str,
+    started_ms: u64,
+    ended_ms: Option<u64>,
+    ending: Option<StepEnding>,
+  },
+  /// It emitted an event, by type name. `seq` finds it in the log.
+  Emitted {
+    at_ms: u64,
+    seq: u64,
+    event: &'static str,
+  },
+  /// It reported its status. `seq` finds it in `System::recent_statuses` or the log.
+  StatusReported {
+    at_ms: u64,
+    seq: u64,
+  },
+  /// Its history from before was cleared (`ConsoleHub::clear_history`). It was `active` then, and a routine step it
+  /// still held is kept.
+  HistoryCleared {
+    at_ms: u64,
+    active: bool,
+  },
+  Despawned {
+    at_ms: u64,
+    cause: DespawnCause,
+  },
 }
 
 #[derive(Clone, serde::Serialize, TS)]
@@ -334,6 +388,11 @@ pub enum ClientMessage {
     key: String,
     value: ConfigDomainValue,
   },
+  /// Clear the log, systems' histories, and despawned systems, keeping what's current. Every client is sent a new
+  /// `Init`.
+  ClearHistory,
+  /// Have a game starting clear the history, or not
+  SetClearOnGameStart { clear: bool },
   /// Ask for every counter's total. Answered with `MetricTotals`.
   QueryMetrics,
   /// Render a moment of a scene. Answered with `SceneRendered` or `SceneRenderFailed`.
@@ -367,7 +426,12 @@ pub enum ClientMessage {
   },
   /// Play a sound from the content folder on the machine, as a scene preview reaches the start of one of its sounds. Nothing plays if
   /// the app has no sound system.
-  PlaySound { sound: String, volume: f32, skip: f32, length: Option<f32> },
+  PlaySound {
+    sound: String,
+    volume: f32,
+    skip: f32,
+    length: Option<f32>,
+  },
 }
 
 /// A scene to render, as either of the forms the console edits it in
@@ -402,4 +466,3 @@ pub struct SceneSize {
   /// Points down a display the machine doesn't have, and the height of a light layer on a plane it doesn't have
   pub height: usize,
 }
-

@@ -173,13 +173,20 @@ impl AutoPlungerSystem {
 
   fn is_ball_resting(&self, ctx: &SystemContext) -> bool {
     ctx
-      .systems.get::<PlungeLaneSystem>()
+      .systems
+      .get::<PlungeLaneSystem>()
       .map(|lane| lane.is_ball_resting(ctx.into()))
       .unwrap_or(false)
   }
 }
 
 impl System for AutoPlungerSystem {
+  fn description() -> Option<&'static str> {
+    Some(
+      "Fires the autoplunger to launch the ball, when ball management asks or the player presses launch",
+    )
+  }
+
   fn on_spawn(&mut self, ctx: &SystemContext) {
     self.handle = ctx.handle();
   }

@@ -26,11 +26,16 @@ static TROUGH_SWITCHES: LazyLock<Vec<SwitchDefinition>> = LazyLock::new(|| {
     .map(|name| TroughSystem::switch_definition(name).build())
     .collect()
 });
-static START_SWITCH: LazyLock<SwitchDefinition> = LazyLock::new(|| SwitchDefinition::new(START).build());
-static COIN_LEFT_SWITCH: LazyLock<SwitchDefinition> = LazyLock::new(|| SwitchDefinition::new(COIN_LEFT).build());
-static COIN_RIGHT_SWITCH: LazyLock<SwitchDefinition> = LazyLock::new(|| SwitchDefinition::new(COIN_RIGHT).build());
-static EJECT_COIL: LazyLock<DriverDefinition> = LazyLock::new(|| TroughSystem::eject_coil_definition(EJECT).build());
-static START_LAMP_DRIVER: LazyLock<DriverDefinition> = LazyLock::new(|| DriverDefinition::light(START_LAMP).build());
+static START_SWITCH: LazyLock<SwitchDefinition> =
+  LazyLock::new(|| SwitchDefinition::new(START).build());
+static COIN_LEFT_SWITCH: LazyLock<SwitchDefinition> =
+  LazyLock::new(|| SwitchDefinition::new(COIN_LEFT).build());
+static COIN_RIGHT_SWITCH: LazyLock<SwitchDefinition> =
+  LazyLock::new(|| SwitchDefinition::new(COIN_RIGHT).build());
+static EJECT_COIL: LazyLock<DriverDefinition> =
+  LazyLock::new(|| TroughSystem::eject_coil_definition(EJECT).build());
+static START_LAMP_DRIVER: LazyLock<DriverDefinition> =
+  LazyLock::new(|| DriverDefinition::light(START_LAMP).build());
 
 fn app(max_players: u8, credits: CreditsSystem) -> App {
   let mut board = IoBoard::custom(16, 8, DriverVoltage::High)
@@ -52,7 +57,11 @@ fn app(max_players: u8, credits: CreditsSystem) -> App {
   });
   app
     .system(StandardBallManager::builder(TROUGH, EJECT).build())
-    .system(CompetitiveGame::new(max_players, vec![], SwitchQ::name(START)))
+    .system(CompetitiveGame::new(
+      max_players,
+      vec![],
+      SwitchQ::name(START),
+    ))
     .system(LayeredLightManager::new())
     .system(credits)
     .system(GameOverDisplay)
@@ -96,7 +105,9 @@ fn start(max_players: u8) -> Scenario {
 }
 
 fn start_with(max_players: u8, credits: CreditsSystem) -> Scenario {
-  Scenario::new(app(max_players, credits)).closed(TROUGH).start()
+  Scenario::new(app(max_players, credits))
+    .closed(TROUGH)
+    .start()
 }
 
 /// Free play off, as on a machine taking coins
@@ -107,7 +118,12 @@ fn coin_op(max_players: u8) -> Scenario {
 }
 
 fn credits(s: &mut Scenario) -> u8 {
-  s.act(|ctx| ctx.systems.with::<CreditsSystem, _>(|credits| credits.credits()).unwrap())
+  s.act(|ctx| {
+    ctx
+      .systems
+      .with::<CreditsSystem, _>(|credits| credits.credits())
+      .unwrap()
+  })
 }
 
 /// Whether the start lamp lights at any point over a few flashes
@@ -195,7 +211,11 @@ fn a_press_while_a_game_cant_be_started_spends_no_credit() {
 
   s.hit_switch(START);
   assert!(added.take().is_empty());
-  assert_eq!(credits(&mut s), 2, "only the game that was played spent one");
+  assert_eq!(
+    credits(&mut s),
+    2,
+    "only the game that was played spent one"
+  );
 }
 
 #[test]
@@ -253,7 +273,11 @@ fn credits_stop_at_the_limit() {
   }
   assert_eq!(credits(&mut s), 2);
 
-  s.act(|ctx| ctx.systems.with::<CreditsSystem, _>(|credits| credits.add_credits(5, ctx.into())));
+  s.act(|ctx| {
+    ctx
+      .systems
+      .with::<CreditsSystem, _>(|credits| credits.add_credits(5, ctx.into()))
+  });
   assert_eq!(credits(&mut s), 2);
 }
 
@@ -263,8 +287,16 @@ fn credits_can_be_added_up_to_the_limit() {
   s.act(|ctx| ctx.config.set(&configs::MAX_CREDITS, 3));
   let changes = s.record(|e: &CreditsChanged| e.credits);
 
-  s.act(|ctx| ctx.systems.with::<CreditsSystem, _>(|credits| credits.add_credits(2, ctx.into())));
-  s.act(|ctx| ctx.systems.with::<CreditsSystem, _>(|credits| credits.add_credits(2, ctx.into())));
+  s.act(|ctx| {
+    ctx
+      .systems
+      .with::<CreditsSystem, _>(|credits| credits.add_credits(2, ctx.into()))
+  });
+  s.act(|ctx| {
+    ctx
+      .systems
+      .with::<CreditsSystem, _>(|credits| credits.add_credits(2, ctx.into()))
+  });
   assert_eq!(changes.take(), [2, 3]);
 }
 

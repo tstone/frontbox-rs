@@ -37,8 +37,8 @@
 //!
 //!   App::new(BootConfig {
 //!       platform: Platform::Neuron {
-//!         io_net_port_path: "/dev/ttyACM0",
-//!         exp_port_path: "/dev/ttyACM1",
+//!         io_net_port_path: "/dev/serial/by-id/usb-FAST_Pinball_Neuron_Controller_<serial>-if00",
+//!         exp_port_path: "/dev/serial/by-id/usb-FAST_Pinball_Neuron_Controller_<serial>-if02",
 //!         watchdog_interval: Duration::from_millis(1500),
 //!       },
 //!       // see section on hardware for how these are configured
@@ -78,8 +78,7 @@ pub(crate) use event_box::*;
 pub(crate) use groups_ext::GroupsExt;
 pub use run_loop::Synchronize;
 
-use crate::prelude::{GroupId, SystemGroup};
+use crate::systems::{GroupId, SystemGroup};
 
-pub const ROOT_GROUP: GroupId = GroupId::ROOT;
-pub const ROOT_GROUP_NAME: &'static str = "root";
+pub(crate) const ROOT_GROUP: GroupId = GroupId::ROOT;
 pub(crate) type Groups = IndexMap<GroupId, SystemGroup>;

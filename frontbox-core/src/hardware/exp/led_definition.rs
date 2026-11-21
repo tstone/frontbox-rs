@@ -119,14 +119,25 @@ mod tests {
 
   #[test]
   fn test_channels() {
-    assert_eq!(LedDefinition::single("rgb").build().children()[0].channels, LedChannels::Rgb);
-    let def = LedDefinition::single("flasher").channel(LedChannel::G).build();
+    assert_eq!(
+      LedDefinition::single("rgb").build().children()[0].channels,
+      LedChannels::Rgb
+    );
+    let def = LedDefinition::single("flasher")
+      .channel(LedChannel::G)
+      .build();
     assert_eq!(def.children()[0].channels, LedChannels::One(LedChannel::G));
   }
 
   #[test]
   fn test_address_count() {
-    assert_eq!(LedDefinition::multi("strip").count(5).build().address_count(), 5);
+    assert_eq!(
+      LedDefinition::multi("strip")
+        .count(5)
+        .build()
+        .address_count(),
+      5
+    );
     let def = LedDefinition::channels()
       .r(LedDefinition::single("a"))
       .g(LedDefinition::single("b"))

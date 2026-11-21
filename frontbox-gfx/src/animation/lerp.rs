@@ -114,11 +114,16 @@ impl Lerp for image::RgbaImage {
       let transparent = image::Rgba([0, 0, 0, 0]);
       self
         .enumerate_pixels()
-        .flat_map(|(x, y, pixel)| pixel.interpolate(other.get_pixel_checked(x, y).unwrap_or(&transparent), t).0)
+        .flat_map(|(x, y, pixel)| {
+          pixel
+            .interpolate(other.get_pixel_checked(x, y).unwrap_or(&transparent), t)
+            .0
+        })
         .collect()
     };
 
-    image::RgbaImage::from_raw(width, height, data).expect("interpolated buffer matches the image size")
+    image::RgbaImage::from_raw(width, height, data)
+      .expect("interpolated buffer matches the image size")
   }
 }
 
@@ -129,7 +134,10 @@ mod tests {
   #[test]
   fn test_large_integers_keep_precision() {
     assert_eq!(100_000_000u32.interpolate(&100_000_010, 0.5), 100_000_005);
-    assert_eq!(1_000_000_000_000i64.interpolate(&1_000_000_000_010, 0.5), 1_000_000_000_005);
+    assert_eq!(
+      1_000_000_000_000i64.interpolate(&1_000_000_000_010, 0.5),
+      1_000_000_000_005
+    );
     assert_eq!(u64::MAX.interpolate(&(u64::MAX - 10), 0.5), u64::MAX - 5);
   }
 
@@ -169,19 +177,28 @@ mod tests {
 
   #[test]
   fn test_arrays() {
-    assert_eq!([0u8, 100, 200].interpolate(&[100, 0, 200], 0.5), [50, 50, 200]);
+    assert_eq!(
+      [0u8, 100, 200].interpolate(&[100, 0, 200], 0.5),
+      [50, 50, 200]
+    );
     assert_eq!([0.0f32; 0].interpolate(&[], 0.5), [0.0f32; 0]);
   }
 
   #[test]
   fn test_vecs() {
-    assert_eq!(vec![0.0f32, 10.0].interpolate(&vec![10.0, 0.0], 0.5), vec![5.0, 5.0]);
+    assert_eq!(
+      vec![0.0f32, 10.0].interpolate(&vec![10.0, 0.0], 0.5),
+      vec![5.0, 5.0]
+    );
   }
 
   #[test]
   fn test_vecs_keep_the_length_of_self() {
     // elements other doesn't have hold their value
-    assert_eq!(vec![0.0f32, 10.0].interpolate(&vec![10.0], 0.5), vec![5.0, 10.0]);
+    assert_eq!(
+      vec![0.0f32, 10.0].interpolate(&vec![10.0], 0.5),
+      vec![5.0, 10.0]
+    );
     // extra elements in other are ignored
     assert_eq!(vec![0.0f32].interpolate(&vec![10.0, 20.0], 0.5), vec![5.0]);
   }
@@ -189,9 +206,15 @@ mod tests {
   #[test]
   fn test_tuples() {
     assert_eq!((0.0f32,).interpolate(&(10.0,), 0.5), (5.0,));
-    assert_eq!((0u8, 0.0f64, 'a').interpolate(&(100, 1.0, 'e'), 0.5), (50, 0.5, 'c'));
+    assert_eq!(
+      (0u8, 0.0f64, 'a').interpolate(&(100, 1.0, 'e'), 0.5),
+      (50, 0.5, 'c')
+    );
     // nested
-    assert_eq!(((0u8, 0u8), [0u8; 2]).interpolate(&((10, 20), [30, 40]), 0.5), ((5, 10), [15, 20]));
+    assert_eq!(
+      ((0u8, 0u8), [0u8; 2]).interpolate(&((10, 20), [30, 40]), 0.5),
+      ((5, 10), [15, 20])
+    );
   }
 
   #[test]

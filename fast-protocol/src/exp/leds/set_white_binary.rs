@@ -64,8 +64,11 @@ mod tests {
 
   #[test]
   fn test_describe() {
-    let result =
-      SetWhiteBinaryCommand::new(ExpAddress::new(0x48, Some(1)), vec![(0x01, 0x00), (0x2B, 0xFF)]).describe();
+    let result = SetWhiteBinaryCommand::new(
+      ExpAddress::new(0x48, Some(1)),
+      vec![(0x01, 0x00), (0x2B, 0xFF)],
+    )
+    .describe();
     assert_eq!(result, "RZ@481:0100,2BFF");
   }
 }

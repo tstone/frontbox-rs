@@ -49,7 +49,10 @@ impl Font {
   /// is the font's em, as a font size is elsewhere, so a pixel font made on an 8-pixel em is one scene unit to a pixel
   /// at 8. A line is as tall as from the font's ascent to its descent, whatever the letters in it.
   pub fn measure(&self, text: &str, size: f32, kerning: f32) -> Vec2 {
-    Vec2::new(self.placed(text, size, kerning).1, self.ascent(size) + self.descent(size))
+    Vec2::new(
+      self.placed(text, size, kerning).1,
+      self.ascent(size) + self.descent(size),
+    )
   }
 
   /// Whether the font has a glyph for `c`
@@ -74,16 +77,38 @@ impl Font {
 
   /// Lines of text at `size`, with `kerning` added between characters, each from the start of its baseline, in local
   /// space with y down
-  pub(crate) fn outline<'a>(&self, lines: impl IntoIterator<Item = (&'a str, Vec2)>, size: f32, kerning: f32) -> TextOutline {
+  pub(crate) fn outline<'a>(
+    &self,
+    lines: impl IntoIterator<Item = (&'a str, Vec2)>,
+    size: f32,
+    kerning: f32,
+  ) -> TextOutline {
     let scale = self.scale(size);
-    let placed = lines.into_iter().flat_map(|(text, start)| self.placed(text, size, kerning).0.into_iter().map(move |(id, pen)| (id, start + Vec2::X * pen)));
+    let placed = lines.into_iter().flat_map(|(text, start)| {
+      self
+        .placed(text, size, kerning)
+        .0
+        .into_iter()
+        .map(move |(id, pen)| (id, start + Vec2::X * pen))
+    });
     let glyphs = placed
       .filter_map(|(id, pen)| {
         let to_local = |point: Point| pen + Vec2::new(point.x, -point.y) * scale;
-        let edges: Vec<[Vec2; 2]> = self.face.outline(id)?.curves.iter().flat_map(|curve| flattened(curve, to_local)).collect();
-        let bounds = edges.iter().flatten().fold(None, |bounds: Option<Bounds>, p| {
-          Some(bounds.map_or(Bounds::new(*p, *p), |bounds| Bounds::new(bounds.min.min(*p), bounds.max.max(*p))))
-        })?;
+        let edges: Vec<[Vec2; 2]> = self
+          .face
+          .outline(id)?
+          .curves
+          .iter()
+          .flat_map(|curve| flattened(curve, to_local))
+          .collect();
+        let bounds = edges
+          .iter()
+          .flatten()
+          .fold(None, |bounds: Option<Bounds>, p| {
+            Some(bounds.map_or(Bounds::new(*p, *p), |bounds| {
+              Bounds::new(bounds.min.min(*p), bounds.max.max(*p))
+            }))
+          })?;
         Some(Glyph { bounds, edges })
       })
       .collect();
@@ -100,7 +125,9 @@ impl Font {
       .chars()
       .map(|c| {
         let id = self.face.glyph_id(c);
-        pen += before.map_or(0.0, |before| self.face.kern_unscaled(before, id) * scale + kerning);
+        pen += before.map_or(0.0, |before| {
+          self.face.kern_unscaled(before, id) * scale + kerning
+        });
         let at = pen;
         pen += self.face.h_advance_unscaled(id) * scale;
         before = Some(id);
@@ -113,7 +140,11 @@ impl Font {
   /// Font units to scene units at `size`. 0 for a size of 0 or less.
   fn scale(&self, size: f32) -> f32 {
     let em = em(&self.face);
-    if size > 0.0 && em > 0.0 { size / em } else { 0.0 }
+    if size > 0.0 && em > 0.0 {
+      size / em
+    } else {
+      0.0
+    }
   }
 }
 
@@ -146,8 +177,12 @@ impl TextOutline {
   /// Signed distance to the edge of the nearest glyph (negative inside any of them), with its gradient
   pub(crate) fn distance(&self, p: Vec2) -> (f32, Vec2) {
     // the glyph whose box is nearest first, so the others can mostly be skipped
-    let first = (0..self.glyphs.len()).min_by(|a, b| box_distance(&self.glyphs[*a].bounds, p).total_cmp(&box_distance(&self.glyphs[*b].bounds, p)));
-    let order = first.into_iter().chain((0..self.glyphs.len()).filter(|index| Some(*index) != first));
+    let first = (0..self.glyphs.len()).min_by(|a, b| {
+      box_distance(&self.glyphs[*a].bounds, p).total_cmp(&box_distance(&self.glyphs[*b].bounds, p))
+    });
+    let order = first
+      .into_iter()
+      .chain((0..self.glyphs.len()).filter(|index| Some(*index) != first));
     let mut nearest = (f32::INFINITY, Vec2::X);
     for glyph in order.map(|index| &self.glyphs[index]) {
       // a glyph is inside its box, so it can't be any nearer than the box
@@ -166,7 +201,9 @@ impl TextOutline {
   pub(crate) fn extent(&self) -> Bounds {
     let mut boxes = self.glyphs.iter().map(|glyph| glyph.bounds);
     let first = boxes.next().unwrap_or(Bounds::new(Vec2::ZERO, Vec2::ZERO));
-    boxes.fold(first, |all, bounds| Bounds::new(all.min.min(bounds.min), all.max.max(bounds.max)))
+    boxes.fold(first, |all, bounds| {
+      Bounds::new(all.min.min(bounds.min), all.max.max(bounds.max))
+    })
   }
 }
 
@@ -186,7 +223,11 @@ impl Glyph {
     for &[a, b] in &self.edges {
       let edge = b - a;
       let length = edge.length_squared();
-      let along = if length > 0.0 { ((p - a).dot(edge) / length).clamp(0.0, 1.0) } else { 0.0 };
+      let along = if length > 0.0 {
+        ((p - a).dot(edge) / length).clamp(0.0, 1.0)
+      } else {
+        0.0
+      };
       let offset = p - (a + edge * along);
       if offset.length_squared() < nearest.length_squared() {
         nearest = offset;
@@ -199,26 +240,38 @@ impl Glyph {
       }
     }
     let sign = if winding == 0 { 1.0 } else { -1.0 };
-    (sign * nearest.length(), sign * nearest.normalize_or(Vec2::X))
+    (
+      sign * nearest.length(),
+      sign * nearest.normalize_or(Vec2::X),
+    )
   }
 }
 
 /// A font's em in font units
 fn em(face: &FontArc) -> f32 {
   // a font without an em is very old, and its height is the nearest thing to one
-  face.units_per_em().unwrap_or_else(|| face.height_unscaled())
+  face
+    .units_per_em()
+    .unwrap_or_else(|| face.height_unscaled())
 }
 
 /// The fewest pixels to an em that every point and advance of a font's printable characters lands on whole pixels of,
 /// if there are any. Control characters, and the box for a missing one, are often left off the grid.
 fn pixel_size(face: &FontArc) -> Option<f32> {
   let em = em(face);
-  let mut ids: Vec<GlyphId> = face.codepoint_ids().filter(|(_, c)| !c.is_control()).map(|(id, _)| id).collect();
+  let mut ids: Vec<GlyphId> = face
+    .codepoint_ids()
+    .filter(|(_, c)| !c.is_control())
+    .map(|(id, _)| id)
+    .collect();
   ids.sort_unstable_by_key(|id| id.0);
   ids.dedup();
   let ids = ids.into_iter();
   let mut lengths: Vec<f32> = ids.clone().map(|id| face.h_advance_unscaled(id)).collect();
-  for curve in ids.filter_map(|id| face.outline(id)).flat_map(|outline| outline.curves) {
+  for curve in ids
+    .filter_map(|id| face.outline(id))
+    .flat_map(|outline| outline.curves)
+  {
     let points = match curve {
       OutlineCurve::Line(a, b) => vec![a, b],
       OutlineCurve::Quad(a, b, c) => vec![a, b, c],
@@ -231,9 +284,13 @@ fn pixel_size(face: &FontArc) -> Option<f32> {
   }
   let on_grid = |pixels: f32| {
     let pixel = em / pixels;
-    lengths.iter().all(|length| (length / pixel - (length / pixel).round()).abs() <= PIXEL_TOLERANCE)
+    lengths
+      .iter()
+      .all(|length| (length / pixel - (length / pixel).round()).abs() <= PIXEL_TOLERANCE)
   };
-  (1..=MAX_PIXELS_PER_EM).map(|pixels| pixels as f32).find(|pixels| on_grid(*pixels))
+  (1..=MAX_PIXELS_PER_EM)
+    .map(|pixels| pixels as f32)
+    .find(|pixels| on_grid(*pixels))
 }
 
 /// A curve of a glyph's outline as line segments, each point moved into local space by `to_local`
@@ -243,11 +300,18 @@ fn flattened(curve: &OutlineCurve, to_local: impl Fn(Point) -> Vec2) -> Vec<[Vec
     // a quadratic is the cubic with its controls two thirds of the way to the quadratic's
     OutlineCurve::Quad(a, control, b) => {
       let (a, control, b) = (to_local(a), to_local(control), to_local(b));
-      [a, a + (control - a) * 2.0 / 3.0, b + (control - b) * 2.0 / 3.0, b]
+      [
+        a,
+        a + (control - a) * 2.0 / 3.0,
+        b + (control - b) * 2.0 / 3.0,
+        b,
+      ]
     }
     OutlineCurve::Cubic(a, b, c, d) => [to_local(a), to_local(b), to_local(c), to_local(d)],
   };
-  let along: Vec<Vec2> = (0..=CURVE_STEPS).map(|step| cubic(points, step as f32 / CURVE_STEPS as f32)).collect();
+  let along: Vec<Vec2> = (0..=CURVE_STEPS)
+    .map(|step| cubic(points, step as f32 / CURVE_STEPS as f32))
+    .collect();
   along.windows(2).map(|pair| [pair[0], pair[1]]).collect()
 }
 
@@ -292,8 +356,14 @@ pub(crate) mod tests {
     let extent = font.outline([("HI", start)], 16.0, 0.0).extent();
     // the letters sit on the baseline, within the ascent above it
     assert!((extent.max.y - start.y).abs() < 1e-4, "{extent:?}");
-    assert!(extent.min.y >= start.y - font.ascent(16.0) - 1e-3, "{extent:?}");
-    assert!(extent.min.x >= start.x && extent.max.x <= start.x + font.measure("HI", 16.0, 0.0).x + 1e-3, "{extent:?}");
+    assert!(
+      extent.min.y >= start.y - font.ascent(16.0) - 1e-3,
+      "{extent:?}"
+    );
+    assert!(
+      extent.min.x >= start.x && extent.max.x <= start.x + font.measure("HI", 16.0, 0.0).x + 1e-3,
+      "{extent:?}"
+    );
   }
 
   #[test]

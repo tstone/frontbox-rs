@@ -1,4 +1,4 @@
-//! The namespaces on [`SystemContext`]: `ctx.systems`, `ctx.groups`, `ctx.timers`, `ctx.routines`, and `ctx.states`.
+//! The namespaces on [`SystemContext`]: `ctx.systems`, `ctx.timers`, `ctx.routines`, and `ctx.states`.
 //! Each acts as the system the context was given to.
 
 use std::any::{TypeId, type_name};
@@ -18,7 +18,8 @@ impl<'a> ContextSystems<'a> {
     Self { handle, ctx }
   }
 
-  /// Lookup a system by type: the nearest instance matches firs
+  /// Lookup a system by type: among this system's children, then its siblings, then its parent's, and so on up to the
+  /// top level. The nearest instance matches first.
   pub fn get<T: System + 'static>(&self) -> Option<RefMut<'_, T>> {
     self.ctx.get::<T>(self.handle)
   }
@@ -72,56 +73,51 @@ impl<'a> ContextSystems<'a> {
     }
   }
 
-  /// Start up a new system in this system's group
-  pub fn spawn(&self, system: impl Into<SpawnableSystemContainer>) {
-    self.ctx.spawn_system(self.handle.group, system);
+  /// Lookup a system by type among the children of the system with id `parent`, such as one player's [`Group`]. For
+  /// a system that isn't a sibling or ancestor of the caller's, which a plain [`get`](Self::get) doesn't reach.
+  pub fn get_in<T: System + 'static>(&self, parent: u64) -> Option<RefMut<'_, T>> {
+    self.ctx.get_in::<T>(parent, self.handle)
   }
 
-  /// Despawn self and immediately spawn a new system in its place
+  /// The name of the running system with this id, such as `frontbox_pinball::scoop::ScoopSystem<lotko::Lower>`.
+  /// Readable while that system is in use.
+  pub fn name_of(&self, id: u64) -> Option<&'static str> {
+    self.ctx.name_of(id)
+  }
+
+  /// Start up a new system as a child of this one. Returns its id, which [`activate`](Self::activate),
+  /// [`deactivate`](Self::deactivate), and [`despawn`](Self::despawn) take. The child is despawned along with this
+  /// system, and is only active while this system is.
+  pub fn spawn(&self, system: impl Into<SpawnableSystemContainer>) -> u64 {
+    self.ctx.spawn_child(self.handle, system)
+  }
+
+  /// Let a child of this system run again, after [`deactivate`](Self::deactivate). Its own children follow. Does
+  /// nothing for a system that isn't this one's child, logging a warning.
+  pub fn activate(&self, child: u64) {
+    self.ctx.set_child_active(self.handle, child, true);
+  }
+
+  /// Stop a child of this system, and its children, until [`activate`](Self::activate)d again. Does nothing for a
+  /// system that isn't this one's child, logging a warning.
+  pub fn deactivate(&self, child: u64) {
+    self.ctx.set_child_active(self.handle, child, false);
+  }
+
+  /// Despawn a child of this system, and its children. Does nothing for a system that isn't this one's child, logging a
+  /// warning.
+  pub fn despawn(&self, child: u64) {
+    self.ctx.despawn_child(self.handle, child);
+  }
+
+  /// Despawn self, and its children, and immediately spawn a new system in its place
   pub fn replace_self(&self, system: impl Into<SpawnableSystemContainer>) {
     self.ctx.replace_self(self.handle, system);
   }
 
+  /// Despawn self, and its children
   pub fn despawn_self(&self) {
     self.ctx.despawn_self(self.handle);
-  }
-}
-
-/// `ctx.groups`: spawn and manage [system groups](mod@crate::systems::system_group)
-#[derive(Clone, Copy)]
-pub struct ContextGroups<'a> {
-  handle: SystemHandle,
-  ctx: ServiceContext<'a>,
-}
-
-impl<'a> ContextGroups<'a> {
-  pub(crate) fn new(handle: SystemHandle, ctx: ServiceContext<'a>) -> Self {
-    Self { handle, ctx }
-  }
-
-  /// Spawn a group of systems, owned by this system. The returned handle is what activating, deactivating, and
-  /// despawning the group take. The group is despawned along with this system.
-  pub fn spawn(
-    &self,
-    group_name: &'static str,
-    systems: Vec<ChildSystemContainer>,
-    active: bool,
-  ) -> GroupHandle {
-    self
-      .ctx
-      .spawn_system_group(self.handle, group_name, systems, active)
-  }
-
-  pub fn despawn(&self, group: GroupHandle) {
-    self.ctx.despawn_system_group(group);
-  }
-
-  pub fn activate(&self, group: &GroupHandle) {
-    self.ctx.activate_system_group(group);
-  }
-
-  pub fn deactivate(&self, group: &GroupHandle) {
-    self.ctx.deactivate_system_group(group);
   }
 }
 
@@ -185,13 +181,13 @@ impl<'a> ContextRoutines<'a> {
   }
 
   /// Start a routine. [`RoutineStarted<E>`] is broadcast before the first participant is handed the routine, and
-  /// [`RoutineCompleted<E>`] once the last one is done. Participants are looked up from this system's group. Returns
-  /// its id, for [`cancel`](Self::cancel). Short for `ctx.routines.new(routine).start()`.
+  /// [`RoutineCompleted<E>`] once the last one is done. Every active system of each listed type takes a step, wherever
+  /// it is. Returns its id, for [`cancel`](Self::cancel). Short for `ctx.routines.new(routine).start()`.
   pub fn start<E: Event + Clone>(&self, routine: E) -> u64 {
     self.new(routine).start()
   }
 
-  /// A routine to start, for setting how it runs (e.g. [`RoutineBuilder::group`], [`RoutineBuilder::interval`])
+  /// A routine to start, for setting how it runs (e.g. [`RoutineBuilder::interval`])
   /// before calling [`RoutineBuilder::start`]
   pub fn new<E: Event + Clone>(&self, routine: E) -> RoutineBuilder<'a> {
     RoutineBuilder::new(self.handle, self.ctx, routine)
@@ -240,10 +236,9 @@ impl<'a> ContextStates<'a> {
     Self { handle, ctx }
   }
 
-  /// The current value of the state `S`: as set in this system's group, then the root. The default if neither has set
-  /// it.
+  /// The current value of the state `S`, or its default if it hasn't been set
   pub fn get<S: State>(&self) -> S {
-    self.ctx.state::<S>(self.handle)
+    self.ctx.state::<S>()
   }
 
   /// Whether the state `S` currently has the value `value`
@@ -256,7 +251,7 @@ impl<'a> ContextStates<'a> {
     values.contains(&self.get::<S>())
   }
 
-  /// Set the state `S` in this system's group. The first system to set a state owns it, and only the owner can set it
+  /// Set the state `S`, for the whole machine. The first system to set a state owns it, and only the owner can set it
   /// again. Takes effect in queue order, so this system reads the old value until then; [`StateChanged<S>`] is
   /// broadcast once it's set, unless the value didn't change.
   pub fn set<S: State>(&self, value: S) {

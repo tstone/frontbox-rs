@@ -14,8 +14,8 @@ pub const DEFAULT_LIGHT_RADIUS: f32 = 0.1;
 /// # use std::path::PathBuf;
 /// let app = App::new(BootConfig {
 ///   platform: Platform::Neuron {
-///     io_net_port_path: "/dev/ttyACM0",
-///     exp_port_path: "/dev/ttyACM1",
+///     io_net_port_path: "/dev/serial/by-id/usb-FAST_Pinball_Neuron_Controller_<serial>-if00",
+///     exp_port_path: "/dev/serial/by-id/usb-FAST_Pinball_Neuron_Controller_<serial>-if02",
 ///     watchdog_interval: Duration::from_millis(1500),
 ///   },
 ///   io_network: IoNetwork::new(vec![ /* boards defined here */ ]),
@@ -83,9 +83,11 @@ impl Default for BootConfig {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Platform {
   Neuron {
-    /// Port path for the I/O network. Will be something like `/dev/ttyACM0` on unix/linux/mac or something like "COM3" on Windows
+    /// Port path for the I/O network: on Linux its `/dev/serial/by-id/...-if00` name, which stays the same across replugs
+    /// where `/dev/ttyACM0` may not, or something like "COM3" on Windows. See the crate README for finding it.
     io_net_port_path: &'static str,
-    /// Port path for the EXP network. Will be something like `/dev/ttyACM0` on unix/linux/mac or something like "COM5" on Windows
+    /// Port path for the EXP network: on Linux its `/dev/serial/by-id/...-if02` name, or something like "COM4" on
+    /// Windows. See the crate README for finding it.
     exp_port_path: &'static str,
     /// FAST hardware requires the software to "ping" it every so often as a safety mechanism, signalling that the software is
     /// still running and in control. This is the interval at which that happens (watchdog). This should be set high enough not

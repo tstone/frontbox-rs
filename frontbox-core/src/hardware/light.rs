@@ -1,4 +1,3 @@
-
 use crate::prelude::*;
 
 /// A light source: anything that turns on, addressed by where it's wired ([`LightAddress`])

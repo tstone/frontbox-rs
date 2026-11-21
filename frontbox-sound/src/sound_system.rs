@@ -57,7 +57,9 @@ impl SoundSystem {
   }
 
   pub fn preload(&mut self, name: impl Into<SoundKey>, path: impl AsRef<Path>) {
-    let _ = self.tx.send(PreloadPath(name.into(), path.as_ref().to_path_buf()));
+    let _ = self
+      .tx
+      .send(PreloadPath(name.into(), path.as_ref().to_path_buf()));
   }
 
   pub fn preload_embedded(&mut self, name: impl Into<SoundKey>, bytes: &'static [u8]) {
@@ -120,7 +122,12 @@ impl SoundSystem {
     if self.load_from_content(name) {
       let length = length.map(|length| Duration::from_secs_f32(length.max(0.0)));
       let skip = Duration::from_secs_f32(skip.max(0.0));
-      let _ = self.tx.send(PlaySfx(SoundKey::Owned(name.to_string()), volume, skip, length));
+      let _ = self.tx.send(PlaySfx(
+        SoundKey::Owned(name.to_string()),
+        volume,
+        skip,
+        length,
+      ));
     }
   }
 
@@ -133,7 +140,9 @@ impl SoundSystem {
     match self.content.sound_path(name) {
       Ok(path) => {
         self.content_loaded.insert(name.to_string());
-        let _ = self.tx.send(PreloadPath(SoundKey::Owned(name.to_string()), path));
+        let _ = self
+          .tx
+          .send(PreloadPath(SoundKey::Owned(name.to_string()), path));
         true
       }
       Err(err) => {
@@ -155,7 +164,14 @@ impl SoundSystem {
       // a playback first seen here has just started, so plays what's right at its top
       let after = self.playback_times.insert(id, moment.time);
       let sounds = playback.scene().sounds_started(&moment, after);
-      started.extend(sounds.into_iter().map(|start| (start.sound.to_string(), start.volume, start.skip, start.length)));
+      started.extend(sounds.into_iter().map(|start| {
+        (
+          start.sound.to_string(),
+          start.volume,
+          start.skip,
+          start.length,
+        )
+      }));
     }
     // a paused playback keeps its time, so it doesn't play its top again when it's shown again
     self.playback_times.retain(|id, _| scenes.contains(*id));
@@ -168,8 +184,15 @@ impl SoundSystem {
 }
 
 impl System for SoundSystem {
+  fn description() -> Option<&'static str> {
+    Some("Plays music, sound effects, and callouts")
+  }
+
   fn on_spawn(&mut self, ctx: &SystemContext) {
-    self.content = ctx.content_path.clone().map_or_else(Content::without_folder, Content::new);
+    self.content = ctx
+      .content_path
+      .clone()
+      .map_or_else(Content::without_folder, Content::new);
     let Some((rx, completed_tx)) = self.manager_channels.take() else {
       return;
     };
@@ -180,7 +203,25 @@ impl System for SoundSystem {
       PlatformKind::Hardware => OutputDevice::Named(self.device_name),
       PlatformKind::Virtual => OutputDevice::SystemDefault,
     };
-    tokio::spawn(SoundManager::new(device, rx, completed_tx).run());
+    // On a thread of its own, as decoding a sound blocks for a while, a long track for seconds. On the app's runtime
+    // that would hold up other tasks on the same worker, such as the machine's, which keeps the watchdog fed.
+    let manager = SoundManager::new(device, rx, completed_tx);
+    let started = std::thread::Builder::new()
+      .name("sound".into())
+      .spawn(move || {
+        match tokio::runtime::Builder::new_current_thread()
+          .enable_time()
+          .build()
+        {
+          Ok(runtime) => runtime.block_on(manager.run()),
+          Err(e) => {
+            log::error!(target: "frontbox::sound", "🔇 Couldn't start the sound runtime: {}", e)
+          }
+        }
+      });
+    if let Err(e) = started {
+      log::error!(target: "frontbox::sound", "🔇 Couldn't start the sound thread: {}", e);
+    }
   }
 
   fn on_tick(&mut self, _delta: Duration, ctx: &SystemContext) {
@@ -192,7 +233,13 @@ impl System for SoundSystem {
   }
 
   fn on_event(&mut self, event: &dyn Event, _ctx: &SystemContext) {
-    if let Some(SoundPreviewRequested { sound, volume, skip, length }) = event.downcast_ref::<SoundPreviewRequested>() {
+    if let Some(SoundPreviewRequested {
+      sound,
+      volume,
+      skip,
+      length,
+    }) = event.downcast_ref::<SoundPreviewRequested>()
+    {
       self.play_from_content(sound, *volume, *skip, *length);
     }
   }
@@ -206,7 +253,6 @@ mod tests {
 
   use super::*;
 
-
   /// A system as if spawned, with the manager's end of its channel to see what it asks for
   fn context() -> (TestContext, mpsc::UnboundedReceiver<SoundManagerMessage>) {
     let mut sound = SoundSystem::new("test");
@@ -219,19 +265,33 @@ mod tests {
   }
 
   fn scene(cycle: Cycle) -> PlayableScene {
-    let layers = vec![SoundLayer::new("sounds/a.wav").volume(0.5).into(), SoundLayer::new("sounds/b.wav").volume(0.5).start(0.5).skip(0.125).end(0.75).into()];
+    let layers = vec![
+      SoundLayer::new("sounds/a.wav").volume(0.5).into(),
+      SoundLayer::new("sounds/b.wav")
+        .volume(0.5)
+        .start(0.5)
+        .skip(0.125)
+        .end(0.75)
+        .into(),
+    ];
     Scene::new(layers).timing(Timing::new(1.0, cycle)).into()
   }
 
   /// Moves scenes on by `delta`, then has the sound system look at them
   fn tick(context: &TestContext, delta: Duration) {
     let ctx = context.sys_ctx();
-    ctx.systems.with::<SceneSystem, _>(|scenes| scenes.on_tick(delta, &ctx));
-    ctx.systems.with::<SoundSystem, _>(|sound| sound.on_tick(delta, &ctx));
+    ctx
+      .systems
+      .with::<SceneSystem, _>(|scenes| scenes.on_tick(delta, &ctx));
+    ctx
+      .systems
+      .with::<SoundSystem, _>(|sound| sound.on_tick(delta, &ctx));
   }
 
   /// The sounds asked to play since the last call
-  fn played(rx: &mut mpsc::UnboundedReceiver<SoundManagerMessage>) -> Vec<(String, f32, Duration, Option<Duration>)> {
+  fn played(
+    rx: &mut mpsc::UnboundedReceiver<SoundManagerMessage>,
+  ) -> Vec<(String, f32, Duration, Option<Duration>)> {
     let mut played = Vec::new();
     while let Ok(message) = rx.try_recv() {
       if let PlaySfx(key, volume, skip, length) = message {
@@ -248,11 +308,23 @@ mod tests {
     player.start(&context.sys_ctx());
 
     tick(&context, Duration::ZERO);
-    assert_eq!(played(&mut rx), [("sounds/a.wav".to_string(), 0.5, Duration::ZERO, None)]);
+    assert_eq!(
+      played(&mut rx),
+      [("sounds/a.wav".to_string(), 0.5, Duration::ZERO, None)]
+    );
     tick(&context, Duration::from_millis(400));
     assert!(played(&mut rx).is_empty());
     tick(&context, Duration::from_millis(200));
-    assert_eq!(played(&mut rx), [("sounds/b.wav".to_string(), 0.5, Duration::from_millis(125), Some(Duration::from_millis(250)))], "from partway in, cut off at its end");
+    assert_eq!(
+      played(&mut rx),
+      [(
+        "sounds/b.wav".to_string(),
+        0.5,
+        Duration::from_millis(125),
+        Some(Duration::from_millis(250))
+      )],
+      "from partway in, cut off at its end"
+    );
   }
 
   #[test]
@@ -262,8 +334,19 @@ mod tests {
     for _ in 0..25 {
       tick(&context, Duration::from_millis(100));
     }
-    let sounds: Vec<_> = played(&mut rx).into_iter().map(|(sound, ..)| sound).collect();
-    assert_eq!(sounds, ["sounds/a.wav", "sounds/b.wav", "sounds/a.wav", "sounds/b.wav"]);
+    let sounds: Vec<_> = played(&mut rx)
+      .into_iter()
+      .map(|(sound, ..)| sound)
+      .collect();
+    assert_eq!(
+      sounds,
+      [
+        "sounds/a.wav",
+        "sounds/b.wav",
+        "sounds/a.wav",
+        "sounds/b.wav"
+      ]
+    );
   }
 
   #[test]
@@ -274,9 +357,13 @@ mod tests {
     played(&mut rx);
 
     let ctx = context.sys_ctx();
-    ctx.systems.with::<SceneSystem, _>(|scenes| scenes.on_event(&SystemDeactivated::new(ctx.id(), ROOT_GROUP), &ctx));
+    ctx
+      .systems
+      .with::<SceneSystem, _>(|scenes| scenes.on_event(&SystemDeactivated::new(ctx.id()), &ctx));
     tick(&context, Duration::from_millis(500));
-    ctx.systems.with::<SceneSystem, _>(|scenes| scenes.on_event(&SystemReactivated::new(ctx.id(), ROOT_GROUP), &ctx));
+    ctx
+      .systems
+      .with::<SceneSystem, _>(|scenes| scenes.on_event(&SystemReactivated::new(ctx.id()), &ctx));
     tick(&context, Duration::ZERO);
     assert!(played(&mut rx).is_empty());
   }
@@ -285,12 +372,18 @@ mod tests {
   fn a_sound_is_loaded_from_the_content_folder_once() {
     let (context, mut rx) = context();
     for _ in 0..2 {
-      context.sys_ctx().systems.with::<SoundSystem, _>(|sound| sound.play_from_content("sounds/a.wav", 1.0, 0.0, None));
+      context
+        .sys_ctx()
+        .systems
+        .with::<SoundSystem, _>(|sound| sound.play_from_content("sounds/a.wav", 1.0, 0.0, None));
     }
     let mut loads = 0;
     while let Ok(message) = rx.try_recv() {
       if let PreloadPath(key, path) = message {
-        assert_eq!((key.as_ref(), path), ("sounds/a.wav", Path::new("content").join("sounds/a.wav")));
+        assert_eq!(
+          (key.as_ref(), path),
+          ("sounds/a.wav", Path::new("content").join("sounds/a.wav"))
+        );
         loads += 1;
       }
     }
@@ -301,8 +394,23 @@ mod tests {
   fn a_console_preview_plays_its_sound() {
     let (context, mut rx) = context();
     let ctx = context.sys_ctx();
-    let preview = SoundPreviewRequested { sound: "sounds/b.wav".into(), volume: 0.25, skip: 0.25, length: Some(0.5) };
-    ctx.systems.with::<SoundSystem, _>(|sound| sound.on_event(&preview, &ctx));
-    assert_eq!(played(&mut rx), [("sounds/b.wav".to_string(), 0.25, Duration::from_millis(250), Some(Duration::from_millis(500)))]);
+    let preview = SoundPreviewRequested {
+      sound: "sounds/b.wav".into(),
+      volume: 0.25,
+      skip: 0.25,
+      length: Some(0.5),
+    };
+    ctx
+      .systems
+      .with::<SoundSystem, _>(|sound| sound.on_event(&preview, &ctx));
+    assert_eq!(
+      played(&mut rx),
+      [(
+        "sounds/b.wav".to_string(),
+        0.25,
+        Duration::from_millis(250),
+        Some(Duration::from_millis(500))
+      )]
+    );
   }
 }

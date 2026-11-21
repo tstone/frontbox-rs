@@ -5,7 +5,9 @@ use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::color::RgbaColor;
-use crate::scene::{LayerFrame, Graph, Layer, Variables, Sample, SceneError, ShapePose, Surface, Timing, Visits};
+use crate::scene::{
+  Graph, Layer, LayerFrame, Sample, SceneError, ShapePose, Surface, Timing, Variables, Visits,
+};
 
 /// Layers sharing variables and timing, as a scene file holds them but with nothing about hardware
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -23,7 +25,11 @@ impl Composition {
     if let Some(timing) = self.timing {
       timing.check()?;
     }
-    self.layers.iter().enumerate().try_for_each(|(index, layer)| layer.check(index, self.timing))
+    self
+      .layers
+      .iter()
+      .enumerate()
+      .try_for_each(|(index, layer)| layer.check(index, self.timing))
   }
 
   pub fn image_names(&self) -> impl Iterator<Item = &str> {
@@ -35,7 +41,9 @@ impl Composition {
   }
 
   pub fn cycle_time(&self, cycle: u32, time: f32) -> f32 {
-    self.timing.map_or(time, |timing| timing.cycle_time(cycle, time))
+    self
+      .timing
+      .map_or(time, |timing| timing.cycle_time(cycle, time))
   }
 
   pub fn middle_cycle_time(&self, time: f32) -> f32 {
@@ -66,11 +74,20 @@ impl DerefMut for Scene {
 
 impl Scene {
   pub fn new(surface: Surface, layers: Vec<Layer>) -> Self {
-    Self::with_composition(surface, Composition { layers, ..Default::default() })
+    Self::with_composition(
+      surface,
+      Composition {
+        layers,
+        ..Default::default()
+      },
+    )
   }
 
   pub fn with_composition(surface: Surface, composition: Composition) -> Self {
-    Self { surface, composition }
+    Self {
+      surface,
+      composition,
+    }
   }
 
   pub fn timing(mut self, timing: Timing) -> Self {
@@ -86,41 +103,76 @@ impl Scene {
 
   /// The frame as this scene sees it: on its surface, with its timing and defaults
   fn seen<'a>(&'a self, frame: &LayerFrame<'a>) -> LayerFrame<'a> {
-    LayerFrame { surface: self.surface, timing: self.timing, defaults: &self.variables, ..*frame }
+    LayerFrame {
+      surface: self.surface,
+      timing: self.timing,
+      defaults: &self.variables,
+      ..*frame
+    }
   }
 
   /// Every layer drawn bottom to top
   pub fn sample(&self, at: &Sample, frame: &LayerFrame) -> Rgba<u8> {
     let frame = self.seen(frame);
-    self.layers.iter().fold(Rgba([0, 0, 0, 0]), |below, layer| layer.sample(at, &frame).composite_over(below))
+    self.layers.iter().fold(Rgba([0, 0, 0, 0]), |below, layer| {
+      layer.sample(at, &frame).composite_over(below)
+    })
   }
 
   /// Each layer's visits, for [`Self::sample_visited`]
   pub fn visits(&self, graph: &Graph, frame: &LayerFrame) -> Vec<Visits> {
     let frame = self.seen(frame);
-    self.layers.iter().map(|layer| layer.visits(graph, &frame)).collect()
+    self
+      .layers
+      .iter()
+      .map(|layer| layer.visits(graph, &frame))
+      .collect()
   }
 
   /// [`Self::sample`] with each layer's visits
   pub fn sample_visited(&self, at: &Sample, frame: &LayerFrame, visits: &[Visits]) -> Rgba<u8> {
     let frame = self.seen(frame);
-    self.layers.iter().zip(visits).fold(Rgba([0, 0, 0, 0]), |below, (layer, visits)| {
-      layer.sample(at, &LayerFrame { visits: Some(visits), ..frame }).composite_over(below)
-    })
+    self
+      .layers
+      .iter()
+      .zip(visits)
+      .fold(Rgba([0, 0, 0, 0]), |below, (layer, visits)| {
+        layer
+          .sample(
+            at,
+            &LayerFrame {
+              visits: Some(visits),
+              ..frame
+            },
+          )
+          .composite_over(below)
+      })
   }
 
   pub fn outlines(&self, frame: &LayerFrame) -> Vec<Vec<Vec<Vec2>>> {
     let frame = self.seen(frame);
-    self.layers.iter().map(|layer| layer.outline(&frame)).collect()
+    self
+      .layers
+      .iter()
+      .map(|layer| layer.outline(&frame))
+      .collect()
   }
 
   pub fn mask_outlines(&self, frame: &LayerFrame) -> Vec<Vec<Vec<Vec2>>> {
     let frame = self.seen(frame);
-    self.layers.iter().map(|layer| layer.mask_outline(&frame)).collect()
+    self
+      .layers
+      .iter()
+      .map(|layer| layer.mask_outline(&frame))
+      .collect()
   }
 
   pub fn mask_poses(&self, frame: &LayerFrame) -> Vec<Option<ShapePose>> {
     let frame = self.seen(frame);
-    self.layers.iter().map(|layer| layer.mask_pose(&frame)).collect()
+    self
+      .layers
+      .iter()
+      .map(|layer| layer.mask_pose(&frame))
+      .collect()
   }
 }

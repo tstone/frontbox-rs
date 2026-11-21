@@ -271,7 +271,10 @@ mod test {
   fn a_long_tick_fires_every_interval_that_came_due() {
     let mut timer = TimerAccumulator::new(Timer::Forever(ms(100)), events![Signal, Signal2]);
 
-    assert_eq!(advance(&mut timer, ms(350)), ["Signal", "Signal2", "Signal"]);
+    assert_eq!(
+      advance(&mut timer, ms(350)),
+      ["Signal", "Signal2", "Signal"]
+    );
     // the 50ms left over carries into the next interval
     assert_eq!(advance(&mut timer, ms(50)), ["Signal2"]);
   }

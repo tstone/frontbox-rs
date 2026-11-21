@@ -6,9 +6,10 @@ use tokio::sync::mpsc;
 
 use crate::app::GroupsExt;
 use crate::prelude::app_message::{AppMessage, ShutdownScope};
+use crate::prelude::app_tracer::TraceEvent;
 use crate::prelude::*;
 use crate::systems::routine::RoutineBuilder;
-use crate::systems::state::{StoredState, nearest_state};
+use crate::systems::state::{StoredState, state};
 
 /// If you're building a service (a System which can be called by other Systems) and you need context, you want to accept _this_ type, then create a system context scoped to your service.
 ///
@@ -54,7 +55,7 @@ pub struct ServiceContext<'a> {
 }
 
 impl<'a> ServiceContext<'a> {
-  pub fn new(
+  pub(crate) fn new(
     base: &'a AppState,
     groups: &'a Groups,
     app_sender: &'a mpsc::UnboundedSender<AppMessage>,
@@ -84,16 +85,44 @@ impl<'a> ServiceContext<'a> {
       .ok();
   }
 
+  /// Send something to tracers only
+  pub(crate) fn trace(&self, event: TraceEvent) {
+    self.app_sender.send(AppMessage::TracerEvent(event)).ok();
+  }
+
   // -- Systems access --
 
-  /// Lookup a system by type
+  /// Lookup a system by type, the nearest to `handle` first: its children, then its siblings, and so on up to the top
+  /// level
   pub(crate) fn get<T: System + 'static>(&self, handle: SystemHandle) -> Option<RefMut<'_, T>> {
-    // Priority is given to nearness: siblings are searched first, then global
-    let found = self.groups.nearest(handle.group, TypeId::of::<T>())?;
+    let found = self.groups.nearest(handle, TypeId::of::<T>())?;
+    self.borrow_found::<T>(found, handle)
+  }
+
+  /// Lookup a system by type among the children of the system with id `parent`
+  pub(crate) fn get_in<T: System + 'static>(
+    &self,
+    parent: u64,
+    handle: SystemHandle,
+  ) -> Option<RefMut<'_, T>> {
+    let parent = self.groups.find(parent)?;
+    let found = self.groups.child_of_type(parent, TypeId::of::<T>())?;
+    self.borrow_found::<T>(found, handle)
+  }
+
+  pub(crate) fn name_of(&self, id: u64) -> Option<&'static str> {
+    self.groups.system_name(self.groups.find(id)?)
+  }
+
+  fn borrow_found<T: System + 'static>(
+    &self,
+    found: SystemHandle,
+    caller: SystemHandle,
+  ) -> Option<RefMut<'_, T>> {
     match self.groups.get(&found.group)?.borrow_by_type::<T>() {
       Ok(system) => system,
       Err(busy) => {
-        let caller = self.groups.system_name(handle).unwrap_or("<unknown>");
+        let caller = self.groups.system_name(caller).unwrap_or("<unknown>");
         log::error!(target: "frontbox::events", "{caller} looked up {}, which is already in use: {busy}", busy.name);
         None
       }
@@ -102,7 +131,7 @@ impl<'a> ServiceContext<'a> {
 
   /// Lookup a system by a trait it provides (see [`System::provides`]): the nearest one matches first
   pub(crate) fn get_dyn<I: ?Sized + 'static>(&self, handle: SystemHandle) -> Option<RefMut<'_, I>> {
-    let found = self.groups.nearest(handle.group, TypeId::of::<I>())?;
+    let found = self.groups.nearest(handle, TypeId::of::<I>())?;
     match self.groups.get(&found.group)?.borrow_by_trait::<I>() {
       Ok(system) => system,
       Err(busy) => {
@@ -139,11 +168,35 @@ impl<'a> ServiceContext<'a> {
 
   // --- System management ---
 
-  /// Start up a new system in `group`. Systems spawn into their own group through `SystemContext::spawn_system`.
-  pub(crate) fn spawn_system(&self, group: GroupId, system: impl Into<SpawnableSystemContainer>) {
+  /// Start up a new system as a child of `parent`, returning its id. Only reachable through `SystemContext`, so the
+  /// parent is always the caller.
+  pub(crate) fn spawn_child(
+    &self,
+    parent: SystemHandle,
+    system: impl Into<SpawnableSystemContainer>,
+  ) -> u64 {
+    let system = system.into();
+    let id = system.id();
     let _ = self
       .app_sender
-      .send(AppMessage::SpawnSystem(group, system.into()));
+      .send(AppMessage::SpawnSystem(parent, system));
+    id
+  }
+
+  /// The parent lets its child run, or stops it
+  pub(crate) fn set_child_active(&self, parent: SystemHandle, child: u64, active: bool) {
+    let message = if active {
+      AppMessage::ActivateChild(parent, child)
+    } else {
+      AppMessage::DeactivateChild(parent, child)
+    };
+    let _ = self.app_sender.send(message);
+  }
+
+  pub(crate) fn despawn_child(&self, parent: SystemHandle, child: u64) {
+    let _ = self
+      .app_sender
+      .send(AppMessage::DespawnChild(parent, child));
   }
 
   /// Despawn self and immediately spawn a new system in its place
@@ -161,45 +214,14 @@ impl<'a> ServiceContext<'a> {
     let _ = self.app_sender.send(AppMessage::DespawnSystem(handle));
   }
 
-  /// Spawn a group owned by `owner`. Only reachable through `SystemContext`, so the owner is always the caller.
-  pub(crate) fn spawn_system_group(
-    &self,
-    owner: SystemHandle,
-    group_name: &'static str,
-    systems: Vec<ChildSystemContainer>,
-    active: bool,
-  ) -> GroupHandle {
-    let group = GroupHandle::new(GroupId::next(), group_name);
-    let _ = self.app_sender.send(AppMessage::SpawnSystemGroup(
-      owner,
-      group.clone(),
-      systems,
-      active,
-    ));
-    group
-  }
-
-  pub fn despawn_system_group(&self, group: GroupHandle) {
-    let _ = self
-      .app_sender
-      .send(AppMessage::DespawnSystemGroup(group.id()));
-  }
-
-  pub fn activate_system_group(&self, group: &GroupHandle) {
-    let _ = self
-      .app_sender
-      .send(AppMessage::ActivateSystemGroup(group.id()));
-  }
-
-  pub fn deactivate_system_group(&self, group: &GroupHandle) {
-    let _ = self
-      .app_sender
-      .send(AppMessage::DeactivateSystemGroup(group.id()));
-  }
-
   // --- Timers ---
 
-  pub(crate) fn timer(&self, handle: SystemHandle, signal: impl Event + 'static, timer: Timer) -> u64 {
+  pub(crate) fn timer(
+    &self,
+    handle: SystemHandle,
+    signal: impl Event + 'static,
+    timer: Timer,
+  ) -> u64 {
     let timer_id = SystemContainer::next_id();
     self
       .app_sender
@@ -228,7 +250,9 @@ impl<'a> ServiceContext<'a> {
   }
 
   pub(crate) fn cancel_timer(&self, handle: SystemHandle, timer_id: u64) {
-    let _ = self.app_sender.send(AppMessage::CancelTimer(handle, timer_id));
+    let _ = self
+      .app_sender
+      .send(AppMessage::CancelTimer(handle, timer_id));
   }
 
   pub(crate) fn set_timer_paused(&self, handle: SystemHandle, timer_id: u64, paused: bool) {
@@ -257,10 +281,9 @@ impl<'a> ServiceContext<'a> {
 
   // --- States ---
 
-  /// The current value of the state `S`, as seen from `handle`'s group: as set in that group, then the root. The
-  /// default if neither has set it. See [states](crate::systems::state)
-  pub(crate) fn state<S: State>(&self, handle: SystemHandle) -> S {
-    nearest_state::<S>(self.groups, handle.group)
+  /// The current value of the state `S`, or its default if it hasn't been set. See [states](crate::systems::state)
+  pub(crate) fn state<S: State>(&self) -> S {
+    state::<S>(self.groups)
   }
 
   /// Setting needs the caller's identity, since the first to set a state owns it, so it's only public through

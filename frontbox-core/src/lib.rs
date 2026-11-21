@@ -40,8 +40,9 @@ pub mod prelude {
   pub use crate::hardware_defs;
   pub use crate::location::*;
   pub use crate::machine::{
-    BootSwitchMisalignmentFound, ContextDrivers, ContextLights, ContextSwitches, MachineDisconnected, MachineReconnected,
-    MachineSystem, MisalignedSwitch, SwitchClosed, SwitchOpened,
+    BootSwitchMisalignmentFound, ContextDrivers, ContextLights, ContextSwitches,
+    MachineDisconnected, MachineReconnected, MachineSystem, MisalignedSwitch, SwitchClosed,
+    SwitchOpened,
   };
   pub use crate::metrics::{
     Counter, GameId, MetricDefinition, MetricKind, MetricsCollection, Sample, SampleType,

@@ -1,8 +1,8 @@
 use frontbox_core::prelude::*;
 
 use crate::ball_management::{
-  BallEnteredPlay, BallEnteredPlungeLane, BallExitedPlungeLane, BallManagerExt, BallsExitedPlay, BallsHeldChanged,
-  MaxBallsInPlayChanged,
+  BallEnteredPlay, BallEnteredPlungeLane, BallExitedPlungeLane, BallManagerExt, BallsExitedPlay,
+  BallsHeldChanged, MaxBallsInPlayChanged,
 };
 use crate::cradle::Cradle;
 
@@ -127,6 +127,12 @@ impl CradleSystem {
 }
 
 impl System for CradleSystem {
+  fn description() -> Option<&'static str> {
+    Some(
+      "Notes when the player is holding the ball on a flipper, so timers can pause while they do",
+    )
+  }
+
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if let Some(SwitchClosed { switch }) = event.downcast_ref::<SwitchClosed>() {
       if self.playfield_switches.matches(switch) {

@@ -109,10 +109,45 @@ async fn open(port_path: &'static str) -> Result<SerialInterface, BootError> {
     .await
     .map_err(|e| BootError::OpenFailed {
       port: port_path.into(),
-      reason: e.to_string(),
+      reason: format!("{e}. {}", serial_ports_present()),
     })?;
   log::info!(target: "frontbox::machine::boot", "🥾 Opened port {}", port_path);
   Ok(port)
+}
+
+/// The serial ports there are, and the device each `/dev/serial/by-id` name links to, for when a port won't open. USB
+/// serial devices are numbered in the order they appear, so after a replug the machine may be under another number.
+fn serial_ports_present() -> String {
+  let mut ports: Vec<String> = std::fs::read_dir("/dev")
+    .into_iter()
+    .flatten()
+    .flatten()
+    .map(|entry| entry.file_name().to_string_lossy().into_owned())
+    .filter(|name| name.starts_with("ttyACM") || name.starts_with("ttyUSB"))
+    .map(|name| format!("/dev/{name}"))
+    .collect();
+  ports.sort();
+  let mut by_id: Vec<String> = std::fs::read_dir("/dev/serial/by-id")
+    .into_iter()
+    .flatten()
+    .flatten()
+    .map(|entry| {
+      let path = entry.path();
+      match std::fs::read_link(&path) {
+        Ok(target) => format!("{} -> {}", path.display(), target.display()),
+        Err(_) => path.display().to_string(),
+      }
+    })
+    .collect();
+  by_id.sort();
+  match (ports.is_empty(), by_id.is_empty()) {
+    (true, true) => "No USB serial ports found".into(),
+    _ => format!(
+      "Serial ports: [{}], by id: [{}]",
+      ports.join(", "),
+      by_id.join(", ")
+    ),
+  }
 }
 
 /// Check the mainboard is ready to respond (ID), then set it up for this platform (CH). Run it with

@@ -9,14 +9,23 @@ import type { PlaneView } from "./PlaneView";
 import type { Rgb } from "./Rgb";
 import type { RoutineProgress } from "./RoutineProgress";
 import type { SwitchState } from "./SwitchState";
-import type { SystemGroup } from "./SystemGroup";
+import type { System } from "./System";
 import type { TraceRecord } from "./TraceRecord";
+import type { JsonValue } from "./serde_json/JsonValue";
 
 export type Snapshot = { 
 /**
  * `None` until `AppTracer::init` has been called
  */
-hardware: Hardware | null, groups: Array<SystemGroup>, switches: { [key in number]: SwitchState }, drivers: { [key in number]: DriverState }, 
+hardware: Hardware | null, 
+/**
+ * Every running system, in spawn order. Each names its parent, which together make the system tree.
+ */
+systems: Array<System>, 
+/**
+ * Every state that's set, by type name, as JSON. States have one value for the whole machine.
+ */
+states: { [key in string]: JsonValue }, switches: { [key in number]: SwitchState }, drivers: { [key in number]: DriverState }, 
 /**
  * Modes drivers were re-configured with while running, by id. A driver not here is in its defined mode.
  */
@@ -36,4 +45,8 @@ displays: Array<DisplayView>,
 /**
  * Operator configs in use, by key, with their current values
  */
-configs: { [key in string]: ConfigView }, log: Array<TraceRecord>, };
+configs: { [key in string]: ConfigView }, 
+/**
+ * Whether a game starting clears the history, as `ClientMessage::ClearHistory` does
+ */
+clear_on_game_start: boolean, log: Array<TraceRecord>, };

@@ -26,7 +26,9 @@ pub fn load<T: DeserializeOwned>(source: &str) -> Result<T, FormatError> {
 /// Serializes a scene to RON text
 pub fn save<T: Serialize>(scene: &T) -> Result<String, FormatError> {
   let config = PrettyConfig::new().indentor("  ").extensions(extensions());
-  options().to_string_pretty(scene, config).map_err(FormatError::Write)
+  options()
+    .to_string_pretty(scene, config)
+    .map_err(FormatError::Write)
 }
 
 /// Errors if `version` is newer than this build can read
@@ -50,7 +52,9 @@ pub enum FormatError {
   Read(ron::error::SpannedError),
   Write(ron::Error),
   /// The file was written by a newer version of the format
-  Newer { version: u32 },
+  Newer {
+    version: u32,
+  },
   /// Parsed, but failed validation
   Invalid(String),
 }
@@ -61,7 +65,10 @@ impl fmt::Display for FormatError {
       Self::Read(e) => write!(f, "couldn't read scene: {e}"),
       Self::Write(e) => write!(f, "couldn't write scene: {e}"),
       Self::Newer { version } => {
-        write!(f, "scene is format version {version}, but this build reads up to {VERSION}")
+        write!(
+          f,
+          "scene is format version {version}, but this build reads up to {VERSION}"
+        )
       }
       Self::Invalid(e) => write!(f, "{e}"),
     }
@@ -83,7 +90,9 @@ mod tests {
 
   fn load(source: &str) -> Result<Scene, FormatError> {
     let composition: Composition = super::load(source)?;
-    composition.check().map_err(|err| FormatError::Invalid(err.to_string()))?;
+    composition
+      .check()
+      .map_err(|err| FormatError::Invalid(err.to_string()))?;
     Ok(Scene::with_composition(Surface::Area, composition))
   }
 
@@ -96,9 +105,22 @@ mod tests {
     [0.0, 0.5, 1.0, 1.5]
       .into_iter()
       .flat_map(|time| {
-        let frame = LayerFrame { time, playback_seed: 0, variables: &variables, assets: Assets::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None, timing: None, defaults: no_variables(), values: no_values() };
+        let frame = LayerFrame {
+          time,
+          playback_seed: 0,
+          variables: &variables,
+          assets: Assets::none(),
+          size: Vec2::new(100.0, 50.0),
+          surface: scene.surface,
+          visits: None,
+          timing: None,
+          defaults: no_variables(),
+          values: no_values(),
+        };
         (0..20)
-          .flat_map(|y| (0..40).map(move |x| Sample::new(Vec2::new(x as f32 * 2.5, y as f32 * 2.5), 1.0)))
+          .flat_map(|y| {
+            (0..40).map(move |x| Sample::new(Vec2::new(x as f32 * 2.5, y as f32 * 2.5), 1.0))
+          })
           .map(move |s| scene.sample(&s, &frame))
       })
       .collect()
@@ -106,8 +128,12 @@ mod tests {
 
   /// Uses every type in a definition
   fn everything() -> Scene {
-    let mut scene = Scene::new(Surface::Area, vec![
-        Layer::new(Fill::new(FillNode::Solid(Prop::Variable("background".into())))),
+    let mut scene = Scene::new(
+      Surface::Area,
+      vec![
+        Layer::new(Fill::new(FillNode::Solid(Prop::Variable(
+          "background".into(),
+        )))),
         Layer::new(
           Fill::new(FillNode::Gradient {
             stops: vec![
@@ -133,78 +159,189 @@ mod tests {
               cycle: Cycle::Forever,
             }))),
         ),
-        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 0, 255, 255])).into())).adjust(ColorAdjust::Opacity(
-          Prop::Modulated(Modulated { envelope: Envelope::new(EnvelopeCurve::new(Curve::EaseIn).reversed()).decay(EnvelopeCurve::new(Curve::BounceOut)), spread: Spread::Float(0.5, 1.0), rate: 2.0, phase: Box::new(Prop::Variable("offset".into())) }),
-        )))
-        .region(Shape::new(
-          ShapeNode::Polygon {
-            points: vec![Vec2::new(0.0, 0.0).into(), Vec2::new(20.0, 0.0).into(), Vec2::new(10.0, 15.0).into()],
-          },
-        )),
-        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 0, 0, 255])).into()))).region(
-          Shape::new(ShapeNode::circle(3.0))
-            .adjust(ShapeAdjust::Stroke { width: 1.0.into(), align: StrokeAlign::Outside, color: None })
-            .adjust(ShapeAdjust::Stroke { width: 0.25.into(), align: StrokeAlign::Centered, color: Some(Color(Rgba([255, 255, 255, 255])).into()) }),
-        ),
-        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 255, 0, 255])).into())))
-          .hidden()
-          .region(
-            Shape::new(ShapeNode::Star { radius: 20.0.into(), legs: 1.0.into(), leg_width: 0.4.into() })
-              .transform(Transform::Bulge(0.1.into()))
-              .transform(Transform::Revolve { center: Vec2::new(0.0, -20.0).into(), angle: 360.0.into(), count: 4.0.into() })
-              .transform(Transform::Translate(Vec2::new(50.0, 25.0).into())),
+        Layer::new(
+          Fill::new(FillNode::Solid(Color(Rgba([0, 0, 255, 255])).into())).adjust(
+            ColorAdjust::Opacity(Prop::Modulated(Modulated {
+              envelope: Envelope::new(EnvelopeCurve::new(Curve::EaseIn).reversed())
+                .decay(EnvelopeCurve::new(Curve::BounceOut)),
+              spread: Spread::Float(0.5, 1.0),
+              rate: 2.0,
+              phase: Box::new(Prop::Variable("offset".into())),
+            })),
           ),
-        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 255, 255])).into()))).region(
-          Shape::new(ShapeNode::Diamond { width: 10.0.into(), height: 20.0.into() })
-            .transform(Transform::Bulge((-0.1).into()))
-            .transform(Transform::Round(1.0.into()))
-            .transform(Transform::Shift { amount: (-0.4).into(), rotation: 0.0.into() })
-            .transform(Transform::Mirror { center: Vec2::new(8.0, 0.0).into(), rotation: 20.0.into() })
-            .transform(Transform::Translate(Vec2::new(30.0, 25.0).into())),
-        ),
-        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 128, 255, 255])).into()))).region(
-          Shape::new(ShapeNode::Star { radius: 15.0.into(), legs: 5.0.into(), leg_width: 0.4.into() })
-            .transform(Transform::Bisect { center: Vec2::new(0.0, 2.0).into(), rotation: 45.0.into() })
-            .transform(Transform::Translate(Vec2::new(70.0, 25.0).into())),
-        ),
-        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 255, 255, 255])).into()))).region(
-          Shape::new(ShapeNode::text("BALL 1", "fonts/pixel.ttf", 8.0, Vec2::new(30.0, 8.0)))
-            .transform(Transform::Translate(Vec2::new(19.0, 9.0).into())),
-        ),
-        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([128, 255, 0, 255])).into())))
-          .region(Shape::new(ShapeNode::Chevron { width: 20.0.into(), height: 10.0.into(), notch: 0.4.into() }).transform(Transform::Translate(Vec2::new(50.0, 40.0).into()))),
-        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 0, 255])).into()))).region(
-          Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
-            Shape::new(ShapeNode::circle(15.0)).transform(Transform::Translate(Vec2::new(50.0, 25.0).into())),
-            Prop::Keyframes(Keyframes::new(vec![Key::new(0.25, 0.0, Curve::Linear), Key::new(1.0, 1.0, Curve::Linear)], Cycle::Once)),
-          )))),
-        ),
-        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 255, 255])).into()))).region(
-          Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
-            Shape::new(ShapeNode::Polyline { points: vec![Vec2::ZERO.into(), Vec2::new(10.0, 0.0).into()] }),
-            Prop::Variable("lap".into()),
-          )))),
-        ),
-        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 0, 255, 255])).into()))).region(
-          Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
-            Shape::new(ShapeNode::Bezier {
-              points: vec![
-                BezierPoint { point: Vec2::ZERO.into(), handle: Vec2::new(0.0, 5.0).into() },
-                BezierPoint { point: Vec2::new(10.0, 0.0).into(), handle: Vec2::new(0.0, -5.0).into() },
-              ],
+        )
+        .region(Shape::new(ShapeNode::Polygon {
+          points: vec![
+            Vec2::new(0.0, 0.0).into(),
+            Vec2::new(20.0, 0.0).into(),
+            Vec2::new(10.0, 15.0).into(),
+          ],
+        })),
+        Layer::new(Fill::new(FillNode::Solid(
+          Color(Rgba([255, 0, 0, 255])).into(),
+        )))
+        .region(
+          Shape::new(ShapeNode::circle(3.0))
+            .adjust(ShapeAdjust::Stroke {
+              width: 1.0.into(),
+              align: StrokeAlign::Outside,
+              color: None,
+            })
+            .adjust(ShapeAdjust::Stroke {
+              width: 0.25.into(),
+              align: StrokeAlign::Centered,
+              color: Some(Color(Rgba([255, 255, 255, 255])).into()),
             }),
-            Prop::Modulated(Modulated { envelope: Envelope::new(EnvelopeCurve::new(Curve::Linear)).decay(EnvelopeCurve::new(Curve::Linear).reversed()), spread: Spread::Float(0.0, 1.0), rate: 1.0, phase: Box::new(0.0.into()) }),
-          )))),
         ),
-    ]);
-    scene.variables.insert("background".into(), Value::Color(Color(Rgba([16, 16, 16, 255]))));
+        Layer::new(Fill::new(FillNode::Solid(
+          Color(Rgba([255, 255, 0, 255])).into(),
+        )))
+        .hidden()
+        .region(
+          Shape::new(ShapeNode::Star {
+            radius: 20.0.into(),
+            legs: 1.0.into(),
+            leg_width: 0.4.into(),
+          })
+          .transform(Transform::Bulge(0.1.into()))
+          .transform(Transform::Revolve {
+            center: Vec2::new(0.0, -20.0).into(),
+            angle: 360.0.into(),
+            count: 4.0.into(),
+          })
+          .transform(Transform::Translate(Vec2::new(50.0, 25.0).into())),
+        ),
+        Layer::new(Fill::new(FillNode::Solid(
+          Color(Rgba([0, 255, 255, 255])).into(),
+        )))
+        .region(
+          Shape::new(ShapeNode::Diamond {
+            width: 10.0.into(),
+            height: 20.0.into(),
+          })
+          .transform(Transform::Bulge((-0.1).into()))
+          .transform(Transform::Round(1.0.into()))
+          .transform(Transform::Shift {
+            amount: (-0.4).into(),
+            rotation: 0.0.into(),
+          })
+          .transform(Transform::Mirror {
+            center: Vec2::new(8.0, 0.0).into(),
+            rotation: 20.0.into(),
+          })
+          .transform(Transform::Translate(Vec2::new(30.0, 25.0).into())),
+        ),
+        Layer::new(Fill::new(FillNode::Solid(
+          Color(Rgba([0, 128, 255, 255])).into(),
+        )))
+        .region(
+          Shape::new(ShapeNode::Star {
+            radius: 15.0.into(),
+            legs: 5.0.into(),
+            leg_width: 0.4.into(),
+          })
+          .transform(Transform::Bisect {
+            center: Vec2::new(0.0, 2.0).into(),
+            rotation: 45.0.into(),
+          })
+          .transform(Transform::Translate(Vec2::new(70.0, 25.0).into())),
+        ),
+        Layer::new(Fill::new(FillNode::Solid(
+          Color(Rgba([255, 255, 255, 255])).into(),
+        )))
+        .region(
+          Shape::new(ShapeNode::text(
+            "BALL 1",
+            "fonts/pixel.ttf",
+            8.0,
+            Vec2::new(30.0, 8.0),
+          ))
+          .transform(Transform::Translate(Vec2::new(19.0, 9.0).into())),
+        ),
+        Layer::new(Fill::new(FillNode::Solid(
+          Color(Rgba([128, 255, 0, 255])).into(),
+        )))
+        .region(
+          Shape::new(ShapeNode::Chevron {
+            width: 20.0.into(),
+            height: 10.0.into(),
+            notch: 0.4.into(),
+          })
+          .transform(Transform::Translate(Vec2::new(50.0, 40.0).into())),
+        ),
+        Layer::new(Fill::new(FillNode::Solid(
+          Color(Rgba([0, 255, 0, 255])).into(),
+        )))
+        .region(
+          Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(
+            Sweep::new(
+              Shape::new(ShapeNode::circle(15.0))
+                .transform(Transform::Translate(Vec2::new(50.0, 25.0).into())),
+              Prop::Keyframes(Keyframes::new(
+                vec![
+                  Key::new(0.25, 0.0, Curve::Linear),
+                  Key::new(1.0, 1.0, Curve::Linear),
+                ],
+                Cycle::Once,
+              )),
+            ),
+          ))),
+        ),
+        Layer::new(Fill::new(FillNode::Solid(
+          Color(Rgba([0, 255, 255, 255])).into(),
+        )))
+        .region(
+          Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(
+            Sweep::new(
+              Shape::new(ShapeNode::Polyline {
+                points: vec![Vec2::ZERO.into(), Vec2::new(10.0, 0.0).into()],
+              }),
+              Prop::Variable("lap".into()),
+            ),
+          ))),
+        ),
+        Layer::new(Fill::new(FillNode::Solid(
+          Color(Rgba([255, 0, 255, 255])).into(),
+        )))
+        .region(
+          Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(
+            Sweep::new(
+              Shape::new(ShapeNode::Bezier {
+                points: vec![
+                  BezierPoint {
+                    point: Vec2::ZERO.into(),
+                    handle: Vec2::new(0.0, 5.0).into(),
+                  },
+                  BezierPoint {
+                    point: Vec2::new(10.0, 0.0).into(),
+                    handle: Vec2::new(0.0, -5.0).into(),
+                  },
+                ],
+              }),
+              Prop::Modulated(Modulated {
+                envelope: Envelope::new(EnvelopeCurve::new(Curve::Linear))
+                  .decay(EnvelopeCurve::new(Curve::Linear).reversed()),
+                spread: Spread::Float(0.0, 1.0),
+                rate: 1.0,
+                phase: Box::new(0.0.into()),
+              }),
+            ),
+          ))),
+        ),
+      ],
+    );
+    scene.variables.insert(
+      "background".into(),
+      Value::Color(Color(Rgba([16, 16, 16, 255]))),
+    );
     scene.variables.insert("lap".into(), Value::Float(0.5));
     scene.timing(Timing::new(1.0, Cycle::Forever))
   }
 
   #[test]
   fn a_sweep_only_loads_on_a_position() {
-    let sweep = "Sweep(path: (base: Ellipse(rx: Fixed(1.0), ry: Fixed(1.0))), position: Fixed(0.5))";
+    let sweep =
+      "Sweep(path: (base: Ellipse(rx: Fixed(1.0), ry: Fixed(1.0))), position: Fixed(0.5))";
     let scene = |transform: &str, radius: &str, color: &str| {
       format!(
         "(timing: (duration: 1.0), layers: [(
@@ -237,32 +374,48 @@ mod tests {
       scaling
     };
     let only_amount = scale("Scale(Fixed(2.0))");
-    assert!(matches!((only_amount.amount, only_amount.anchor), (Prop::Fixed(2.0), Prop::Fixed(Vec2::ZERO))));
+    assert!(matches!(
+      (only_amount.amount, only_amount.anchor),
+      (Prop::Fixed(2.0), Prop::Fixed(Vec2::ZERO))
+    ));
     let anchored = scale("Scale(amount: Fixed(2.0), anchor: Fixed((1.0, -1.0)))");
     assert!(matches!(anchored.anchor, Prop::Fixed(anchor) if anchor == Vec2::new(1.0, -1.0)));
     let written = super::save(&Transform::Scale(Scaling::from(2.0))).unwrap();
-    assert!(matches!(super::load::<Transform>(&written), Ok(Transform::Scale(_))), "{written}");
+    assert!(
+      matches!(super::load::<Transform>(&written), Ok(Transform::Scale(_))),
+      "{written}"
+    );
   }
 
   #[test]
   fn a_random_color_with_no_alpha_is_opaque() {
-    let scene = load("(timing: (duration: 1.0), layers: [(fill: (base: Solid(Random(
+    let scene = load(
+      "(timing: (duration: 1.0), layers: [(fill: (base: Solid(Random(
       picks: [(at: 0.0)],
       spread: Color(hue: (0.0, 360.0), brightness: (1.0, 1.0)),
-    ))))])");
+    ))))])",
+    );
     let scene = scene.unwrap();
     let FillNode::Solid(Prop::Random(random)) = &scene.layers[0].fill.base else {
       panic!("{scene:?}");
     };
-    assert!(matches!(random.spread, Spread::Color { alpha: (1.0, 1.0), .. }));
+    assert!(matches!(
+      random.spread,
+      Spread::Color {
+        alpha: (1.0, 1.0),
+        ..
+      }
+    ));
   }
 
   #[test]
   fn a_random_forces_unique_picks_unless_told_otherwise() {
-    let scene = load("(timing: (duration: 1.0), layers: [(fill: (base: Solid(Random(
+    let scene = load(
+      "(timing: (duration: 1.0), layers: [(fill: (base: Solid(Random(
       picks: [(at: 0.0)],
       spread: Color(hue: (0.0, 360.0), brightness: (1.0, 1.0)),
-    ))))])");
+    ))))])",
+    );
     let scene = scene.unwrap();
     let FillNode::Solid(Prop::Random(random)) = &scene.layers[0].fill.base else {
       panic!("{scene:?}");
@@ -283,8 +436,25 @@ mod tests {
     let FillNode::Solid(Prop::Random(random)) = &loaded.layers[0].fill.base else {
       panic!("{written}");
     };
-    assert_eq!(random.picks, [Pick::new(0.0), Pick { at: 1.0, smooth_in: 0.25, smooth_out: 0.5 }]);
-    assert_eq!(random.spread, Spread::Color { hue: (330.0, 390.0), brightness: (0.5, 1.0), alpha: (0.25, 1.0) });
+    assert_eq!(
+      random.picks,
+      [
+        Pick::new(0.0),
+        Pick {
+          at: 1.0,
+          smooth_in: 0.25,
+          smooth_out: 0.5
+        }
+      ]
+    );
+    assert_eq!(
+      random.spread,
+      Spread::Color {
+        hue: (330.0, 390.0),
+        brightness: (0.5, 1.0),
+        alpha: (0.25, 1.0)
+      }
+    );
     assert_eq!(random.seed, 7);
     assert!(!random.force_unique);
   }
@@ -302,13 +472,28 @@ mod tests {
     let FillNode::Solid(Prop::Modulated(modulated)) = &loaded.layers[0].fill.base else {
       panic!("{written}");
     };
-    let spread = Spread::Color { hue: (0.0, 120.0), brightness: (0.5, 1.0), alpha: (1.0, 1.0) };
-    let envelope = Envelope::new(EnvelopeCurve::new(Curve::EaseIn).reversed()).decay(EnvelopeCurve::new(Curve::BounceOut));
-    assert_eq!((&modulated.envelope, &modulated.spread, modulated.rate), (&envelope, &spread, 0.5));
+    let spread = Spread::Color {
+      hue: (0.0, 120.0),
+      brightness: (0.5, 1.0),
+      alpha: (1.0, 1.0),
+    };
+    let envelope = Envelope::new(EnvelopeCurve::new(Curve::EaseIn).reversed())
+      .decay(EnvelopeCurve::new(Curve::BounceOut));
+    assert_eq!(
+      (&modulated.envelope, &modulated.spread, modulated.rate),
+      (&envelope, &spread, 0.5)
+    );
     let Prop::Keyframes(phase) = &*modulated.phase else {
       panic!("{written}");
     };
-    assert_eq!(phase.keys.iter().map(|key| (key.at, key.value)).collect::<Vec<_>>(), [(0.0, 0.0), (2.0, 1.0)]);
+    assert_eq!(
+      phase
+        .keys
+        .iter()
+        .map(|key| (key.at, key.value))
+        .collect::<Vec<_>>(),
+      [(0.0, 0.0), (2.0, 1.0)]
+    );
   }
 
   #[test]
@@ -321,9 +506,15 @@ mod tests {
       panic!("{scene:?}");
     };
     assert!(matches!(*modulated.phase, Prop::Fixed(0.0)));
-    assert_eq!(modulated.envelope, Envelope::new(EnvelopeCurve::new(Curve::Linear)));
+    assert_eq!(
+      modulated.envelope,
+      Envelope::new(EnvelopeCurve::new(Curve::Linear))
+    );
     let written = save(&scene).unwrap();
-    assert!(!written.contains("decay") && !written.contains("reversed"), "{written}");
+    assert!(
+      !written.contains("decay") && !written.contains("reversed"),
+      "{written}"
+    );
   }
 
   #[test]
@@ -331,7 +522,11 @@ mod tests {
     let scene = everything();
     let written = save(&scene).unwrap();
     let read = load(&written).unwrap();
-    assert_eq!(sample_grid(&read), sample_grid(&scene), "written as:\n{written}");
+    assert_eq!(
+      sample_grid(&read),
+      sample_grid(&scene),
+      "written as:\n{written}"
+    );
     assert_eq!(save(&read).unwrap(), written);
   }
 
@@ -352,7 +547,18 @@ mod tests {
 
     let variables = Variables::new();
     let line = Line::new(3);
-    let frame = LayerFrame { time: 0.0, playback_seed: 0, variables: &variables, assets: Assets::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None, timing: None, defaults: no_variables(), values: no_values() };
+    let frame = LayerFrame {
+      time: 0.0,
+      playback_seed: 0,
+      variables: &variables,
+      assets: Assets::none(),
+      size: Vec2::new(100.0, 50.0),
+      surface: scene.surface,
+      visits: None,
+      timing: None,
+      defaults: no_variables(),
+      values: no_values(),
+    };
     let colors: Vec<_> = line.samples().map(|s| scene.sample(&s, &frame)).collect();
     assert_eq!(colors[0], Rgba([255, 0, 0, 255]));
     assert_eq!(colors[2], Rgba([0, 0, 255, 255]));
@@ -361,7 +567,13 @@ mod tests {
   #[test]
   fn a_gradient_with_no_style_is_linear() {
     let scene = load("(layers: [(fill: (base: Gradient(stops: [])))])").unwrap();
-    assert!(matches!(scene.layers[0].fill.base, FillNode::Gradient { style: GradientStyle::Linear, .. }));
+    assert!(matches!(
+      scene.layers[0].fill.base,
+      FillNode::Gradient {
+        style: GradientStyle::Linear,
+        ..
+      }
+    ));
   }
 
   #[test]
@@ -372,7 +584,13 @@ mod tests {
       ], space: Oklab, style: Radial)))])",
     )
     .unwrap();
-    assert!(matches!(scene.layers[0].fill.base, FillNode::Gradient { style: GradientStyle::Radial, .. }));
+    assert!(matches!(
+      scene.layers[0].fill.base,
+      FillNode::Gradient {
+        style: GradientStyle::Radial,
+        ..
+      }
+    ));
   }
 
   #[test]
@@ -385,21 +603,39 @@ mod tests {
     )
     .unwrap();
     let base = |index: usize| &scene.layers[index].region.as_ref().unwrap().base;
-    assert!(matches!(base(0), ShapeNode::Ellipse { rx: Prop::Fixed(10.0), ry: Prop::Fixed(2.0) }));
+    assert!(matches!(
+      base(0),
+      ShapeNode::Ellipse {
+        rx: Prop::Fixed(10.0),
+        ry: Prop::Fixed(2.0)
+      }
+    ));
     assert!(matches!(base(1), ShapeNode::Polyline { .. }));
 
     let written = save(&scene).unwrap();
-    assert!(["rx:", "Polyline("].iter().all(|name| written.contains(name)), "{written}");
+    assert!(
+      ["rx:", "Polyline("]
+        .iter()
+        .all(|name| written.contains(name)),
+      "{written}"
+    );
   }
 
   #[test]
   fn an_animated_image_keeps_its_frame_when_written_and_read() {
     let frame = Keyframes {
-      keys: vec![Key::new(0.0, 0.0, Curve::Linear), Key::new(1.0, 2.0, Curve::Linear)],
+      keys: vec![
+        Key::new(0.0, 0.0, Curve::Linear),
+        Key::new(1.0, 2.0, Curve::Linear),
+      ],
       cycle: Default::default(),
     };
-    let image = FillNode::Image { name: "a.gif".into(), frame: Some(Prop::Keyframes(frame)) };
-    let scene = Scene::new(Surface::Area, vec![Layer::new(Fill::new(image))]).timing(Timing::new(1.0, Cycle::Once));
+    let image = FillNode::Image {
+      name: "a.gif".into(),
+      frame: Some(Prop::Keyframes(frame)),
+    };
+    let scene = Scene::new(Surface::Area, vec![Layer::new(Fill::new(image))])
+      .timing(Timing::new(1.0, Cycle::Once));
     let read = load(&save(&scene).unwrap()).unwrap();
 
     let first = Rgba([255, 0, 0, 255]);
@@ -410,7 +646,23 @@ mod tests {
 
     let size = Vec2::new(1.0, 1.0);
     let at = Sample::new(Vec2::splat(0.5), 0.1);
-    let color = |scene: &Scene, time| scene.sample(&at, &LayerFrame { time, playback_seed: 0, variables: &variables, assets: &assets, size, surface: scene.surface, visits: None, timing: None, defaults: no_variables(), values: no_values() });
+    let color = |scene: &Scene, time| {
+      scene.sample(
+        &at,
+        &LayerFrame {
+          time,
+          playback_seed: 0,
+          variables: &variables,
+          assets: &assets,
+          size,
+          surface: scene.surface,
+          visits: None,
+          timing: None,
+          defaults: no_variables(),
+          values: no_values(),
+        },
+      )
+    };
     for time in [0.0, 0.4, 1.0] {
       assert_eq!(color(&read, time), color(&scene, time));
     }
@@ -420,18 +672,41 @@ mod tests {
 
   #[test]
   fn an_image_is_written_and_read_by_its_name() {
-    let scene = Scene::new(Surface::Area, vec![Layer::new(Fill::new(FillNode::image("dmd/title.png")))]);
+    let scene = Scene::new(
+      Surface::Area,
+      vec![Layer::new(Fill::new(FillNode::image("dmd/title.png")))],
+    );
     let written = save(&scene).unwrap();
-    assert!(written.contains(r#"name: "dmd/title.png""#) && !written.contains("frame"), "{written}");
+    assert!(
+      written.contains(r#"name: "dmd/title.png""#) && !written.contains("frame"),
+      "{written}"
+    );
 
     let read = load(&written).unwrap();
     assert_eq!(read.image_names().collect::<Vec<_>>(), ["dmd/title.png"]);
 
-    let art = image::RgbaImage::from_fn(2, 2, |x, _| if x == 0 { Rgba([255, 0, 0, 255]) } else { Rgba([0, 0, 255, 255]) });
+    let art = image::RgbaImage::from_fn(2, 2, |x, _| {
+      if x == 0 {
+        Rgba([255, 0, 0, 255])
+      } else {
+        Rgba([0, 0, 255, 255])
+      }
+    });
     let (mut assets, variables) = (Assets::new(), Variables::new());
     assets.insert_picture("dmd/title.png", Picture::new(art));
     let size = Vec2::new(2.0, 2.0);
-    let frame = LayerFrame { time: 0.0, playback_seed: 0, variables: &variables, assets: &assets, size, surface: scene.surface, visits: None, timing: None, defaults: no_variables(), values: no_values() };
+    let frame = LayerFrame {
+      time: 0.0,
+      playback_seed: 0,
+      variables: &variables,
+      assets: &assets,
+      size,
+      surface: scene.surface,
+      visits: None,
+      timing: None,
+      defaults: no_variables(),
+      values: no_values(),
+    };
     let at = Sample::new(Vec2::new(1.5, 0.5), 0.5);
     assert_eq!(read.sample(&at, &frame), scene.sample(&at, &frame));
     assert_eq!(read.sample(&at, &frame), Rgba([0, 0, 255, 255]));
@@ -467,7 +742,10 @@ mod tests {
   #[test]
   fn a_layer_keeps_its_name_and_only_writes_one_it_has() {
     let fill = || Fill::new(FillNode::Solid(Color(Rgba([255, 0, 0, 255])).into()));
-    let scene = Scene::new(Surface::Area, vec![Layer::new(fill()).name("sky"), Layer::new(fill())]);
+    let scene = Scene::new(
+      Surface::Area,
+      vec![Layer::new(fill()).name("sky"), Layer::new(fill())],
+    );
 
     let written = save(&scene).unwrap();
     assert_eq!(written.matches("name:").count(), 1, "{written}");
@@ -492,23 +770,74 @@ mod tests {
   #[test]
   fn a_mask_survives_a_save() {
     let fill = || Fill::new(FillNode::Solid(Color(Rgba([0, 0, 0, 255])).into()));
-    let scene = Scene::new(Surface::Area, vec![Layer::new(fill()).mask(Mask::new(fill()).inverted())]);
+    let scene = Scene::new(
+      Surface::Area,
+      vec![Layer::new(fill()).mask(Mask::new(fill()).inverted())],
+    );
     let read = load(&save(&scene).unwrap()).unwrap();
-    assert!(read.layers[0].mask.as_ref().is_some_and(|mask| mask.invert && mask.region.is_none()));
+    assert!(
+      read.layers[0]
+        .mask
+        .as_ref()
+        .is_some_and(|mask| mask.invert && mask.region.is_none())
+    );
   }
 
   /// A layer on a graph using every algorithm, with responses to two of them
   fn on_a_graph() -> Scene {
-    let traversal = |name: &str, algorithm| Traversal::new(name, NodeRef::name("0"), algorithm, 4.0);
+    let traversal =
+      |name: &str, algorithm| Traversal::new(name, NodeRef::name("0"), algorithm, 4.0);
     let traversals = vec![
-      traversal("breadth", TraversalAlgorithm::BreadthFirst { wander: 0.0.into() }).start(0.5),
+      traversal(
+        "breadth",
+        TraversalAlgorithm::BreadthFirst { wander: 0.0.into() },
+      )
+      .start(0.5),
       traversal("depth", TraversalAlgorithm::DepthFirst),
-      traversal("distance", TraversalAlgorithm::Dijkstra { wander: 0.5.into() }),
-      traversal("path", TraversalAlgorithm::ShortestPath { to: NodeRef::name("8"), wander: 0.5.into() }),
-      traversal("fan", TraversalAlgorithm::FanOut { to: NodeRef::name("7"), angle: 90.0.into(), count: 2.0.into(), wander: 0.5.into() }),
-      traversal("growth", TraversalAlgorithm::Growth { to: NodeRef::name("6"), reach: 25.0.into(), density: 2.0.into(), branching: 0.5.into(), wander: 0.5.into() }),
-      Traversal::new("search", NodeRef::Nearest(Prop::Variable("hit".into())), TraversalAlgorithm::AStar { to: NodeRef::name("0") }, Prop::Variable("speed".into())),
-      Traversal::new("walk", NodeRef::name("0"), TraversalAlgorithm::RandomWalk, Speed::Duration(None)),
+      traversal(
+        "distance",
+        TraversalAlgorithm::Dijkstra { wander: 0.5.into() },
+      ),
+      traversal(
+        "path",
+        TraversalAlgorithm::ShortestPath {
+          to: NodeRef::name("8"),
+          wander: 0.5.into(),
+        },
+      ),
+      traversal(
+        "fan",
+        TraversalAlgorithm::FanOut {
+          to: NodeRef::name("7"),
+          angle: 90.0.into(),
+          count: 2.0.into(),
+          wander: 0.5.into(),
+        },
+      ),
+      traversal(
+        "growth",
+        TraversalAlgorithm::Growth {
+          to: NodeRef::name("6"),
+          reach: 25.0.into(),
+          density: 2.0.into(),
+          branching: 0.5.into(),
+          wander: 0.5.into(),
+        },
+      ),
+      Traversal::new(
+        "search",
+        NodeRef::Nearest(Prop::Variable("hit".into())),
+        TraversalAlgorithm::AStar {
+          to: NodeRef::name("0"),
+        },
+        Prop::Variable("speed".into()),
+      ),
+      Traversal::new(
+        "walk",
+        NodeRef::name("0"),
+        TraversalAlgorithm::RandomWalk,
+        Speed::Duration(None),
+      ),
     ];
     let shown = VisitResponse {
       smooth_in: 0.5,
@@ -518,29 +847,61 @@ mod tests {
       curve_out: Curve::EaseIn,
       ..VisitResponse::new("path", 0.0, 1.0)
     };
-    let counted = VisitResponse { overlap: Overlap::Add, ..VisitResponse::new("walk", 0.0, 20.0) };
-    let stops = vec![Stop::new(0.0, Color(Rgba([255, 220, 0, 255]))), Stop::new(1.0, Color(Rgba([255, 255, 255, 255])))];
-    let fill = Fill::new(FillNode::Gradient { stops, style: GradientStyle::Linear })
-      .transform(Transform::Translate(Vec2::new(-0.5, 0.0).into()))
-      .transform(Transform::Fit("path".into()))
-      .adjust(ColorAdjust::Opacity(Prop::Visit(shown)))
-      .adjust(ColorAdjust::HueShift(Prop::Visit(counted)));
+    let counted = VisitResponse {
+      overlap: Overlap::Add,
+      ..VisitResponse::new("walk", 0.0, 20.0)
+    };
+    let stops = vec![
+      Stop::new(0.0, Color(Rgba([255, 220, 0, 255]))),
+      Stop::new(1.0, Color(Rgba([255, 255, 255, 255]))),
+    ];
+    let fill = Fill::new(FillNode::Gradient {
+      stops,
+      style: GradientStyle::Linear,
+    })
+    .transform(Transform::Translate(Vec2::new(-0.5, 0.0).into()))
+    .transform(Transform::Fit("path".into()))
+    .adjust(ColorAdjust::Opacity(Prop::Visit(shown)))
+    .adjust(ColorAdjust::HueShift(Prop::Visit(counted)));
     let layer = Layer::new(fill).graph(GraphMask::new(traversals));
     Scene::new(Surface::Area, vec![layer]).timing(Timing::new(4.0, Cycle::Forever))
   }
 
   /// Colors on a 3 by 3 graph of nodes "0" to "8", 20 apart, over a few moments
   fn sample_graph(scene: &Scene) -> Vec<Rgba<u8>> {
-    let variables = Variables::from([("hit".into(), Value::Vec2(Vec2::new(45.0, 45.0))), ("speed".into(), Value::Float(3.0))]);
-    let samples: Vec<Sample> = (0..9).map(|i| Sample::new(Vec2::new((i % 3) as f32 * 20.0, (i / 3) as f32 * 20.0), 1.0).at_node(i)).collect();
-    let nodes = samples.iter().enumerate().map(|(i, sample)| GraphNode::new(i.to_string(), sample.pos)).collect();
+    let variables = Variables::from([
+      ("hit".into(), Value::Vec2(Vec2::new(45.0, 45.0))),
+      ("speed".into(), Value::Float(3.0)),
+    ]);
+    let samples: Vec<Sample> = (0..9)
+      .map(|i| Sample::new(Vec2::new((i % 3) as f32 * 20.0, (i / 3) as f32 * 20.0), 1.0).at_node(i))
+      .collect();
+    let nodes = samples
+      .iter()
+      .enumerate()
+      .map(|(i, sample)| GraphNode::new(i.to_string(), sample.pos))
+      .collect();
     let graph = Graph::build(nodes);
     [0.0, 0.3, 0.8, 1.5, 2.6]
       .into_iter()
       .flat_map(|time| {
-        let frame = LayerFrame { time, playback_seed: 3, variables: &variables, assets: Assets::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None, timing: None, defaults: no_variables(), values: no_values() };
+        let frame = LayerFrame {
+          time,
+          playback_seed: 3,
+          variables: &variables,
+          assets: Assets::none(),
+          size: Vec2::new(100.0, 50.0),
+          surface: scene.surface,
+          visits: None,
+          timing: None,
+          defaults: no_variables(),
+          values: no_values(),
+        };
         let visits = scene.visits(&graph, &frame);
-        samples.iter().map(|sample| scene.sample_visited(sample, &frame, &visits)).collect::<Vec<_>>()
+        samples
+          .iter()
+          .map(|sample| scene.sample_visited(sample, &frame, &visits))
+          .collect::<Vec<_>>()
       })
       .collect()
   }
@@ -566,16 +927,24 @@ mod tests {
     )
     .unwrap();
     let mask = scene.layers[0].graph.as_ref().unwrap();
-    assert!(matches!(&mask.traversals[0].algorithm, TraversalAlgorithm::ShortestPath { wander: Prop::Fixed(wander), .. } if *wander == 0.0));
+    assert!(
+      matches!(&mask.traversals[0].algorithm, TraversalAlgorithm::ShortestPath { wander: Prop::Fixed(wander), .. } if *wander == 0.0)
+    );
     let ColorAdjust::Opacity(Prop::Visit(response)) = &scene.layers[0].fill.adjust[0] else {
       panic!("{scene:?}");
     };
-    assert_eq!((response.smooth_in, response.smooth_out, response.overlap), (0.0, Some(3.0), Overlap::Max));
+    assert_eq!(
+      (response.smooth_in, response.smooth_out, response.overlap),
+      (0.0, Some(3.0), Overlap::Max)
+    );
   }
 
   #[test]
   fn a_newer_file_is_refused() {
-    assert!(matches!(check_version(VERSION + 1), Err(FormatError::Newer { .. })));
+    assert!(matches!(
+      check_version(VERSION + 1),
+      Err(FormatError::Newer { .. })
+    ));
     assert!(check_version(VERSION).is_ok());
   }
 }

@@ -11,7 +11,7 @@
   margin-left: auto;
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
 }
 
 /* inactive nodes, and everything in an inactive group, are muted but still selectable */
@@ -27,7 +27,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--muted);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   line-height: 1.1rem;
 }
 
@@ -37,7 +37,7 @@
   border: 1px solid var(--accent);
   border-radius: var(--radius-sm);
   color: var(--accent);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   line-height: 1.1rem;
 }
 
@@ -63,8 +63,15 @@
   align-items: center;
   gap: 0.75rem;
   margin: 0 0 1.25rem;
-  font-size: 1.25rem;
+  font-size: 1.375rem;
   font-weight: 600;
+}
+
+/* what the system is for, under its name */
+.detail .description {
+  max-width: 48rem;
+  margin: -0.75rem 0 1.25rem;
+  color: var(--muted);
 }
 
 .detail dl {
@@ -83,18 +90,416 @@
   word-break: break-all;
 }
 
-.detail .recent-events {
+
+/* ---- despawned systems, shown when asked for ---- */
+
+/* stays at the top while the tree scrolls under it. The negative margins and matching padding cover the panel's own
+   padding, so nothing shows above or beside it. */
+.systems-tab .tree-options {
+  position: sticky;
+  top: -0.5rem;
+  z-index: 1;
+  flex-wrap: wrap;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: -0.5rem -0.5rem 0.5rem;
+  padding: 0.5rem 0.5rem 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.systems-tab [data-part='item'].despawned [data-part='item-text'],
+.systems-tab [data-part='branch'].despawned > [data-part='branch-control'] [data-part='branch-text'] {
+  text-decoration: line-through;
+}
+
+/* ---- timeline ---- */
+
+/* pinned to the top of the panel while scrolling, so it stays in reach of the activity below */
+.detail .system-timeline {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin-top: 1.25rem;
+  padding: 0.75rem 0 0.5rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.detail .timeline-header,
+.detail .section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.detail .timeline-header h3,
+.detail .section-header h3 {
+  margin: 0;
+}
+
+.detail .timeline-controls {
+  display: flex;
+  align-items: stretch;
+  gap: 0.25rem;
+}
+
+.detail .timeline-controls button {
+  display: inline-flex;
+  align-items: center;
+}
+
+.detail .timeline-controls button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.detail .timeline-controls .separator {
+  width: 1px;
+  margin: 0 0.25rem;
+  background: var(--border);
+}
+
+.detail .timeline-body svg.pannable {
+  cursor: grab;
+}
+
+.detail .timeline-body svg.dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.detail .timeline-controls button,
+.detail .list-order button {
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.detail .timeline-controls button.selected,
+.detail .list-order button.selected {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.detail .timeline-body {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 0.75rem;
+}
+
+.detail .lane-labels {
+  display: flex;
+  flex-direction: column;
+  padding-top: 4px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.detail .lane-labels span {
+  display: flex;
+  align-items: center;
+}
+
+.detail .timeline-body svg {
+  width: 100%;
+  overflow: visible;
+}
+
+.detail .timeline-body .lane {
+  fill: var(--surface-hover);
+}
+
+.detail .timeline-body .active-span {
+  fill: var(--ok);
+  opacity: 0.55;
+}
+
+.detail .timeline-body .change .mark {
+  stroke: var(--text);
+  stroke-width: 2;
+}
+
+.detail .timeline-body .change.Despawned .mark {
+  stroke: var(--danger);
+}
+
+.detail .timeline-body .step rect {
+  fill: var(--accent);
+  opacity: 0.35;
+  stroke: var(--accent);
+}
+
+.detail .timeline-body .step.open rect {
+  stroke-dasharray: 3 2;
+}
+
+.detail .timeline-body .step.halted rect {
+  fill: var(--warn);
+  stroke: var(--warn);
+}
+
+.detail .timeline-body .step text {
+  fill: var(--text);
+  font-size: 12px;
+}
+
+.detail .timeline-body .emitted .mark {
+  stroke: var(--cat-event);
+  stroke-width: 2;
+}
+
+.detail .timeline-body .axis {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+}
+
+/* ---- activity log ---- */
+
+.detail .activity-log {
   margin-top: 2rem;
 }
 
-.detail .recent-events ol {
+/* positioned, so a row's `offsetTop` is measured from the list when scrolling to it */
+.detail .activity-log ol {
   margin: 0;
   padding: 0;
   border-top: 1px solid var(--border);
   list-style: none;
 }
 
-.detail .recent-events .trace-row .row {
-  padding-left: 0.5rem;
-  padding-right: 0.5rem;
+.detail .activity-log li {
+  border-bottom: 1px solid var(--border);
+  font-size: 0.875rem;
+}
+
+.detail .activity-log .row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.3rem 0.5rem;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.detail .activity-log .row:not(:disabled) {
+  cursor: pointer;
+}
+
+/* pointed out from the timeline, or under the pointer */
+.detail .activity-log li.highlighted,
+.detail .activity-log li:hover {
+  background: var(--surface-hover);
+}
+
+.detail .activity-log .icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.detail .activity-log li.Emitted .icon {
+  color: var(--cat-event);
+}
+
+.detail .activity-log li.RoutineStep .icon {
+  color: var(--accent);
+}
+
+.detail .activity-log li.Spawned .icon {
+  color: var(--cat-switch);
+}
+
+.detail .activity-log .time {
+  color: var(--muted);
+}
+
+.detail .activity-log li.Despawned,
+.detail .activity-log li.Despawned .icon {
+  color: var(--danger);
+}
+
+.detail .activity-log .event-body {
+  padding: 0.25rem 0.5rem 0.5rem 2.25rem;
+}
+
+.detail .activity-log .event-body .meta {
+  margin: 0;
+  color: var(--muted);
+}
+
+.detail .timeline-header .paused-tag {
+  margin-right: auto;
+  margin-left: 0.75rem;
+  padding: 0 0.3rem;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-sm);
+  color: var(--warn);
+  font-size: 0.75rem;
+}
+
+.detail .timeline-controls button,
+.detail .list-order button {
+  display: inline-flex;
+  align-items: center;
+}
+
+.detail .timeline-body {
+  position: relative;
+}
+
+/* a wide, invisible line over each thin mark, so it's easy to hover */
+.detail .timeline-body .hit {
+  stroke: transparent;
+  stroke-width: 10;
+  pointer-events: stroke;
+}
+
+.detail .timeline-body .mark {
+  pointer-events: none;
+}
+
+.detail .timeline-tip {
+  position: absolute;
+  z-index: 10;
+  max-width: 24rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.15);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.systems-tab .tree-options label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.systems-tab .pause-timelines {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-right: 0.5rem;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.systems-tab .pause-timelines.paused {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.detail .list-order {
+  display: flex;
+  gap: 0.25rem;
+  margin-left: auto;
+  font-weight: normal;
+}
+
+/* where a system comes from: Frontbox or the game */
+.systems-tab .origin {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-right: 0.35rem;
+  color: var(--muted);
+}
+
+.detail .timeline-body .child.spawned .mark {
+  stroke: var(--cat-switch);
+  stroke-width: 2;
+}
+
+.detail .timeline-body .child.despawned .mark {
+  stroke: var(--danger);
+  stroke-width: 2;
+}
+
+/* as wide as a branch's arrow (see `styles/ark.css`), so leaves line up with branches beside them */
+.systems-tab .indicator-spacer {
+  flex-shrink: 0;
+  width: 0.75rem;
+}
+
+.systems-tab [data-scope='tree-view'][data-part='tree'] {
+  font-size: 0.875rem;
+}
+
+/* ---- search ---- */
+
+.systems-tab .tree-options .search {
+  flex-basis: 100%;
+}
+
+/* what's hovered in the activity list, across every lane of the timeline */
+.detail .timeline-body .pointed-out {
+  pointer-events: none;
+}
+
+.detail .timeline-body line.pointed-out {
+  stroke: var(--text);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 2;
+}
+
+.detail .timeline-body rect.pointed-out {
+  fill: var(--text);
+  opacity: 0.12;
+}
+
+/* filled, in their own colors, so they're told apart at this size */
+.systems-tab .origin.frontbox {
+  color: var(--muted);
+}
+
+.systems-tab .origin.game {
+  color: var(--accent);
+}
+
+/* ---- statuses the system reported ---- */
+
+.detail .reported-status {
+  margin-top: 2rem;
+}
+
+.detail .reported-status .meta {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.detail .reported-status .json-view {
+  max-height: 20rem;
+  overflow: auto;
+}
+
+.detail .timeline-body .reported .mark {
+  stroke: var(--cat-status);
+  stroke-width: 2;
+}
+
+.detail .activity-log li.StatusReported .icon {
+  color: var(--cat-status);
 }

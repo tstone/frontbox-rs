@@ -3,7 +3,8 @@ import { createSignal, For, onCleanup } from 'solid-js'
 import { Dynamic } from 'solid-js/web'
 import { machine, startConsole } from './state/console'
 import type { ConnectionStatus } from './state/socket'
-import { tabs } from './tabs'
+import HistoryControls from './components/HistoryControls'
+import { tabGroups, tabs } from './tabs'
 import './App.css'
 
 const connectionLabels: Record<ConnectionStatus, string> = {
@@ -39,7 +40,15 @@ function App() {
       <header class="app-header">
         <h1>Frontbox Pin Console</h1>
         <Tabs.List>
-          <For each={tabs}>{(tab) => <Tabs.Trigger value={tab.id}>{tab.label}</Tabs.Trigger>}</For>
+          {/* grouped by what they show, with the history controls in with the live tabs whose history they clear */}
+          <For each={tabGroups}>
+            {(group) => (
+              <div class="tab-group" data-group={group.group}>
+                <For each={group.tabs}>{(tab) => <Tabs.Trigger value={tab.id}>{tab.label}</Tabs.Trigger>}</For>
+                {group.group === 'live' && <HistoryControls />}
+              </div>
+            )}
+          </For>
           <Tabs.Indicator />
         </Tabs.List>
         <span class="connection" data-status={machine.connection}>

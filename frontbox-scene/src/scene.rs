@@ -3,7 +3,10 @@ use std::fmt;
 use frontbox_core::prelude::*;
 use frontbox_gfx::animation::Cycle;
 use frontbox_gfx::scene::file::{self, FormatError};
-use frontbox_gfx::scene::{self, Content, Assets, Inputs, LayerFrame, Layer, LayerAssetError, Value, Values, Variables, SceneError, SceneFileError, Timing, Visits};
+use frontbox_gfx::scene::{
+  self, Assets, Content, Inputs, Layer, LayerAssetError, LayerFrame, SceneError, SceneFileError,
+  Timing, Value, Values, Variables, Visits,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{Moment, SoundLayer, SoundStart};
@@ -53,7 +56,14 @@ pub struct Scene {
 impl Scene {
   /// A scene of the current format version
   pub fn new(layers: Vec<SceneLayer>) -> Self {
-    Self { version: file::VERSION, variables: Variables::new(), values: Values::new(), timing: None, layers, assets: Assets::new() }
+    Self {
+      version: file::VERSION,
+      variables: Variables::new(),
+      values: Values::new(),
+      timing: None,
+      layers,
+      assets: Assets::new(),
+    }
   }
 
   pub fn timing(mut self, timing: Timing) -> Self {
@@ -65,7 +75,9 @@ impl Scene {
   pub fn load(source: &str) -> Result<Self, FormatError> {
     let SceneFile::Scene(scene) = file::load(source)?;
     file::check_version(scene.version)?;
-    scene.check().map_err(|err| FormatError::Invalid(err.to_string()))?;
+    scene
+      .check()
+      .map_err(|err| FormatError::Invalid(err.to_string()))?;
     Ok(scene)
   }
 
@@ -73,8 +85,16 @@ impl Scene {
   /// rather than in a tick.
   pub fn open(content: &Content, name: &str) -> Result<Self, OpenError> {
     let source = content.read_scene(name).map_err(OpenError::File)?;
-    let scene = Self::load(&source).map_err(|error| OpenError::Format { name: name.into(), error })?;
-    scene.with_assets(content).map_err(|error| OpenError::Assets { name: name.into(), error })
+    let scene = Self::load(&source).map_err(|error| OpenError::Format {
+      name: name.into(),
+      error,
+    })?;
+    scene
+      .with_assets(content)
+      .map_err(|error| OpenError::Assets {
+        name: name.into(),
+        error,
+      })
   }
 
   /// Writes a `.scene` file
@@ -89,23 +109,42 @@ impl Scene {
     if let Some(timing) = self.timing {
       timing.check()?;
     }
-    if let Some(name) = self.values.iter().find(|(_, value)| self.timing.is_none() && value.is_animated()).map(|(name, _)| name) {
-      return Err(SceneError::NoTiming { layer: format!("value \"{name}\"") });
+    if let Some(name) = self
+      .values
+      .iter()
+      .find(|(_, value)| self.timing.is_none() && value.is_animated())
+      .map(|(name, _)| name)
+    {
+      return Err(SceneError::NoTiming {
+        layer: format!("value \"{name}\""),
+      });
     }
-    self.layers.iter().enumerate().try_for_each(|(index, layer)| match layer {
-      SceneLayer::Sound(sound) => sound.check(index, self.timing),
-      drawn => drawn.layer().map_or(Ok(()), |layer| layer.check(index, self.timing)),
-    })
+    self
+      .layers
+      .iter()
+      .enumerate()
+      .try_for_each(|(index, layer)| match layer {
+        SceneLayer::Sound(sound) => sound.check(index, self.timing),
+        drawn => drawn
+          .layer()
+          .map_or(Ok(()), |layer| layer.check(index, self.timing)),
+      })
   }
 
   /// The variables its layers and named values read from the code playing it
   pub fn inputs(&self) -> Inputs {
     let mut inputs = Inputs::new();
-    self.values.values().for_each(|value| value.read_inputs(&mut inputs));
+    self
+      .values
+      .values()
+      .for_each(|value| value.read_inputs(&mut inputs));
     for layer in &self.layers {
       match layer {
         SceneLayer::Sound(sound) => sound.volume.read_inputs(&mut inputs),
-        drawn => drawn.layer().iter().for_each(|layer| layer.read_inputs(&mut inputs)),
+        drawn => drawn
+          .layer()
+          .iter()
+          .for_each(|layer| layer.read_inputs(&mut inputs)),
       }
     }
     inputs
@@ -124,25 +163,45 @@ impl Scene {
 
   /// Names of the images it uses, possibly with repeats
   pub fn image_names(&self) -> impl Iterator<Item = &str> {
-    self.layers.iter().filter_map(SceneLayer::layer).flat_map(Layer::image_names)
+    self
+      .layers
+      .iter()
+      .filter_map(SceneLayer::layer)
+      .flat_map(Layer::image_names)
   }
 
   /// Names of the fonts its text is in, possibly with repeats
   pub fn font_names(&self) -> impl Iterator<Item = &str> {
-    self.layers.iter().filter_map(SceneLayer::layer).flat_map(Layer::font_names)
+    self
+      .layers
+      .iter()
+      .filter_map(SceneLayer::layer)
+      .flat_map(Layer::font_names)
   }
 
   /// Names of the sounds its layers play, possibly with repeats
   pub fn sound_names(&self) -> impl Iterator<Item = &str> {
-    self.layers.iter().filter_map(SceneLayer::as_sound).map(|layer| layer.sound.as_str())
+    self
+      .layers
+      .iter()
+      .filter_map(SceneLayer::as_sound)
+      .map(|layer| layer.sound.as_str())
   }
 
   /// The sounds that start after `after` and up to `moment`'s time, in the order they start, each at the volume its
   /// layer gives then. Pass the time of the last call as `after`, so each start is given once, or `None` for a playback that
   /// has just started.
-  pub fn sounds_started<'a>(&'a self, moment: &Moment<'a>, after: Option<f32>) -> Vec<SoundStart<'a>> {
+  pub fn sounds_started<'a>(
+    &'a self,
+    moment: &Moment<'a>,
+    after: Option<f32>,
+  ) -> Vec<SoundStart<'a>> {
     let layers = self.layers.iter().filter_map(SceneLayer::as_sound);
-    let starts = layers.filter_map(|layer| layer.started(self.timing, after, moment.time).map(|start| (layer, start)));
+    let starts = layers.filter_map(|layer| {
+      layer
+        .started(self.timing, after, moment.time)
+        .map(|start| (layer, start))
+    });
     self.sound_starts(moment, starts)
   }
 
@@ -162,11 +221,26 @@ impl Scene {
     self.sound_starts(moment, starts)
   }
 
-  fn sound_starts<'a>(&'a self, moment: &Moment<'a>, starts: impl Iterator<Item = (&'a SoundLayer, f32)>) -> Vec<SoundStart<'a>> {
+  fn sound_starts<'a>(
+    &'a self,
+    moment: &Moment<'a>,
+    starts: impl Iterator<Item = (&'a SoundLayer, f32)>,
+  ) -> Vec<SoundStart<'a>> {
     let mut started: Vec<_> = starts
       .map(|(layer, time)| {
-        let frame = self.frame(&Moment { time, ..*moment }, scene::Surface::Sequence, Vec2::ZERO, None);
-        SoundStart { sound: &layer.sound, time, volume: layer.volume_at(&frame), skip: layer.skip, length: layer.length() }
+        let frame = self.frame(
+          &Moment { time, ..*moment },
+          scene::Surface::Sequence,
+          Vec2::ZERO,
+          None,
+        );
+        SoundStart {
+          sound: &layer.sound,
+          time,
+          volume: layer.volume_at(&frame),
+          skip: layer.skip,
+          length: layer.length(),
+        }
       })
       .collect();
     started.sort_by(|a, b| a.time.total_cmp(&b.time));
@@ -189,7 +263,11 @@ impl Scene {
   /// surface stay as the scene says. That's only for a scene whose light layers are all on the same lights, as there's
   /// otherwise no saying which of them to move.
   pub fn moved_to_lights(mut self, lights: LightQ) -> Result<Self, DifferentLights> {
-    let mut on = self.layers.iter().filter_map(SceneLayer::as_lights).map(|layer| &layer.lights);
+    let mut on = self
+      .layers
+      .iter()
+      .filter_map(SceneLayer::as_lights)
+      .map(|layer| &layer.lights);
     if let Some(first) = on.next()
       && on.any(|other| other != first)
     {
@@ -265,7 +343,10 @@ impl SceneLayer {
   pub fn label(&self, index: usize) -> String {
     match self {
       Self::Sound(layer) => layer.label(index),
-      drawn => drawn.layer().map(|layer| layer.label(index)).unwrap_or_default(),
+      drawn => drawn
+        .layer()
+        .map(|layer| layer.label(index))
+        .unwrap_or_default(),
     }
   }
 
@@ -342,12 +423,22 @@ pub struct LightLayer {
 impl LightLayer {
   /// Spreads along `lights` in order
   pub fn sequence(lights: LightQ, layer: Layer) -> Self {
-    Self { lights: Some(lights), z: 0, surface: LightSurface::Sequence, layer }
+    Self {
+      lights: Some(lights),
+      z: 0,
+      surface: LightSurface::Sequence,
+      layer,
+    }
   }
 
   /// Covers a plane, by the name it was added to the app under, lighting `lights` from where they are on it
   pub fn area(lights: LightQ, plane: impl Into<String>, layer: Layer) -> Self {
-    Self { lights: Some(lights), z: 0, surface: LightSurface::Area(plane.into()), layer }
+    Self {
+      lights: Some(lights),
+      z: 0,
+      surface: LightSurface::Area(plane.into()),
+      layer,
+    }
   }
 
   pub fn at_z(mut self, z: i8) -> Self {
@@ -398,7 +489,11 @@ pub struct DisplayLayer {
 
 impl DisplayLayer {
   pub fn new(display: impl Into<String>, layer: Layer) -> Self {
-    Self { display: display.into(), z: 0, layer }
+    Self {
+      display: display.into(),
+      z: 0,
+      layer,
+    }
   }
 
   pub fn at_z(mut self, z: i8) -> Self {
@@ -413,7 +508,10 @@ pub struct DifferentLights;
 
 impl fmt::Display for DifferentLights {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(f, "a scene with layers on different lights can't be moved to other lights")
+    write!(
+      f,
+      "a scene with layers on different lights can't be moved to other lights"
+    )
   }
 }
 
@@ -427,8 +525,14 @@ fn is_zero(z: &i8) -> bool {
 #[derive(Debug)]
 pub enum OpenError {
   File(SceneFileError),
-  Format { name: String, error: FormatError },
-  Assets { name: String, error: LayerAssetError },
+  Format {
+    name: String,
+    error: FormatError,
+  },
+  Assets {
+    name: String,
+    error: LayerAssetError,
+  },
 }
 
 impl fmt::Display for OpenError {
@@ -476,29 +580,56 @@ mod tests {
   #[test]
   fn a_newer_file_is_refused() {
     let result = Scene::load("Scene(version: 99, layers: [])");
-    assert!(matches!(result, Err(FormatError::Newer { version: 99 })), "{result:?}");
+    assert!(
+      matches!(result, Err(FormatError::Newer { version: 99 })),
+      "{result:?}"
+    );
   }
 
   #[test]
   fn a_layer_with_no_lights_says_so() {
     let source = "Scene(version: 2, layers: [Lights(surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))))])";
-    assert_eq!(Scene::load(source).unwrap().layers[0].as_lights().unwrap().lights, None);
+    assert_eq!(
+      Scene::load(source).unwrap().layers[0]
+        .as_lights()
+        .unwrap()
+        .lights,
+      None
+    );
   }
 
   #[test]
   fn layers_survive_a_save_in_order() {
     let scene = Scene::new(vec![
-      LightLayer::sequence(LightQ::names(["b", "a"]).reverse(), layer().name("under")).at_z(-1).into(),
+      LightLayer::sequence(LightQ::names(["b", "a"]).reverse(), layer().name("under"))
+        .at_z(-1)
+        .into(),
       LightLayer::area(LightQ::Every, "Backbox", layer().name("over")).into(),
-      DisplayLayer::new("Dmd", layer().name("screen")).at_z(2).into(),
+      DisplayLayer::new("Dmd", layer().name("screen"))
+        .at_z(2)
+        .into(),
     ]);
     let read = Scene::load(&scene.save().unwrap()).unwrap();
-    let names: Vec<_> = read.layers.iter().map(|layer| layer.layer().unwrap().name.clone().unwrap()).collect();
+    let names: Vec<_> = read
+      .layers
+      .iter()
+      .map(|layer| layer.layer().unwrap().name.clone().unwrap())
+      .collect();
     assert_eq!(names, ["under", "over", "screen"]);
 
     let under = read.layers[0].as_lights().unwrap();
-    assert_eq!((&under.lights, under.z, &under.surface), (&scene.layers[0].as_lights().unwrap().lights, -1, &LightSurface::Sequence));
-    assert_eq!(read.layers[1].as_lights().unwrap().surface, LightSurface::Area("Backbox".into()));
+    assert_eq!(
+      (&under.lights, under.z, &under.surface),
+      (
+        &scene.layers[0].as_lights().unwrap().lights,
+        -1,
+        &LightSurface::Sequence
+      )
+    );
+    assert_eq!(
+      read.layers[1].as_lights().unwrap().surface,
+      LightSurface::Area("Backbox".into())
+    );
     let screen = read.layers[2].as_display().unwrap();
     assert_eq!((screen.display.as_str(), screen.z), ("Dmd", 2));
   }
@@ -516,25 +647,49 @@ mod tests {
     .unwrap();
     assert!(written.contains(r#"Lights("#), "{written}");
     assert!(written.contains(r#"Tag("Playfield")"#), "{written}");
-    assert!(written.contains(r#"surface: Area("Playfield")"#), "{written}");
+    assert!(
+      written.contains(r#"surface: Area("Playfield")"#),
+      "{written}"
+    );
     assert!(written.contains(r#"Display("#), "{written}");
     assert!(written.contains(r#"display: "Dmd""#), "{written}");
   }
 
   #[test]
   fn a_surface_says_how_a_layer_is_seen() {
-    assert_eq!(LightSurface::Sequence.sampled_as(), scene::Surface::Sequence);
+    assert_eq!(
+      LightSurface::Sequence.sampled_as(),
+      scene::Surface::Sequence
+    );
     assert_eq!(LightSurface::Sequence.plane(), None);
-    assert_eq!(LightSurface::Area("Backbox".into()).sampled_as(), scene::Surface::Area);
-    assert_eq!(LightSurface::Area("Backbox".into()).plane(), Some("Backbox"));
+    assert_eq!(
+      LightSurface::Area("Backbox".into()).sampled_as(),
+      scene::Surface::Area
+    );
+    assert_eq!(
+      LightSurface::Area("Backbox".into()).plane(),
+      Some("Backbox")
+    );
   }
 
   #[test]
   fn what_a_layer_cant_play_is_refused_by_its_place_in_the_scene() {
-    let track = Prop::Keyframes(Keyframes { keys: vec![], cycle: Cycle::Once });
-    let changing = Fill::new(FillNode::Solid(Color(Rgba::red()).into())).adjust(ColorAdjust::HueShift(track));
-    let scene = Scene::new(vec![DisplayLayer::new("Dmd", layer()).into(), LightLayer::sequence(LightQ::Every, Layer::new(changing)).into()]);
-    assert_eq!(scene.check(), Err(SceneError::NoTiming { layer: "layer 2".into() }));
+    let track = Prop::Keyframes(Keyframes {
+      keys: vec![],
+      cycle: Cycle::Once,
+    });
+    let changing =
+      Fill::new(FillNode::Solid(Color(Rgba::red()).into())).adjust(ColorAdjust::HueShift(track));
+    let scene = Scene::new(vec![
+      DisplayLayer::new("Dmd", layer()).into(),
+      LightLayer::sequence(LightQ::Every, Layer::new(changing)).into(),
+    ]);
+    assert_eq!(
+      scene.check(),
+      Err(SceneError::NoTiming {
+        layer: "layer 2".into()
+      })
+    );
   }
 
   #[test]
@@ -548,24 +703,48 @@ mod tests {
     let scene = Scene::new(vec![
       LightLayer::sequence(LightQ::name("lane"), layer()).into(),
       DisplayLayer::new("Dmd", layer()).into(),
-      LightLayer::area(LightQ::name("lane"), "Playfield", layer()).at_z(1).into(),
+      LightLayer::area(LightQ::name("lane"), "Playfield", layer())
+        .at_z(1)
+        .into(),
     ]);
     let moved = scene.moved_to_lights(LightQ::name("other")).unwrap();
-    let lights: Vec<_> = moved.layers.iter().filter_map(SceneLayer::as_lights).map(|layer| (layer.lights.clone(), layer.z)).collect();
-    assert_eq!(lights, [(Some(LightQ::name("other")), 0), (Some(LightQ::name("other")), 1)]);
+    let lights: Vec<_> = moved
+      .layers
+      .iter()
+      .filter_map(SceneLayer::as_lights)
+      .map(|layer| (layer.lights.clone(), layer.z))
+      .collect();
+    assert_eq!(
+      lights,
+      [
+        (Some(LightQ::name("other")), 0),
+        (Some(LightQ::name("other")), 1)
+      ]
+    );
   }
 
   #[test]
   fn light_layers_on_different_lights_cant_be_moved() {
-    let scene = Scene::new(vec![LightLayer::sequence(LightQ::name("a"), layer()).into(), LightLayer::sequence(LightQ::name("b"), layer()).into()]);
-    assert_eq!(scene.moved_to_lights(LightQ::name("other")).unwrap_err(), DifferentLights);
+    let scene = Scene::new(vec![
+      LightLayer::sequence(LightQ::name("a"), layer()).into(),
+      LightLayer::sequence(LightQ::name("b"), layer()).into(),
+    ]);
+    assert_eq!(
+      scene.moved_to_lights(LightQ::name("other")).unwrap_err(),
+      DifferentLights
+    );
   }
 
   #[test]
   fn a_sound_layer_survives_a_save() {
     let scene = Scene::new(vec![
       LightLayer::sequence(LightQ::name("lane"), layer()).into(),
-      SoundLayer::new("sounds/zap.mp3").start(0.25).skip(0.5).end(0.75).name("hits").into(),
+      SoundLayer::new("sounds/zap.mp3")
+        .start(0.25)
+        .skip(0.5)
+        .end(0.75)
+        .name("hits")
+        .into(),
     ])
     .timing(Timing::new(1.0, Cycle::Once));
     let written = scene.save().unwrap();
@@ -574,7 +753,10 @@ mod tests {
     let read = Scene::load(&written).unwrap();
     let sound = read.layers[1].as_sound().unwrap();
     assert_eq!(sound.name.as_deref(), Some("hits"));
-    assert_eq!((sound.start, sound.skip, sound.end), (0.25, 0.5, Some(0.75)));
+    assert_eq!(
+      (sound.start, sound.skip, sound.end),
+      (0.25, 0.5, Some(0.75))
+    );
     assert_eq!(read.sound_names().collect::<Vec<_>>(), ["sounds/zap.mp3"]);
     assert_eq!(read.layers[1].z(), None);
   }
@@ -583,35 +765,96 @@ mod tests {
   fn a_sound_layer_with_no_volume_or_times_plays_all_of_it_as_recorded_at_the_start() {
     let scene = Scene::load(r#"Scene(version: 2, layers: [Sound(sound: "a.wav")])"#).unwrap();
     let variables = Variables::new();
-    let started = scene.sounds_started(&Moment { time: 0.1, playback_seed: 0, variables: &variables }, None);
-    assert_eq!(started, [SoundStart { sound: "a.wav", time: 0.0, volume: 1.0, skip: 0.0, length: None }]);
+    let started = scene.sounds_started(
+      &Moment {
+        time: 0.1,
+        playback_seed: 0,
+        variables: &variables,
+      },
+      None,
+    );
+    assert_eq!(
+      started,
+      [SoundStart {
+        sound: "a.wav",
+        time: 0.0,
+        volume: 1.0,
+        skip: 0.0,
+        length: None
+      }]
+    );
   }
 
   #[test]
   fn each_sound_plays_at_the_volume_its_layer_has_then_in_the_order_they_start() {
-    let fade_in = || Prop::Keyframes(Keyframes { keys: vec![Key::new(0.0, 0.0, Curve::Linear), Key::new(1.0, 1.0, Curve::Linear)], cycle: Cycle::Once });
-    let late = SoundLayer::new("a.wav").start(0.5).skip(0.125).end(0.75).volume(fade_in());
+    let fade_in = || {
+      Prop::Keyframes(Keyframes {
+        keys: vec![
+          Key::new(0.0, 0.0, Curve::Linear),
+          Key::new(1.0, 1.0, Curve::Linear),
+        ],
+        cycle: Cycle::Once,
+      })
+    };
+    let late = SoundLayer::new("a.wav")
+      .start(0.5)
+      .skip(0.125)
+      .end(0.75)
+      .volume(fade_in());
     let early = SoundLayer::new("b.wav").start(0.25).volume(fade_in());
-    let scene = Scene::new(vec![late.into(), early.into()]).timing(Timing::new(1.0, Cycle::Forever));
+    let scene =
+      Scene::new(vec![late.into(), early.into()]).timing(Timing::new(1.0, Cycle::Forever));
     let variables = Variables::new();
 
-    let started = scene.sounds_started(&Moment { time: 1.6, playback_seed: 0, variables: &variables }, Some(1.0));
+    let started = scene.sounds_started(
+      &Moment {
+        time: 1.6,
+        playback_seed: 0,
+        variables: &variables,
+      },
+      Some(1.0),
+    );
     assert_eq!(
       started,
       [
-        SoundStart { sound: "b.wav", time: 1.25, volume: 0.25, skip: 0.0, length: None },
-        SoundStart { sound: "a.wav", time: 1.5, volume: 0.5, skip: 0.125, length: Some(0.25) },
+        SoundStart {
+          sound: "b.wav",
+          time: 1.25,
+          volume: 0.25,
+          skip: 0.0,
+          length: None
+        },
+        SoundStart {
+          sound: "a.wav",
+          time: 1.5,
+          volume: 0.5,
+          skip: 0.125,
+          length: Some(0.25)
+        },
       ]
     );
   }
 
   #[test]
   fn a_cycle_has_its_starts_at_their_times_in_it() {
-    let scene = Scene::new(vec![SoundLayer::new("b.wav").start(0.5).into(), SoundLayer::new("a.wav").into()])
-      .timing(Timing::new(2.0, Cycle::Times(2)));
+    let scene = Scene::new(vec![
+      SoundLayer::new("b.wav").start(0.5).into(),
+      SoundLayer::new("a.wav").into(),
+    ])
+    .timing(Timing::new(2.0, Cycle::Times(2)));
     let variables = Variables::new();
-    let moment = Moment { time: 0.0, playback_seed: 0, variables: &variables };
-    let times = |cycle| scene.sounds_in_cycle(&moment, cycle).iter().map(|start| (start.sound, start.time)).collect::<Vec<_>>();
+    let moment = Moment {
+      time: 0.0,
+      playback_seed: 0,
+      variables: &variables,
+    };
+    let times = |cycle| {
+      scene
+        .sounds_in_cycle(&moment, cycle)
+        .iter()
+        .map(|start| (start.sound, start.time))
+        .collect::<Vec<_>>()
+    };
     assert_eq!(times(1), [("a.wav", 2.0), ("b.wav", 2.5)]);
     assert_eq!(times(5), times(1), "past the last cycle is the last");
   }
@@ -625,38 +868,72 @@ mod tests {
     assert!(written.contains(r#"Value("current")"#), "{written}");
     let read = Scene::load(&written).unwrap();
     assert!(matches!(read.values["current"], NamedValue::Color(_)));
-    assert_eq!(read.inputs().variables.keys().collect::<Vec<_>>(), ["color", "lit"]);
+    assert_eq!(
+      read.inputs().variables.keys().collect::<Vec<_>>(),
+      ["color", "lit"]
+    );
   }
 
   #[test]
   fn a_file_from_before_variables_says_params() {
     let scene = Scene::load(r#"Scene(version: 2, params: {"size": Float(2.0)}, layers: [Lights(surface: Sequence, layer: (fill: (base: Solid(Param("color")))))])"#).unwrap();
     assert_eq!(scene.variables["size"], Value::Float(2.0));
-    assert_eq!(scene.inputs().variables.keys().collect::<Vec<_>>(), ["color"]);
+    assert_eq!(
+      scene.inputs().variables.keys().collect::<Vec<_>>(),
+      ["color"]
+    );
   }
 
   #[test]
   fn an_animated_value_needs_a_timing() {
-    let scene = Scene::load(r#"Scene(version: 2, values: {"pulse": Float(Keyframes((keys: [(at: 0.0, value: 0.0), (at: 1.0, value: 1.0)], cycle: Once)))})"#);
+    let scene = Scene::load(
+      r#"Scene(version: 2, values: {"pulse": Float(Keyframes((keys: [(at: 0.0, value: 0.0), (at: 1.0, value: 1.0)], cycle: Once)))})"#,
+    );
     assert!(scene.is_err());
   }
 
   #[test]
   fn a_sounds_volume_is_read_too() {
-    let scene = Scene::new(vec![SoundLayer::new("a.wav").volume(Prop::Variable("loud".into())).into()]);
-    assert_eq!(scene.inputs().variables.keys().collect::<Vec<_>>(), ["loud"]);
+    let scene = Scene::new(vec![
+      SoundLayer::new("a.wav")
+        .volume(Prop::Variable("loud".into()))
+        .into(),
+    ]);
+    assert_eq!(
+      scene.inputs().variables.keys().collect::<Vec<_>>(),
+      ["loud"]
+    );
   }
 
   #[test]
   fn a_bundled_scene_opens_until_a_file_replaces_it() {
-    let content = Content::without_folder().with_scenes([("frontbox/a.scene", "Scene(version: 2, timing: (duration: 2.0))")]);
-    assert_eq!(Scene::open(&content, "frontbox/a.scene").unwrap().timing.unwrap().duration, 2.0);
-    assert!(matches!(Scene::open(&content, "b.scene"), Err(OpenError::File(_))));
+    let content = Content::without_folder().with_scenes([(
+      "frontbox/a.scene",
+      "Scene(version: 2, timing: (duration: 2.0))",
+    )]);
+    assert_eq!(
+      Scene::open(&content, "frontbox/a.scene")
+        .unwrap()
+        .timing
+        .unwrap()
+        .duration,
+      2.0
+    );
+    assert!(matches!(
+      Scene::open(&content, "b.scene"),
+      Err(OpenError::File(_))
+    ));
   }
 
   #[test]
   fn a_start_after_the_end_of_a_cycle_is_refused() {
-    let scene = Scene::new(vec![SoundLayer::new("a.wav").start(2.0).into()]).timing(Timing::new(1.0, Cycle::Once));
-    assert_eq!(scene.check(), Err(SceneError::StartOutsideCycle { layer: "layer 1".into() }));
+    let scene = Scene::new(vec![SoundLayer::new("a.wav").start(2.0).into()])
+      .timing(Timing::new(1.0, Cycle::Once));
+    assert_eq!(
+      scene.check(),
+      Err(SceneError::StartOutsideCycle {
+        layer: "layer 1".into()
+      })
+    );
   }
 }

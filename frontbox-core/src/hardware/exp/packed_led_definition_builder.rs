@@ -20,7 +20,10 @@ pub struct PackedLedDefinitionBuilder {
 
 impl PackedLedDefinitionBuilder {
   pub fn new() -> Self {
-    Self { lights: Vec::new(), next_position: 0 }
+    Self {
+      lights: Vec::new(),
+      next_position: 0,
+    }
   }
 
   /// Puts the light on the next wire position
@@ -48,7 +51,12 @@ impl PackedLedDefinitionBuilder {
     let (offsets, children) = self
       .lights
       .into_iter()
-      .map(|(position, light)| (position / 3, light.build_on(LedChannel::ALL[(position % 3) as usize])))
+      .map(|(position, light)| {
+        (
+          position / 3,
+          light.build_on(LedChannel::ALL[(position % 3) as usize]),
+        )
+      })
       .unzip();
     LedDefinition::from_children(children, offsets)
   }
@@ -65,12 +73,17 @@ mod tests {
   }
 
   fn lights(names: &[&'static str]) -> Vec<SingleLedDefinitionBuilder> {
-    names.iter().map(|name| LedDefinition::single(name)).collect()
+    names
+      .iter()
+      .map(|name| LedDefinition::single(name))
+      .collect()
   }
 
   #[test]
   fn lights_fill_each_led_address_in_order() {
-    let def = LedDefinition::packed().lights(lights(&["a", "b", "c", "d"])).build();
+    let def = LedDefinition::packed()
+      .lights(lights(&["a", "b", "c", "d"]))
+      .build();
     assert_eq!(
       placements(&def),
       vec![
@@ -92,14 +105,21 @@ mod tests {
       .build();
     assert_eq!(
       placements(&def),
-      vec![(0, LedChannels::One(LedChannel::R)), (1, LedChannels::One(LedChannel::G))]
+      vec![
+        (0, LedChannels::One(LedChannel::R)),
+        (1, LedChannels::One(LedChannel::G))
+      ]
     );
   }
 
   #[test]
   fn keeps_each_lights_name() {
     let def = LedDefinition::packed().lights(lights(&["a", "b"])).build();
-    assert!(def.names().contains(LedDefinition::child_name("b", 0).as_ref()));
+    assert!(
+      def
+        .names()
+        .contains(LedDefinition::child_name("b", 0).as_ref())
+    );
   }
 
   #[test]
@@ -111,6 +131,8 @@ mod tests {
   #[test]
   #[should_panic(expected = "decide its channel")]
   fn a_light_given_its_own_channel_panics() {
-    LedDefinition::packed().light(LedDefinition::single("a").channel(LedChannel::B)).build();
+    LedDefinition::packed()
+      .light(LedDefinition::single("a").channel(LedChannel::B))
+      .build();
   }
 }

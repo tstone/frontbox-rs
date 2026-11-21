@@ -15,7 +15,7 @@ pub struct TestContext {
 }
 
 impl TestContext {
-  /// Puts the system in the root group, returning its handle
+  /// Puts the system at the top level, returning its handle
   pub fn insert_system(&mut self, system: impl Into<SystemContainer>) -> SystemHandle {
     let system = system.into();
     let handle = SystemHandle::new(system.id(), ROOT_GROUP);
@@ -53,12 +53,7 @@ impl TestContext {
   }
 
   pub fn sys_ctx(&self) -> SystemContext<'_> {
-    SystemContext::new(
-      &self.base,
-      SystemHandle::default(),
-      &self.groups,
-      &self.tx,
-    )
+    SystemContext::new(&self.base, SystemHandle::default(), &self.groups, &self.tx)
   }
 
   fn app_messages(&mut self) -> Vec<AppMessage> {
@@ -141,7 +136,7 @@ impl Default for TestContext {
   fn default() -> Self {
     let (tx, rx) = mpsc::unbounded_channel();
     let mut groups = Groups::new();
-    groups.insert(ROOT_GROUP, SystemGroup::new(ROOT_GROUP_NAME));
+    groups.insert(ROOT_GROUP, SystemGroup::new());
 
     // as in `App::run`, so config changes emit `ConfigChanged`
     let mut base = AppState::default();

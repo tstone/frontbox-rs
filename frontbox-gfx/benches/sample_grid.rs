@@ -19,23 +19,42 @@ const WHITE: Color = Color(Rgba([255, 255, 255, 255]));
 fn layers() -> Vec<(&'static str, Layer)> {
   vec![
     ("solid", Layer::new(Fill::new(FillNode::Solid(RED.into())))),
-    ("gradient", Layer::new(gradient(GradientStyle::Linear).transform(Transform::Rotate(over_time(0.0, 360.0))))),
+    (
+      "gradient",
+      Layer::new(
+        gradient(GradientStyle::Linear).transform(Transform::Rotate(over_time(0.0, 360.0))),
+      ),
+    ),
     (
       "moving rect",
       Layer::new(Fill::new(FillNode::Solid(BLUE.into()))).region(
-        Shape::new(ShapeNode::Rect { width: 40.0.into(), height: 12.0.into() })
-          .transform(Transform::Rotate(over_time(0.0, 90.0)))
-          .transform(Transform::Translate(Prop::Keyframes(Keyframes::new(
-            vec![Key::new(0.0, Vec2::new(20.0, 16.0), Curve::EaseInOut), Key::new(1.0, Vec2::new(108.0, 16.0), Curve::Linear)],
-            Cycle::Once,
-          )))),
+        Shape::new(ShapeNode::Rect {
+          width: 40.0.into(),
+          height: 12.0.into(),
+        })
+        .transform(Transform::Rotate(over_time(0.0, 90.0)))
+        .transform(Transform::Translate(Prop::Keyframes(Keyframes::new(
+          vec![
+            Key::new(0.0, Vec2::new(20.0, 16.0), Curve::EaseInOut),
+            Key::new(1.0, Vec2::new(108.0, 16.0), Curve::Linear),
+          ],
+          Cycle::Once,
+        )))),
       ),
     ),
     (
       "polygon",
       Layer::new(gradient(GradientStyle::Radial)).region(
         Shape::new(ShapeNode::Polygon {
-          points: [(0.0, -14.0), (12.0, -4.0), (8.0, 12.0), (-8.0, 12.0), (-12.0, -4.0)].map(|(x, y)| Vec2::new(x, y).into()).to_vec(),
+          points: [
+            (0.0, -14.0),
+            (12.0, -4.0),
+            (8.0, 12.0),
+            (-8.0, 12.0),
+            (-12.0, -4.0),
+          ]
+          .map(|(x, y)| Vec2::new(x, y).into())
+          .to_vec(),
         })
         .transform(Transform::Translate(Vec2::new(64.0, 16.0).into())),
       ),
@@ -43,24 +62,44 @@ fn layers() -> Vec<(&'static str, Layer)> {
     (
       "sweep",
       Layer::new(Fill::new(FillNode::Solid(WHITE.into()))).region(
-        Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
-          Shape::new(ShapeNode::Bezier {
-            points: vec![
-              BezierPoint { point: Vec2::new(8.0, 24.0).into(), handle: Vec2::new(20.0, -20.0).into() },
-              BezierPoint { point: Vec2::new(64.0, 8.0).into(), handle: Vec2::new(20.0, 0.0).into() },
-              BezierPoint { point: Vec2::new(120.0, 24.0).into(), handle: Vec2::new(20.0, 20.0).into() },
-            ],
-          }),
-          over_time(0.0, 1.0),
-        )))),
+        Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(
+          Sweep::new(
+            Shape::new(ShapeNode::Bezier {
+              points: vec![
+                BezierPoint {
+                  point: Vec2::new(8.0, 24.0).into(),
+                  handle: Vec2::new(20.0, -20.0).into(),
+                },
+                BezierPoint {
+                  point: Vec2::new(64.0, 8.0).into(),
+                  handle: Vec2::new(20.0, 0.0).into(),
+                },
+                BezierPoint {
+                  point: Vec2::new(120.0, 24.0).into(),
+                  handle: Vec2::new(20.0, 20.0).into(),
+                },
+              ],
+            }),
+            over_time(0.0, 1.0),
+          ),
+        ))),
       ),
     ),
-    ("small circle", Layer::new(Fill::new(FillNode::Solid(RED.into()))).region(Shape::new(ShapeNode::circle(3.0)).transform(Transform::Translate(Vec2::new(10.0, 10.0).into())))),
+    (
+      "small circle",
+      Layer::new(Fill::new(FillNode::Solid(RED.into()))).region(
+        Shape::new(ShapeNode::circle(3.0))
+          .transform(Transform::Translate(Vec2::new(10.0, 10.0).into())),
+      ),
+    ),
     ("image", Layer::new(Fill::new(FillNode::image("checkers")))),
     (
       "masked",
       Layer::new(gradient(GradientStyle::Conical)).mask(
-        Mask::new(Fill::new(FillNode::Solid(WHITE.into()))).region(Shape::new(ShapeNode::circle(14.0)).transform(Transform::Translate(Vec2::new(64.0, 16.0).into()))),
+        Mask::new(Fill::new(FillNode::Solid(WHITE.into()))).region(
+          Shape::new(ShapeNode::circle(14.0))
+            .transform(Transform::Translate(Vec2::new(64.0, 16.0).into())),
+        ),
       ),
     ),
     (
@@ -75,16 +114,35 @@ fn layers() -> Vec<(&'static str, Layer)> {
 }
 
 fn gradient(style: GradientStyle) -> Fill {
-  Fill::new(FillNode::Gradient { stops: vec![Stop::new(0.0, RED), Stop::new(0.5, WHITE), Stop::new(1.0, BLUE)], style })
+  Fill::new(FillNode::Gradient {
+    stops: vec![
+      Stop::new(0.0, RED),
+      Stop::new(0.5, WHITE),
+      Stop::new(1.0, BLUE),
+    ],
+    style,
+  })
 }
 
 fn over_time(from: f32, to: f32) -> Prop<f32> {
-  Prop::Keyframes(Keyframes::new(vec![Key::new(0.0, from, Curve::Linear), Key::new(1.0, to, Curve::Linear)], Cycle::Once))
+  Prop::Keyframes(Keyframes::new(
+    vec![
+      Key::new(0.0, from, Curve::Linear),
+      Key::new(1.0, to, Curve::Linear),
+    ],
+    Cycle::Once,
+  ))
 }
 
 fn images() -> Assets {
   let mut assets = Assets::new();
-  let checkers = RgbaImage::from_fn(64, 16, |x, y| if (x + y) % 2 == 0 { Rgba([255, 255, 0, 255]) } else { Rgba([0, 0, 0, 255]) });
+  let checkers = RgbaImage::from_fn(64, 16, |x, y| {
+    if (x + y) % 2 == 0 {
+      Rgba([255, 255, 0, 255])
+    } else {
+      Rgba([0, 0, 0, 255])
+    }
+  });
   assets.insert_picture("checkers", Picture::new(checkers));
   assets
 }
@@ -97,7 +155,8 @@ fn draw(c: &mut Criterion) {
     timing: Some(Timing::new(1.0, Cycle::Forever)),
     playback_seed: 0,
     variables: &variables,
-    defaults: no_variables(), values: no_values(),
+    defaults: no_variables(),
+    values: no_values(),
     assets: &assets,
     size: SIZE,
     surface: Surface::Area,

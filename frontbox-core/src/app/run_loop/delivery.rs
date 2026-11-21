@@ -13,10 +13,37 @@ impl RunLoop {
       sender,
     });
 
-    apply_to_systems(&self.groups, &self.base, &self.app_sender, &self.tracers, |system, ctx| {
-      system.on_event(event_box.event.as_ref(), ctx);
+    delivering(event_box.type_name, || {
+      apply_to_systems(
+        &self.groups,
+        &self.base,
+        &self.app_sender,
+        &self.tracers,
+        |system, ctx| {
+          system.on_event(event_box.event.as_ref(), ctx);
+        },
+      );
     });
   }
+}
+
+thread_local! {
+  /// What's being delivered right now (an event's type name, or "tick"), for saying when a system's own `is_active`
+  /// change was noticed. The run loop runs on one thread, so this is the loop's.
+  static DELIVERING: std::cell::Cell<Option<&'static str>> = const { std::cell::Cell::new(None) };
+}
+
+/// Run `f` while delivering `what`
+pub(crate) fn delivering<T>(what: &'static str, f: impl FnOnce() -> T) -> T {
+  let before = DELIVERING.replace(Some(what));
+  let result = f();
+  DELIVERING.set(before);
+  result
+}
+
+/// What's being delivered right now, if anything. See [`ActivityCause::IsActive`].
+pub(crate) fn current_delivery() -> Option<&'static str> {
+  DELIVERING.get()
 }
 
 /// Find and apply the closure to the system. Returns None if not found or inactive.
@@ -33,13 +60,15 @@ where
 {
   let mut result: Option<T> = None;
 
-  if groups.get(&handle.group).is_some_and(|group| group.active)
+  if groups
+    .get(&handle.group)
+    .is_some_and(SystemGroup::is_active)
     && let Some(mut system) = groups.system(handle)
     && !system.is_faulted()
   {
     let ctx = SystemContext::new(base, handle, groups, app_sender);
     result = system.retire_on_panic(&ctx, |system| {
-      if handle_active(system, &ctx, app_sender, tracer_txs) {
+      if handle_active(system, &ctx, groups, base, app_sender, tracer_txs) {
         Some(handler(system, &ctx))
       } else {
         log::trace!(target: "frontbox::systems::delivery", "System {} is inactive, skipping", system.id());
@@ -75,7 +104,7 @@ pub(crate) fn apply_to_systems<F>(
   F: FnMut(&mut SystemContainer, &SystemContext),
 {
   for (key, group) in groups {
-    if group.active {
+    if group.is_active() {
       for cell in group.values() {
         let mut system = cell.borrow_mut();
         if system.is_faulted() {
@@ -84,7 +113,7 @@ pub(crate) fn apply_to_systems<F>(
         let handle = SystemHandle::new(system.id(), *key);
         let ctx = SystemContext::new(base, handle, groups, app_sender);
         system.retire_on_panic(&ctx, |system| {
-          if handle_active(system, &ctx, app_sender, tracer_txs) {
+          if handle_active(system, &ctx, groups, base, app_sender, tracer_txs) {
             handler(system, &ctx);
           } else {
             log::trace!(target: "frontbox::systems::delivery", "System {} is inactive, skipping", system.id());
@@ -111,16 +140,18 @@ pub(crate) fn emit_event_to_origin(
     sender: Some(origin.id),
   });
 
-  apply_to_system(
-    origin,
-    groups,
-    base,
-    app_sender,
-    tracer_txs,
-    |system, ctx| {
-      system.on_event(event_box.event.as_ref(), ctx);
-    },
-  );
+  delivering(event_box.type_name, || {
+    apply_to_system(
+      origin,
+      groups,
+      base,
+      app_sender,
+      tracer_txs,
+      |system, ctx| {
+        system.on_event(event_box.event.as_ref(), ctx);
+      },
+    )
+  });
   let _ = app_sender.send(AppMessage::EmitEventToOthers(origin, event_box));
 }
 
@@ -133,26 +164,102 @@ pub(crate) fn emit_event_to_others(
   app_sender: &mpsc::UnboundedSender<AppMessage>,
   tracer_txs: &TracerSenders,
 ) {
-  apply_to_systems(groups, base, app_sender, tracer_txs, |system, ctx| {
-    if ctx.handle() != handled_by {
-      system.on_event(event_box.event.as_ref(), ctx);
-    }
+  delivering(event_box.type_name, || {
+    apply_to_systems(groups, base, app_sender, tracer_txs, |system, ctx| {
+      if ctx.handle() != handled_by {
+        system.on_event(event_box.event.as_ref(), ctx);
+      }
+    })
   });
 }
 
 /// Whether the system is active, firing its deactivate/reactivate handler and broadcasting the change if its activity
-/// changed since it was last checked
+/// changed since it was last checked. A change reaches its children too.
 fn handle_active(
   system: &mut SystemContainer,
   ctx: &SystemContext,
+  groups: &Groups,
+  base: &AppState,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
   tracer_txs: &TracerSenders,
 ) -> bool {
   let check = system.handle_active(ctx, tracer_txs);
   if check.changed {
     emit_activity_changed(ctx.handle(), check.active, app_sender);
+    // routines hear about the system itself through `handle_active`
+    for child in cascade_activity(
+      ctx.handle(),
+      check.active,
+      ctx.id(),
+      groups,
+      base,
+      app_sender,
+      tracer_txs,
+    ) {
+      let _ = app_sender.send(AppMessage::SystemActivityChanged(child));
+    }
   }
   check.active
+}
+
+/// The system became active, or stopped being active: its children follow, and theirs in turn. Each child is active
+/// only while its parent is, its parent lets it be, and its own `is_active` says so. Returns the descendants whose
+/// activity changed, after firing their handlers and broadcasting the change.
+pub(crate) fn cascade_activity(
+  owner: SystemHandle,
+  active: bool,
+  // the system where the change started, for tracing
+  origin: u64,
+  groups: &Groups,
+  base: &AppState,
+  app_sender: &mpsc::UnboundedSender<AppMessage>,
+  tracer_txs: &TracerSenders,
+) -> Vec<SystemHandle> {
+  let Some(key) = groups.children_group(owner) else {
+    return Vec::new();
+  };
+  let group = &groups[&key];
+  if group.is_active() == active {
+    return Vec::new();
+  }
+  group.set_active(active);
+
+  let mut changed = Vec::new();
+  for handle in groups.handles_in(key) {
+    let Some(mut system) = groups.system(handle) else {
+      continue;
+    };
+    if system.is_faulted() {
+      continue;
+    }
+    let ctx = SystemContext::new(base, handle, groups, app_sender);
+    let check = system.retire_on_panic(&ctx, |system| {
+      system.check_activity(
+        active,
+        ActivityCause::Ancestor { id: origin },
+        &ctx,
+        tracer_txs,
+      )
+    });
+    drop(system);
+
+    if let Some(check) = check
+      && check.changed
+    {
+      emit_activity_changed(handle, check.active, app_sender);
+      changed.push(handle);
+      changed.extend(cascade_activity(
+        handle,
+        check.active,
+        origin,
+        groups,
+        base,
+        app_sender,
+        tracer_txs,
+      ));
+    }
+  }
+  changed
 }
 
 /// Broadcast [`SystemReactivated`] or [`SystemDeactivated`], once the system's own handler has run
@@ -162,9 +269,9 @@ pub(super) fn emit_activity_changed(
   app_sender: &mpsc::UnboundedSender<AppMessage>,
 ) {
   let event = if active {
-    EventBox::new(SystemReactivated::new(handle.id, handle.group))
+    EventBox::new(SystemReactivated::new(handle.id))
   } else {
-    EventBox::new(SystemDeactivated::new(handle.id, handle.group))
+    EventBox::new(SystemDeactivated::new(handle.id))
   };
   let _ = app_sender.send(EmitEvent(None, event));
 }
@@ -236,7 +343,12 @@ mod tests {
     let mut h = Harness::new();
     let heard = h.listen();
     let (active, pokes) = (Rc::new(Cell::new(true)), Rc::new(Cell::new(0)));
-    let id = h.spawn(Toggled { active: active.clone(), pokes: pokes.clone() }).id;
+    let id = h
+      .spawn(Toggled {
+        active: active.clone(),
+        pokes: pokes.clone(),
+      })
+      .id;
 
     h.emit(Poke);
     assert_eq!(activity(heard.take()), []);
@@ -276,7 +388,10 @@ mod tests {
     let origin = h.spawn(Answerer(pokes.clone()));
     heard.take();
 
-    h.send(AppMessage::EmitEventOriginFirst(origin, EventBox::new(Poke)));
+    h.send(AppMessage::EmitEventOriginFirst(
+      origin,
+      EventBox::new(Poke),
+    ));
     h.settle();
 
     // the listener was spawned first, but hears the origin's answer before the event itself
@@ -292,6 +407,79 @@ mod tests {
 
     h.emit(Synchronize);
     assert!(h.resync.notified().now_or_never().is_some());
+  }
+
+  /// Reports how many `Poke`s it has heard, on each one
+  #[derive(Default)]
+  struct Reporter {
+    pokes: u32,
+  }
+
+  impl System for Reporter {
+    fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
+      if event.is::<Poke>() {
+        self.pokes += 1;
+        ctx.report_status(&serde_json::json!({ "pokes": self.pokes }));
+      }
+    }
+  }
+
+  #[test]
+  fn a_reported_status_reaches_tracers_with_the_reporter() {
+    let (mut h, mut traces) = Harness::tracing();
+    let reporter = h.spawn(Reporter::default());
+
+    h.emit(Poke);
+    h.emit(Poke);
+
+    let reports: Vec<_> = std::iter::from_fn(|| traces.try_recv().ok())
+      .filter_map(|trace| match trace {
+        TraceEvent::SystemStatusReported { id, status } => Some((id, status)),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(
+      reports,
+      [
+        (reporter.id, serde_json::json!({ "pokes": 1 })),
+        (reporter.id, serde_json::json!({ "pokes": 2 })),
+      ]
+    );
+  }
+
+  /// Reports every second `Poke` it has heard, on each one, through a `StatusReporter`
+  #[derive(Default)]
+  struct PairReporter {
+    pokes: u32,
+    reported: StatusReporter<u32>,
+  }
+
+  impl System for PairReporter {
+    fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
+      if event.is::<Poke>() {
+        self.pokes += 1;
+        let pairs = self.pokes / 2;
+        self.reported.report(ctx, || pairs);
+      }
+    }
+  }
+
+  #[test]
+  fn a_status_reporter_only_reports_changes() {
+    let (mut h, mut traces) = Harness::tracing();
+    h.spawn(PairReporter::default());
+
+    for _ in 0..4 {
+      h.emit(Poke);
+    }
+
+    let reports: Vec<_> = std::iter::from_fn(|| traces.try_recv().ok())
+      .filter_map(|trace| match trace {
+        TraceEvent::SystemStatusReported { status, .. } => Some(status),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(reports, [0, 1, 2].map(|pairs| serde_json::json!(pairs)));
   }
 
   /// Records, on each `Poke`, whether it could look itself up
@@ -312,7 +500,9 @@ mod tests {
   impl System for Caller {
     fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
       if event.is::<Poke>() {
-        ctx.systems.with::<Callee, _>(|callee| callee.call_back(ctx.into()));
+        ctx
+          .systems
+          .with::<Callee, _>(|callee| callee.call_back(ctx.into()));
       }
     }
   }
@@ -388,8 +578,19 @@ mod tests {
     h.settle();
 
     assert!(!h.is_running(panicky));
-    assert_eq!(log.take(), ["1 heard Poke", "1 heard Poke"], "systems after it still hear both");
-    let despawns = heard.take().into_iter().filter(|heard| *heard == Heard::Despawned(panicky.id)).count();
-    assert_eq!(despawns, 1, "it's skipped once faulted, so it panics and is despawned only once");
+    assert_eq!(
+      log.take(),
+      ["1 heard Poke", "1 heard Poke"],
+      "systems after it still hear both"
+    );
+    let despawns = heard
+      .take()
+      .into_iter()
+      .filter(|heard| *heard == Heard::Despawned(panicky.id))
+      .count();
+    assert_eq!(
+      despawns, 1,
+      "it's skipped once faulted, so it panics and is despawned only once"
+    );
   }
 }

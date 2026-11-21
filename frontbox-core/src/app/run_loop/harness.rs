@@ -31,10 +31,25 @@ impl Harness {
     Self::with_state(AppState::default())
   }
 
+  /// A harness whose traces are sent to the returned receiver, as an attached tracer gets them
+  #[cfg(test)]
+  pub(crate) fn tracing() -> (Self, mpsc::UnboundedReceiver<TraceEvent>) {
+    let (tx, rx) = mpsc::unbounded_channel();
+    let mut harness = Self::new();
+    harness.run_loop.tracers = TracerSenders::new(vec![tx]);
+    harness.run_loop.base.traced = true;
+    (harness, rx)
+  }
+
   /// A harness over the given app state, e.g. one with switches
   #[cfg(test)]
   pub(crate) fn with_state(base: AppState) -> Self {
-    Self::with(base, Routines::new(Default::default()), 0, mpsc::unbounded_channel())
+    Self::with(
+      base,
+      Routines::new(Default::default()),
+      0,
+      mpsc::unbounded_channel(),
+    )
   }
 
   /// A harness over the given app state and routines, as `App::run` sets them up. `machine_system_id` is the system
@@ -43,12 +58,21 @@ impl Harness {
     mut base: AppState,
     routines: Routines,
     machine_system_id: u64,
-    channel: (mpsc::UnboundedSender<AppMessage>, mpsc::UnboundedReceiver<AppMessage>),
+    channel: (
+      mpsc::UnboundedSender<AppMessage>,
+      mpsc::UnboundedReceiver<AppMessage>,
+    ),
   ) -> Self {
     let (tx, rx) = channel;
     // as in `App::run`, so config changes emit `ConfigChanged`
     base.config.app_sender = Some(tx.clone());
-    let run_loop = RunLoop::new(base, tx, TracerSenders::new(Vec::new()), routines, machine_system_id);
+    let run_loop = RunLoop::new(
+      base,
+      tx,
+      TracerSenders::new(Vec::new()),
+      routines,
+      machine_system_id,
+    );
     Self { run_loop, rx }
   }
 
@@ -82,31 +106,37 @@ impl Harness {
     self.settle();
   }
 
-  /// Spawn the system into the root group, then settle
+  /// Spawn the system at the top level, then settle
   pub(crate) fn spawn(&mut self, system: impl Into<SystemContainer>) -> SystemHandle {
-    self.spawn_in(ROOT_GROUP, system)
+    self.spawn_under(None, system)
   }
 
-  /// Spawn the system into the group, then settle. Panics if it couldn't be spawned.
-  pub(crate) fn spawn_in(&mut self, group: GroupId, system: impl Into<SystemContainer>) -> SystemHandle {
+  /// Spawn the system as a child of `parent`, or at the top level, then settle. Panics if it couldn't be spawned.
+  pub(crate) fn spawn_under(
+    &mut self,
+    parent: Option<SystemHandle>,
+    system: impl Into<SystemContainer>,
+  ) -> SystemHandle {
     let system = system.into();
-    let (handle, name) = (SystemHandle::new(system.id(), group), system.name());
-    self.spawn_system(system, group);
-    assert!(self.is_running(handle), "{name} wasn't spawned");
+    let name = system.name();
+    let handle = self
+      .spawn_system(system, parent)
+      .unwrap_or_else(|| panic!("{name} wasn't spawned"));
     self.settle();
     handle
   }
 
-  /// Spawn the systems into the root group, then settle, as `RunLoop::run` does at boot: whatever one queues on spawn
-  /// is handled once they're all running
+  /// Spawn the systems at the top level, then settle, as `RunLoop::run` does at boot: whatever one queues on spawn is
+  /// handled once they're all running
   pub(crate) fn spawn_initial(&mut self, systems: impl IntoIterator<Item = SystemContainer>) {
     for system in systems {
-      self.spawn_system(system, ROOT_GROUP);
+      self.spawn_system(system, None);
     }
     self.settle();
   }
 
-  /// Spawn a group owned by `owner`, then settle
+  /// Spawn a [`Group`] of `members` as a child of `owner`, deactivated unless `active`, then settle. Returns the
+  /// group's handle.
   #[cfg(test)]
   pub(crate) fn spawn_group_of(
     &mut self,
@@ -114,12 +144,23 @@ impl Harness {
     name: &'static str,
     members: Vec<ChildSystemContainer>,
     active: bool,
-  ) -> GroupId {
-    let group = GroupHandle::new(GroupId::next(), name);
-    let id = group.id();
-    self.spawn_system_group(owner, group, members, active);
-    self.settle();
-    id
+  ) -> SystemHandle {
+    let group = self.spawn_under(Some(owner), Group::new(name, members));
+    if !active {
+      self.send(AppMessage::DeactivateChild(owner, group.id));
+      self.settle();
+    }
+    group
+  }
+
+  /// The handles of the system's children, in spawn order
+  #[cfg(test)]
+  pub(crate) fn children_of(&self, parent: SystemHandle) -> Vec<SystemHandle> {
+    self
+      .groups
+      .children_group(parent)
+      .map(|group| self.groups.handles_in(group))
+      .unwrap_or_default()
   }
 
   /// A context over the loop's state, for calling into systems from outside the loop. What it sends is handled on the

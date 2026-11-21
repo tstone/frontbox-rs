@@ -30,6 +30,62 @@
   overflow-x: auto;
 }
 
+/* tabs that show the same kind of thing, with a line between groups. Not positioned, so the indicator still measures
+   triggers from the list. */
+.app-header .tab-group {
+  display: flex;
+  align-items: stretch;
+}
+
+.app-header .tab-group + .tab-group {
+  margin-left: 0.5rem;
+  padding-left: 0.5rem;
+  border-left: 1px solid var(--border);
+  /* a line shorter than the header */
+  border-image: linear-gradient(transparent 25%, var(--border) 25%, var(--border) 75%, transparent 75%) 1;
+}
+
+/* making content is apart from looking at the machine */
+.app-header .tab-group[data-group='authoring'] {
+  margin-left: auto;
+}
+
+.app-header .history-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0 0.5rem;
+  white-space: nowrap;
+}
+
+.app-header .history-controls button,
+.app-header .history-controls a,
+.app-header .history-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.app-header .history-controls button:hover,
+.app-header .history-controls a:hover,
+.app-header .history-controls label:hover {
+  color: var(--text);
+}
+
+.app-header .history-controls input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 .app-header [data-scope='tabs'][data-part='trigger'] {
   padding: 0 1rem;
   border: none;

@@ -24,6 +24,10 @@ pub trait GameManager: SpawnableSystem {
 
   fn session(&self) -> Option<&GameSession>;
 
+  /// The id of the player's `Group`, which holds their copy of the player template. A system outside it looks up one
+  /// of the player's systems with `ctx.systems.get_in::<T>(group)`. `None` with no game started, or no such player.
+  fn player_group(&self, player: u8) -> Option<u64>;
+
   /// Add points to the current player/team
   fn add_points(&mut self, points: u64, ctx: &ServiceContext);
   /// Set points multiplier for current player/team

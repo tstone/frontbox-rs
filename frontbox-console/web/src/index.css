@@ -17,6 +17,8 @@
   --cat-switch: #1f6feb;
   --cat-driver: #d9480f;
   --cat-system: #7a7585;
+  /* statuses systems report about themselves */
+  --cat-status: #c2255c;
 
   /* 3D view */
   --plane: #8e879c;
@@ -56,6 +58,7 @@
     --cat-switch: #58a6ff;
     --cat-driver: #ff8a4c;
     --cat-system: #938ca0;
+    --cat-status: #f06595;
 
     --plane: #6d6679;
     --hw-dot: #d4d1da;
@@ -130,4 +133,22 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
+}
+
+/* a search box that filters what's below it, as on the systems and events tabs */
+input.search {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
+}
+
+input.search:focus {
+  border-color: var(--accent);
+  outline: none;
 }

@@ -1,17 +1,15 @@
-use crate::prelude::GroupId;
+use crate::systems::GroupId;
 
-/// Every system within Frontbox is always stored in a group with an ID. For fast lookup Frontbox often passes around
-/// a `SystemHandle` which references the system ID and the ID of the parent group.
-///
-/// IDs alone don't identify a system: copies of a child system spawned into several groups (e.g. one per player) keep
-/// the same ID, so two handles are the same system only if their groups match too.
+/// Identifies a running system to the framework: its id, and where the run loop keeps it. Every system spawned gets
+/// a new id, copies of a template included, so the id alone says which system it is.
 ///
 /// A handle lets whoever holds it act as the system (e.g. `ServiceContext::for_system`), so only the framework creates
-/// them, and they shouldn't be handed out in events. `Default` is a placeholder for a system's field until it is
-/// spawned, and doesn't refer to a system.
+/// them, and they shouldn't be handed out in events. Pass [`id`](Self::id) to say who a system is. `Default` is a
+/// placeholder for a system's field until it is spawned, and doesn't refer to a system.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct SystemHandle {
   pub(crate) id: u64,
+  /// The group holding the system: its parent's children, or the top level
   pub(crate) group: GroupId,
 }
 

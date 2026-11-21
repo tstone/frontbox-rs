@@ -28,31 +28,26 @@ pub enum TraceEvent {
   SystemSpawned {
     id: u64,
     name: &'static str,
-    group: GroupId,
+    /// The system that spawned it, or `None` at the top level
+    parent: Option<u64>,
+    /// Whether it started active, which it doesn't under an inactive parent
+    active: bool,
+    /// Whether it's a `Group`, in which case `name` is the group's own name
+    group: bool,
+    /// What it's for, from [`System::description`](crate::systems::System::description)
+    description: Option<&'static str>,
   },
   SystemDespawned {
     id: u64,
-    group: GroupId,
-  },
-  SystemGroupSpawned {
-    id: GroupId,
-    name: &'static str,
-  },
-  SystemGroupDespawned {
-    id: GroupId,
-    name: &'static str,
+    cause: DespawnCause,
   },
   SystemActiveStateChange {
     id: u64,
     active: bool,
+    cause: ActivityCause,
   },
-  SystemGroupActiveStateChange {
-    id: GroupId,
-    active: bool,
-  },
-  /// A state set in the group changed value. `None` once its owner despawned, so the group no longer sets it.
+  /// A state changed value. `None` once its owner despawned, so no system sets it.
   StateChange {
-    group: GroupId,
     name: &'static str,
     value: Option<serde_json::Value>,
   },
@@ -93,8 +88,6 @@ pub enum TraceEvent {
   RoutineStep {
     routine: &'static str,
     participant: u64,
-    /// The participant's group. Copies of a system in several groups share an id.
-    group: GroupId,
   },
   RoutineSkipped {
     routine: &'static str,
@@ -108,11 +101,16 @@ pub enum TraceEvent {
   RoutineResumed {
     routine: &'static str,
   },
+  /// The participant's step is over
+  RoutineStepEnded {
+    routine: &'static str,
+    participant: u64,
+    ending: StepEnding,
+  },
   /// The current participant halted the routine. It completes once its origin is active.
   RoutineHalted {
     routine: &'static str,
     participant: u64,
-    group: GroupId,
   },
   RoutineCompleted {
     routine: &'static str,
@@ -124,16 +122,66 @@ pub enum TraceEvent {
     routine: &'static str,
     origin: u64,
   },
-  // TODO: some kind of game-specific state push that is JSON encodable
+  /// A system reported its status, for tracers only, with
+  /// [`SystemContext::report_status`](crate::systems::SystemContext::report_status)
+  SystemStatusReported {
+    id: u64,
+    status: serde_json::Value,
+  },
 }
 
 /// Why a routine participant didn't get a step
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum RoutineSkipReason {
-  /// No instance in reach of the origin
+  /// No system of its type is running
   Missing,
   Inactive,
+}
+
+/// Why a system became active, or stopped being active
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum ActivityCause {
+  /// Its parent activated or deactivated it
+  Parent { id: u64 },
+  /// An ancestor became active or stopped, and the change reached it. `id` is the ancestor where it started.
+  Ancestor { id: u64 },
+  /// Its own `is_active` changed. `during` is what was being delivered when the framework noticed: an event's type name,
+  /// or `"tick"`. Usually a state change just before it is what changed it.
+  IsActive { during: Option<&'static str> },
+}
+
+/// Why a system was despawned
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum DespawnCause {
+  /// It despawned itself
+  Itself,
+  /// One of its handlers panicked
+  Panicked,
+  /// It replaced itself with another system
+  Replaced,
+  /// Its parent despawned it
+  Parent { id: u64 },
+  /// An ancestor was despawned. `id` is the ancestor where it started.
+  Ancestor { id: u64 },
+}
+
+/// How a routine participant's step came to an end
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum StepEnding {
+  /// It completed its step
+  Completed,
+  /// It halted the routine
+  Halted,
+  /// It was despawned or deactivated mid-step
+  Stopped,
+  /// The routine's origin cancelled it
+  Cancelled,
+  /// The routine's origin was despawned
+  Abandoned,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

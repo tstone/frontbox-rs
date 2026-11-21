@@ -3,6 +3,7 @@ import { SegmentGroup } from '@ark-ui/solid/segment-group'
 import { Splitter } from '@ark-ui/solid/splitter'
 import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from 'solid-js'
 import * as icons from '../../components/icons'
+import { typingIn } from '../../lib/keys'
 import { cssColor } from '../../lib/leds'
 import { machine } from '../../state/console'
 import { addContentScene, contentScenes, deleteContentScene, saveContentScene } from '../../state/contentScenes'
@@ -899,11 +900,3 @@ export default function SceneEditor(props: {
 }
 
 const distance = ([ax, ay]: Vec2, [bx, by]: Vec2) => Math.hypot(ax - bx, ay - by)
-
-/** Whether a key pressed in `target` goes to text being edited there */
-const typingIn = (target: EventTarget | null) =>
-  target instanceof HTMLElement &&
-  (target.isContentEditable ||
-    target instanceof HTMLTextAreaElement ||
-    target instanceof HTMLSelectElement ||
-    (target instanceof HTMLInputElement && !['button', 'checkbox', 'radio', 'range', 'color', 'file', 'reset', 'submit'].includes(target.type)))

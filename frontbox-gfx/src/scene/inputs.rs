@@ -17,7 +17,11 @@ impl Inputs {
   }
 
   pub(crate) fn variable(&mut self, name: &str, read_as: VariableType) {
-    self.variables.entry(name.into()).or_default().insert(read_as);
+    self
+      .variables
+      .entry(name.into())
+      .or_default()
+      .insert(read_as);
   }
 }
 
@@ -69,8 +73,8 @@ impl fmt::Display for VariableType {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::scene::file;
   use crate::scene::Layer;
+  use crate::scene::file;
 
   fn inputs(layer: &str) -> Inputs {
     let layer: Layer = file::load(layer).unwrap();
@@ -97,8 +101,13 @@ mod tests {
 
   #[test]
   fn text_read_from_a_variable_is_text() {
-    let inputs = inputs(r#"(fill: (base: Solid(Fixed(0, 0, 0, 255))), region: (base: Text(text: Variable("name"), font: "f", size: Fixed(8.0), width: Fixed(10.0), height: Fixed(8.0))))"#);
-    assert_eq!(inputs.variables["name"].iter().collect::<Vec<_>>(), [&VariableType::Text]);
+    let inputs = inputs(
+      r#"(fill: (base: Solid(Fixed(0, 0, 0, 255))), region: (base: Text(text: Variable("name"), font: "f", size: Fixed(8.0), width: Fixed(10.0), height: Fixed(8.0))))"#,
+    );
+    assert_eq!(
+      inputs.variables["name"].iter().collect::<Vec<_>>(),
+      [&VariableType::Text]
+    );
   }
 
   #[test]
@@ -107,13 +116,21 @@ mod tests {
       r#"(fill: (base: Solid(Fixed(0, 0, 0, 255))),
         region: (base: Circle(radius: Fixed(2.0)), transform: [Translate(Sweep(path: (base: Circle(radius: Variable("orbit"))), position: Variable("lap")))]))"#,
     );
-    assert_eq!(inputs.variables.keys().collect::<Vec<_>>(), ["lap", "orbit"]);
+    assert_eq!(
+      inputs.variables.keys().collect::<Vec<_>>(),
+      ["lap", "orbit"]
+    );
   }
 
   #[test]
   fn a_file_from_before_variables_says_param() {
-    let inputs = inputs(r#"(fill: (base: Solid(Param("color"))), region: (base: Text(text: Param("name"), font: "f", size: Fixed(8.0), width: Fixed(10.0), height: Fixed(8.0))))"#);
-    assert_eq!(inputs.variables.keys().collect::<Vec<_>>(), ["color", "name"]);
+    let inputs = inputs(
+      r#"(fill: (base: Solid(Param("color"))), region: (base: Text(text: Param("name"), font: "f", size: Fixed(8.0), width: Fixed(10.0), height: Fixed(8.0))))"#,
+    );
+    assert_eq!(
+      inputs.variables.keys().collect::<Vec<_>>(),
+      ["color", "name"]
+    );
   }
 
   #[test]

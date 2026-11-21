@@ -14,10 +14,17 @@ impl EmergencyStop {
   /// How long the machine task gets to send the power down messages before the process goes
   const FLUSH_TIME: Duration = Duration::from_millis(500);
 
-  pub(crate) fn new(machine_sender: mpsc::UnboundedSender<MachineMessage>, state: &AppState) -> Self {
+  pub(crate) fn new(
+    machine_sender: mpsc::UnboundedSender<MachineMessage>,
+    state: &AppState,
+  ) -> Self {
     Self {
       machine_sender,
-      exp_addresses: state.exp_network.iter().map(|board| board.address).collect(),
+      exp_addresses: state
+        .exp_network
+        .iter()
+        .map(|board| board.address)
+        .collect(),
     }
   }
 

@@ -316,6 +316,10 @@ impl DmdMenuSystem {
 }
 
 impl System for DmdMenuSystem {
+  fn description() -> Option<&'static str> {
+    Some("Shows the operator menu on the DMD while the coin door is open")
+  }
+
   fn is_active(&self, ctx: &SystemContext) -> bool {
     ctx
       .switches

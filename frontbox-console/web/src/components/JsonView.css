@@ -1,0 +1,49 @@
+.json-view {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+
+.json-view .entry {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 0.5rem;
+}
+
+.json-view .key {
+  color: var(--cat-switch);
+}
+
+.json-view .key::after {
+  content: ':';
+  color: var(--muted);
+}
+
+.json-view .key.index {
+  color: var(--muted);
+}
+
+/* a nested object or array, on its own lines under its key */
+.json-view .nested {
+  flex-basis: 100%;
+  padding-left: 1.25rem;
+  border-left: 1px solid var(--border);
+  margin-left: 0.25rem;
+}
+
+.json-view .string {
+  color: var(--ok);
+}
+
+.json-view .number {
+  color: var(--cat-driver);
+}
+
+.json-view .boolean,
+.json-view .null {
+  color: var(--accent);
+}
+
+.json-view .brace {
+  color: var(--muted);
+}

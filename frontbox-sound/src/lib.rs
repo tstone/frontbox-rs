@@ -1,22 +1,22 @@
 //! # Frontbox Sound
-//! 
+//!
 //! <div class="warning">Stability Level: Low</div>
-//! 
+//!
 //! Frontbox includes `SoundSystem` that supports three types of sounds:
-//! 
+//!
 //! ## Effects
-//! 
+//!
 //! - Must be preloaded
 //! - Can play unlimited at a time
-//! 
+//!
 //! ## Callouts
-//! 
+//!
 //! - Must be preloaded
 //! - Can play one at a time
 //! - Overlapping requests queue in the order they were asked for, unless a [`CalloutRequest`] says otherwise
 //! - Automatically lowers volume on music track when playing
 //! - [`CalloutCompleted`] says when a line is done with
-//! 
+//!
 //! ## Scene sounds
 //!
 //! - A scene's `Sound` layers name sounds in the app's content folder, such as `sounds/zap.mp3`
@@ -24,13 +24,13 @@
 //! - Each plays when the playback's clock passes one of its layer's start times, as an effect would
 //!
 //! ## Music
-//! 
+//!
 //! - Loaded from disk into memory when played
 //! - Can only play one at a time
 //! - Overlapping requests overwrite previous track
 //! - Loops until stopped or replaced
 //! - Can crossfade into each other, and into itself on each loop
-//! 
+//!
 //! ```rust
 //! # use frontbox_core::prelude::*;
 //! # use frontbox_sound::*;
@@ -50,9 +50,9 @@
 //! ```
 
 mod callout;
+mod sound_manager;
 mod sound_system;
 mod sound_system_ext;
-mod sound_manager;
 
 pub use callout::CalloutRequest;
 pub use sound_system::*;

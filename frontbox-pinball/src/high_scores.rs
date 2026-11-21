@@ -86,7 +86,11 @@ impl HighScoresSystem {
   }
 }
 
-impl System for HighScoresSystem {}
+impl System for HighScoresSystem {
+  fn description() -> Option<&'static str> {
+    Some("Keeps the high score table, saved to a file")
+  }
+}
 
 impl Default for HighScoresSystem {
   fn default() -> Self {

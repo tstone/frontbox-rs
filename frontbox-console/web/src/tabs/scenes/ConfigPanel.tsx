@@ -4,6 +4,7 @@ import { createTreeCollection, TreeView } from '@ark-ui/solid/tree-view'
 import { batch, createContext, createEffect, createMemo, createSignal, For, Index, Match, on, onCleanup, onMount, Show, Switch, untrack, useContext, type JSX, type Signal } from 'solid-js'
 import { Dynamic, Portal } from 'solid-js/web'
 import * as icons from '../../components/icons'
+import { selectThenToggle } from '../../components/treeClick'
 import ScenePortal, { LayerColorContext, layerColorClass } from './ScenePortal'
 import { NAMED_VALUE_LABELS, namedValueKind, ValueFields } from './ValueFields'
 import { VariableFields, VariableSource } from './VariableFields'
@@ -342,6 +343,8 @@ type ConfigTree = {
   select(id: string | null): void
   expand(...ids: string[]): void
   toggle(id: string): void
+  /** Whether the node is the one selected */
+  isSelected(id: string): boolean
   move(place: ListPlace, by: number): void
   remove(place: ListPlace): void
   /** The place of the row being dragged, which can be dropped elsewhere in its list */
@@ -410,6 +413,7 @@ export default function ConfigPanel(props: { selection: Signal<Selection | null>
   const tree: ConfigTree = {
     select,
     expand,
+    isSelected: (id) => selected() === id,
     toggle: (id) => setExpanded((ids) => (ids.includes(id) ? ids.filter((open) => open !== id) : [...ids, id])),
     move: ({ list, listId, index, spread }, by) =>
       batch(() => {
@@ -507,6 +511,8 @@ export default function ConfigPanel(props: { selection: Signal<Selection | null>
           onSelectionChange={(details) => select(details.selectedValue[0] ?? null)}
           expandedValue={expanded()}
           onExpandedChange={(details) => setExpanded(details.expandedValue)}
+          // a branch opens or closes on a click once it's selected, or on its arrow (`selectThenToggle`)
+          expandOnClick={false}
           lazyMount
           unmountOnExit
         >
@@ -560,7 +566,11 @@ function TreeNode(props: { node: ConfigNode; indexPath: number[] }) {
           }
         >
           <TreeView.Branch class={props.node.kind === 'sound' ? layerColorClass('sound') : undefined}>
-            <TreeView.BranchControl class="scene-tree-row" {...drag}>
+            <TreeView.BranchControl
+              class="scene-tree-row"
+              {...drag}
+              {...selectThenToggle(() => tree.isSelected(props.node.id), () => tree.toggle(props.node.id))}
+            >
               <TreeView.BranchIndicator>
                 <icons.ChevronRight aria-hidden="true" />
               </TreeView.BranchIndicator>

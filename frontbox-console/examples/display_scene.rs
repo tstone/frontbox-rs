@@ -42,7 +42,8 @@ async fn main() {
   };
 
   let content = content_with_bundled(Some(folder.into()));
-  let scene = Scene::open(&content, &name).unwrap_or_else(|err| panic!("Couldn't play {name}: {err}"));
+  let scene =
+    Scene::open(&content, &name).unwrap_or_else(|err| panic!("Couldn't play {name}: {err}"));
 
   App::new(BootConfig {
     platform,
@@ -56,10 +57,16 @@ async fn main() {
   .configure(|app| {
     let console = WebTracer::new();
     app.system(SceneSystem::new());
-    app.system(DisplaySystem::new().display(
-      DisplayDefinition::new("Dmd", Pin2Dmd::new(128, 32, PanelType::Rgb)).mirror(console.display_view()),
-    ));
-    app.system(PlayScene { scene: PlayableScene::new(scene), player: None });
+    app.system(
+      DisplaySystem::new().display(
+        DisplayDefinition::new("Dmd", Pin2Dmd::new(128, 32, PanelType::Rgb))
+          .mirror(console.display_view()),
+      ),
+    );
+    app.system(PlayScene {
+      scene: PlayableScene::new(scene),
+      player: None,
+    });
     app.tracer(console);
   })
   .run()

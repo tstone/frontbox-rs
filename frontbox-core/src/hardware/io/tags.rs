@@ -29,6 +29,5 @@ impl serde::Serialize for dyn Tag {
   }
 }
 
-
 #[derive(Tag)]
 pub struct Button;

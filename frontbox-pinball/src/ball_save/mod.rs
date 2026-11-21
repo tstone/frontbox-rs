@@ -12,7 +12,7 @@ use crate::{BallDraining, TurnActive, TurnPhase, configs, metrics};
 /// Saves balls that drain while a ball save is active, by relaunching them as though the drain never happened.
 ///
 /// ## Per player
-/// Ball save belongs in the player's system group (the game manager's player template), not at the root. It is only
+/// Ball save belongs in the player's `Group` (the game manager's player template), not at the top level. It is only
 /// active while that player's turn is beginning or active. When the turn ends it deactivates, which clears every
 /// request, so nothing carries over to the next turn. Ball management, by contrast, is global.
 ///
@@ -175,6 +175,10 @@ impl BallSaveSystem {
 }
 
 impl System for BallSaveSystem {
+  fn description() -> Option<&'static str> {
+    Some("Gives the player back a ball that drains while ball save is on")
+  }
+
   fn on_spawn(&mut self, ctx: &SystemContext) {
     self.handle = ctx.handle();
   }
@@ -480,8 +484,7 @@ mod tests {
     let mut f = Fixture::spawn();
     f.request_until_released(A);
     f.request_until_released(B);
-    f.save
-      .on_event(&SystemDespawned::new(A, ROOT_GROUP), &f.ctx.sys_ctx());
+    f.save.on_event(&SystemDespawned::new(A), &f.ctx.sys_ctx());
     assert!(!f.save.requests.contains_key(&A));
     assert!(f.save.requests.contains_key(&B));
   }

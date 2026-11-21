@@ -155,52 +155,49 @@ impl EventExt for dyn Event {
 #[derive(serde::Serialize, Event, Debug, Clone, Copy)]
 pub struct SystemSpawned {
   pub id: u64,
-  pub group: GroupId,
 }
 
 impl SystemSpawned {
-  pub fn new(id: u64, group: GroupId) -> Self {
-    Self { id, group }
+  pub fn new(id: u64) -> Self {
+    Self { id }
   }
 }
 
-/// Event that happens when an existing system is despawned. This is fired automatically by the framework.
+/// Event that happens when an existing system is despawned, itself or along with its parent. This is fired
+/// automatically by the framework.
 #[derive(serde::Serialize, Event, Debug, Clone, Copy)]
 pub struct SystemDespawned {
   pub id: u64,
-  pub group: GroupId,
 }
 
 impl SystemDespawned {
-  pub fn new(id: u64, group: GroupId) -> Self {
-    Self { id, group }
+  pub fn new(id: u64) -> Self {
+    Self { id }
   }
 }
 
-/// Event that happens when a system stops being active: its `is_active` turned false, or its group was deactivated.
-/// Fired automatically by the framework, after the system's `on_deactivate`.
+/// Event that happens when a system stops being active: its `is_active` turned false, its parent deactivated it, or an
+/// ancestor stopped being active. Fired automatically by the framework, after the system's `on_deactivate`.
 #[derive(serde::Serialize, Event, Debug, Clone, Copy)]
 pub struct SystemDeactivated {
   pub id: u64,
-  pub group: GroupId,
 }
 
 impl SystemDeactivated {
-  pub fn new(id: u64, group: GroupId) -> Self {
-    Self { id, group }
+  pub fn new(id: u64) -> Self {
+    Self { id }
   }
 }
 
-/// Event that happens when an inactive system becomes active again: its `is_active` turned true, or its group was
-/// reactivated. Fired automatically by the framework, after the system's `on_reactivate`.
+/// Event that happens when an inactive system becomes active again. Fired automatically by the framework, after the
+/// system's `on_reactivate`.
 #[derive(serde::Serialize, Event, Debug, Clone, Copy)]
 pub struct SystemReactivated {
   pub id: u64,
-  pub group: GroupId,
 }
 
 impl SystemReactivated {
-  pub fn new(id: u64, group: GroupId) -> Self {
-    Self { id, group }
+  pub fn new(id: u64) -> Self {
+    Self { id }
   }
 }

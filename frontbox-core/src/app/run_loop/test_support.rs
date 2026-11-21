@@ -125,13 +125,13 @@ impl<const N: usize> System for Probe<N> {
   }
 }
 
-/// Owns groups. Numbered so several can run in one group.
+/// Has children. Numbered so several can run with the same parent.
 #[derive(Clone)]
 pub(super) struct Owner<const N: usize>;
 
 impl<const N: usize> System for Owner<N> {}
 
-/// Fills a group
+/// Fills a [`Group`]
 #[derive(Clone)]
 pub(super) struct Member;
 
@@ -143,12 +143,12 @@ pub(super) struct Poke;
 
 /// Helpers for the systems above
 impl Harness {
-  /// Spawn an active group owned by `owner`, holding one [`Member`], then settle
-  pub(super) fn spawn_group(&mut self, owner: SystemHandle, name: &'static str) -> GroupId {
+  /// Spawn an active [`Group`] as a child of `owner`, holding one [`Member`], then settle
+  pub(super) fn spawn_group(&mut self, owner: SystemHandle, name: &'static str) -> SystemHandle {
     self.spawn_group_of(owner, name, vec![Member.into()], true)
   }
 
-  /// Spawn a [`Listener`] into the root group, returning what it hears from then on
+  /// Spawn a [`Listener`] at the top level, returning what it hears from then on
   pub(super) fn listen(&mut self) -> Log<Heard> {
     let heard = Log::default();
     self.spawn(Listener(heard.clone()));

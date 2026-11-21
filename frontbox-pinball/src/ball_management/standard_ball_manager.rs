@@ -1,12 +1,12 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 
 use frontbox_core::prelude::*;
 
 use crate::ball_management::trough::TroughSystem;
 use crate::ball_management::{
   AutoPlungerFired, AutoPlungerSystem, BallEnteredPlay, BallEnteredPlungeLane,
-  BallExitedPlungeLane, BallManager, BallReenteredPlungeLane, BallsExitedPlay, BallsHeldChanged, EjectCompleted,
-  Launch, LaunchMethod, Launcher, MaxBallsInPlayChanged, PlungeLaneSystem,
+  BallExitedPlungeLane, BallManager, BallReenteredPlungeLane, BallsExitedPlay, BallsHeldChanged,
+  EjectCompleted, Launch, LaunchMethod, Launcher, MaxBallsInPlayChanged, PlungeLaneSystem,
   StandardBallManagerConfig, StandardBuilder, TroughEjectFailed, TroughOccupancyChanged,
 };
 use crate::{configs, metrics};
@@ -37,16 +37,19 @@ pub struct StandardBallManager {
   launch_verify_timer_id: Option<u64>,
   /// Times the autoplunger has fired again at the ball in the lane without moving it
   launch_retries: u8,
+  /// The trough it spawned, so it can report once the trough is running
+  trough_id: u64,
+  reported: StatusReporter<ReportedStatus>,
 }
 
 /// A ball for a request, and how the request wants it launched
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 struct RequestedBall {
   launch: Launch,
   eject_id: u64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 struct EjectRequest {
   id: u64,
   requested: u8,
@@ -127,6 +130,8 @@ impl StandardBallManager {
       eject_state: EjectState::Idle,
       launch_verify_timer_id: None,
       launch_retries: 0,
+      reported: StatusReporter::new(),
+      trough_id: 0, // set on spawn
     }
   }
 
@@ -506,8 +511,16 @@ impl StandardBallManager {
   /// Whether a ball is resting on the plunge lane switch right now
   fn is_lane_ball_resting(&self, ctx: &SystemContext) -> bool {
     ctx
-      .systems.get::<PlungeLaneSystem>()
+      .systems
+      .get::<PlungeLaneSystem>()
       .is_some_and(|lane| lane.is_ball_resting(ctx.into()))
+  }
+
+  /// Reports the status to tracers, if it changed. Called at the end of everything that can change it.
+  fn report(&mut self, ctx: &SystemContext) {
+    let mut reported = std::mem::take(&mut self.reported);
+    reported.report(ctx, || ReportedStatus::of(self, ctx));
+    self.reported = reported;
   }
 }
 
@@ -540,6 +553,7 @@ impl BallManager for StandardBallManager {
       self.queue.push_back(RequestedBall { launch, eject_id });
     }
     self.process_queue(ctx);
+    self.report(ctx);
     eject_id
   }
 
@@ -553,7 +567,13 @@ impl BallManager for StandardBallManager {
   }
 
   fn balls_in_play(&self, ctx: &ServiceContext) -> u8 {
-    self.in_play(ctx.for_system(self.handle).systems.expect::<TroughSystem>().occupancy())
+    self.in_play(
+      ctx
+        .for_system(self.handle)
+        .systems
+        .expect::<TroughSystem>()
+        .occupancy(),
+    )
   }
 
   fn is_ball_in_plunge_lane(&self, ctx: &ServiceContext) -> bool {
@@ -565,7 +585,7 @@ impl BallManager for StandardBallManager {
     self.queue.clear();
 
     // An eject the trough hadn't started yet leaves its ball in the trough
-    if ctx.systems.expect::<TroughSystem>().cancel_queued_ejects() {
+    if ctx.systems.expect::<TroughSystem>().cancel_queued_ejects(ctx.into()) {
       self.trough_ejecting = None;
       self.end_en_route(ctx);
     }
@@ -598,6 +618,7 @@ impl BallManager for StandardBallManager {
         launched: request.launched,
       });
     }
+    self.report(ctx);
   }
 
   fn ejects_pending(&self) -> bool {
@@ -613,6 +634,7 @@ impl BallManager for StandardBallManager {
     if self.balls_found < installed {
       log::warn!(target: "frontbox::ball_management", "Only {} of {} installed balls found", self.balls_found, installed);
     }
+    self.report(ctx);
   }
 
   fn balls_missing(&self, ctx: &ServiceContext) -> u8 {
@@ -634,6 +656,7 @@ impl BallManager for StandardBallManager {
       max_in_play: self.max_in_play(),
       delta: -1,
     });
+    self.report(ctx);
   }
 
   fn set_balls_held(&mut self, holder: u64, count: u8, ctx: &ServiceContext) {
@@ -655,6 +678,7 @@ impl BallManager for StandardBallManager {
       held: self.balls_held(),
       delta: count as i8 - before as i8,
     });
+    self.report(ctx);
   }
 
   fn balls_held(&self) -> u8 {
@@ -680,6 +704,7 @@ impl BallManager for StandardBallManager {
         delta: max_after as i8 - max_before as i8,
       });
     }
+    self.report(ctx);
   }
 
   fn balls_locked(&self) -> u8 {
@@ -688,6 +713,10 @@ impl BallManager for StandardBallManager {
 }
 
 impl System for StandardBallManager {
+  fn description() -> Option<&'static str> {
+    Some("Keeps track of how many balls are in play, and puts new ones into play from the trough")
+  }
+
   fn provides(provides: &mut Provides<Self>) {
     provides.add::<dyn BallManager>(|s| s);
   }
@@ -707,7 +736,7 @@ impl System for StandardBallManager {
     let trough = TroughSystem::new(trough_config);
     // Until the ball count is established (e.g. at game start), assume the balls in the trough now are all the balls there are
     self.balls_found = trough.read_switch_occupancy(ctx.into());
-    ctx.systems.spawn(trough);
+    self.trough_id = ctx.systems.spawn(trough);
 
     if let Some(autoplunger) = self.config.autoplunger() {
       ctx.systems.spawn(AutoPlungerSystem::new(autoplunger));
@@ -744,7 +773,15 @@ impl System for StandardBallManager {
       self.on_lane_arrival_timed_out(ctx);
     } else if event.is::<VerifyLaunch>() {
       self.verify_launch(ctx);
+    } else if let Some(spawned) = event.downcast_ref::<SystemSpawned>() {
+      // reported once the trough can be asked how many balls are in it
+      if spawned.id != self.trough_id {
+        return;
+      }
+    } else {
+      return;
     }
+    self.report(ctx);
   }
 }
 
@@ -755,6 +792,112 @@ fn set_count(counts: &mut HashMap<u64, u8>, id: u64, count: u8) {
   } else {
     counts.insert(id, count);
   }
+}
+
+/// What ball management reports to tracers about itself
+#[derive(serde::Serialize, PartialEq)]
+struct ReportedStatus {
+  balls_found: u8,
+  /// `None` while the trough can't be asked
+  in_play: Option<u8>,
+  /// Balls resting in each holder, by the holder's name
+  held: BTreeMap<String, u8>,
+  /// Balls locked in each lock, by the lock's name
+  locked: BTreeMap<String, u8>,
+  /// Requests with balls not yet in play or given up on
+  requests: Vec<EjectRequest>,
+  /// Balls requested but not yet ejected from the trough, next first
+  queue: Vec<RequestedBall>,
+  /// The request of the ball the trough is ejecting
+  trough_ejecting: Option<u64>,
+  eject: ReportedEject,
+  /// Set from the autoplunger firing at the ball in the lane until it's checked that the ball left
+  verifying_launch: bool,
+  launch_retries: u8,
+}
+
+impl ReportedStatus {
+  fn of(manager: &StandardBallManager, ctx: &SystemContext) -> Self {
+    let by_name = |counts: &HashMap<u64, u8>| {
+      let mut named = BTreeMap::new();
+      for (id, count) in counts {
+        let name = ctx
+          .systems
+          .name_of(*id)
+          .map_or_else(|| format!("#{id}"), short_type_name);
+        *named.entry(name).or_default() += count;
+      }
+      named
+    };
+    Self {
+      balls_found: manager.balls_found,
+      in_play: ctx
+        .systems
+        .get::<TroughSystem>()
+        .map(|trough| manager.in_play(trough.occupancy())),
+      held: by_name(&manager.balls_held),
+      locked: by_name(&manager.balls_locked),
+      requests: manager.requests.clone(),
+      queue: manager.queue.iter().copied().collect(),
+      trough_ejecting: manager.trough_ejecting,
+      eject: ReportedEject::from(manager.eject_state),
+      verifying_launch: manager.launch_verify_timer_id.is_some(),
+      launch_retries: manager.launch_retries,
+    }
+  }
+}
+
+/// [`EjectState`] without its timers
+#[derive(serde::Serialize, PartialEq)]
+enum ReportedEject {
+  Idle,
+  EnRoute {
+    ball: Option<RequestedBall>,
+    /// The trough has finished ejecting, and the plunge lane hasn't seen the ball yet
+    waiting_for_arrival: bool,
+    kicked: bool,
+  },
+  InLane {
+    ball: Option<RequestedBall>,
+    launched_by: Option<LaunchMethod>,
+  },
+  Available,
+}
+
+impl From<EjectState> for ReportedEject {
+  fn from(state: EjectState) -> Self {
+    match state {
+      EjectState::Idle => Self::Idle,
+      EjectState::EnRoute {
+        ball,
+        arrival_timer_id,
+        kicked,
+      } => Self::EnRoute {
+        ball,
+        waiting_for_arrival: arrival_timer_id.is_some(),
+        kicked,
+      },
+      EjectState::InLane { ball, launched_by } => Self::InLane { ball, launched_by },
+      EjectState::Available => Self::Available,
+    }
+  }
+}
+
+/// `a::b::Scoop<c::Lower>` as `Scoop<Lower>`
+fn short_type_name(name: &str) -> String {
+  let mut short = String::new();
+  let mut path = String::new();
+  for c in name.chars() {
+    if c.is_alphanumeric() || c == '_' || c == ':' {
+      path.push(c);
+    } else {
+      short.push_str(path.rsplit("::").next().unwrap_or(&path));
+      path.clear();
+      short.push(c);
+    }
+  }
+  short.push_str(path.rsplit("::").next().unwrap_or(&path));
+  short
 }
 
 // -- Signals --
@@ -783,7 +926,10 @@ mod tests {
   impl Fixture {
     /// Spawns ball management with `balls` in a 5 switch trough, alongside a spawned trough for it to query
     fn spawn(balls: usize) -> Self {
-      Self::build(balls, StandardBallManager::builder(TROUGH, "eject").config())
+      Self::build(
+        balls,
+        StandardBallManager::builder(TROUGH, "eject").config(),
+      )
     }
 
     /// As `spawn`, with a plunge lane and optionally an autoplunger (whose launch button is the `launch` switch)
@@ -887,12 +1033,18 @@ mod tests {
       let switch = self.ctx.base.switches.by_name(LAUNCH).unwrap().clone();
       let ctx = self.ctx.sys_ctx();
       ctx
-        .systems.expect::<AutoPlungerSystem>()
+        .systems
+        .expect::<AutoPlungerSystem>()
         .on_event(&SwitchClosed::new(switch), &ctx);
     }
 
     fn is_launch_button_armed(&self) -> bool {
-      self.ctx.sys_ctx().systems.expect::<AutoPlungerSystem>().is_armed()
+      self
+        .ctx
+        .sys_ctx()
+        .systems
+        .expect::<AutoPlungerSystem>()
+        .is_armed()
     }
 
     /// Delivers autoplunger fires emitted since the last call to ball management, as the app would, and returns them
@@ -946,7 +1098,8 @@ mod tests {
       self
         .ctx
         .sys_ctx()
-        .systems.expect::<TroughSystem>()
+        .systems
+        .expect::<TroughSystem>()
         .set_occupancy(current_occupancy);
       self.deliver(&TroughOccupancyChanged {
         current_occupancy,
@@ -957,12 +1110,16 @@ mod tests {
 
     /// Simulate `holder` reporting how many balls are resting in it
     fn hold(&mut self, holder: u64, count: u8) {
-      self.system.set_balls_held(holder, count, &self.ctx.svc_ctx());
+      self
+        .system
+        .set_balls_held(holder, count, &self.ctx.svc_ctx());
     }
 
     /// Simulate `locker` reporting how many balls are locked in it
     fn lock(&mut self, locker: u64, count: u8) {
-      self.system.set_balls_locked(locker, count, &self.ctx.svc_ctx());
+      self
+        .system
+        .set_balls_locked(locker, count, &self.ctx.svc_ctx());
     }
 
     fn balls_in_play(&self) -> u8 {
@@ -1124,6 +1281,37 @@ mod tests {
   }
 
   #[test]
+  fn the_reported_status_has_the_counts_and_the_eject() {
+    let mut f = Fixture::spawn(5);
+    f.trough_changed(4, 0, 1);
+    f.hold(999, 1);
+    let status = serde_json::to_value(ReportedStatus::of(&f.system, &f.ctx.sys_ctx())).unwrap();
+    assert_eq!(
+      status,
+      serde_json::json!({
+        "balls_found": 5,
+        "in_play": 1,
+        "held": { "#999": 1 },
+        "locked": {},
+        "requests": [],
+        "queue": [],
+        "trough_ejecting": null,
+        "eject": "Idle",
+        "verifying_launch": false,
+        "launch_retries": 0,
+      })
+    );
+  }
+
+  #[test]
+  fn a_short_type_name_drops_the_paths_inside_generics_too() {
+    assert_eq!(
+      short_type_name("frontbox_pinball::scoop::ScoopSystem<lotko::hardware::Lower>"),
+      "ScoopSystem<Lower>"
+    );
+  }
+
+  #[test]
   fn reporting_an_unchanged_hold_emits_nothing() {
     let mut f = Fixture::spawn(5);
     f.hold(1, 0);
@@ -1212,7 +1400,11 @@ mod tests {
     f.trough_changed(3, 0, 1); // another ball served
     f.trough_changed(4, 1, 0);
     assert_eq!(f.drained_events(), vec![(1, 0)]);
-    assert_eq!(f.max_changed_events(), vec![], "a drain, not a ball turning up");
+    assert_eq!(
+      f.max_changed_events(),
+      vec![],
+      "a drain, not a ball turning up"
+    );
   }
 
   #[test]
@@ -1246,7 +1438,10 @@ mod tests {
     f.lock(1, 1);
     assert_eq!(f.system.balls_found, 5);
     assert_eq!(f.balls_in_play(), 0);
-    assert!(f.max_changed_events().is_empty(), "nothing more could be in play");
+    assert!(
+      f.max_changed_events().is_empty(),
+      "nothing more could be in play"
+    );
   }
 
   #[test]
@@ -1746,7 +1941,10 @@ mod tests {
     assert_eq!(f.system.balls_found, 5, "trough and lane");
 
     f.eject_many(1, Launch::Player);
-    assert!(f.system.trough_ejecting.is_none(), "served by the lane ball");
+    assert!(
+      f.system.trough_ejecting.is_none(),
+      "served by the lane ball"
+    );
     assert_eq!(f.balls_in_play(), 1);
 
     f.lane_exited();
@@ -1827,7 +2025,10 @@ mod tests {
     assert!(f.system.trough_ejecting.is_some());
 
     f.system.cancel_ejects(&f.ctx.svc_ctx());
-    assert!(f.system.trough_ejecting.is_none(), "doesn't block the next request");
+    assert!(
+      f.system.trough_ejecting.is_none(),
+      "doesn't block the next request"
+    );
     assert_eq!(f.completed_events(), vec![(id, 1, 0)]);
   }
 

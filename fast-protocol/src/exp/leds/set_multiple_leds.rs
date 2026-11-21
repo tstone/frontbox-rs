@@ -38,7 +38,8 @@ mod tests {
   #[test]
   fn test_request() {
     let result =
-      SetMultipleLedsCommand::new(ExpAddress::new(0x48, None), Rgb::new(255, 0, 0), vec![0, 1]).to_string();
+      SetMultipleLedsCommand::new(ExpAddress::new(0x48, None), Rgb::new(255, 0, 0), vec![0, 1])
+        .to_string();
     assert_eq!(result, "RP@48:FF0000,0,1\r");
   }
 }

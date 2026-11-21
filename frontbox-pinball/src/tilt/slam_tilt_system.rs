@@ -27,6 +27,10 @@ impl SlamTiltSystem {
 }
 
 impl System for SlamTiltSystem {
+  fn description() -> Option<&'static str> {
+    Some("Ends the game at once when the slam tilt switch closes")
+  }
+
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     let Some(SwitchClosed { switch }) = event.downcast_ref::<SwitchClosed>() else {
       return;

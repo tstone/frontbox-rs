@@ -38,7 +38,7 @@ A filter matches every target that starts with it, so `frontbox::ball_management
 
 | Target | Covers |
 |---|---|
-| `frontbox::systems` | Spawning, despawning, activating and deactivating systems and groups; panics; lookups of systems that aren't running or are in use; state |
+| `frontbox::systems` | Spawning, despawning, activating and deactivating systems and their children; panics; lookups of systems that aren't running or are in use; state |
 | `frontbox::systems::delivery` | Each time an inactive system is skipped for an event (trace, noisy) |
 | `frontbox::events` | Each event emitted |
 | `frontbox::timers` | Creating, firing and completing timers |

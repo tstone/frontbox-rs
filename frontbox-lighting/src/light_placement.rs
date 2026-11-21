@@ -4,7 +4,7 @@ use std::sync::Arc;
 use frontbox_core::prelude::*;
 use frontbox_gfx::layout::Line;
 use frontbox_gfx::prelude::{Rgba, RgbaColor};
-use frontbox_gfx::scene::{self, Graph, Layer, LayerFrame, Variables, Sample, Visits};
+use frontbox_gfx::scene::{self, Graph, Layer, LayerFrame, Sample, Variables, Visits};
 use frontbox_scene::{Moment, Scene};
 
 use crate::*;
@@ -20,11 +20,17 @@ impl LightPlacement {
   /// Places every light layer of `scene`. Lights don't move, so this is only worked out once for a scene. A layer with no
   /// lights yet, or on a plane the machine doesn't have, reaches none.
   pub fn new(scene: &Scene, lights: &LightLookup, radius: f32) -> Self {
-    let layers = scene.layers.iter().enumerate().filter_map(|(index, layer)| Some((index, layer.as_lights()?)));
+    let layers = scene
+      .layers
+      .iter()
+      .enumerate()
+      .filter_map(|(index, layer)| Some((index, layer.as_lights()?)));
     let layers = layers.map(|(index, layer)| {
       let surface = layer.surface.sampled_as();
       let plane = layer.surface.plane().and_then(|plane| lights.plane(plane));
-      let placed = layer.lights.as_ref().map_or(Vec::new(), |query| place_lights(surface, lights, plane, query, radius));
+      let placed = layer.lights.as_ref().map_or(Vec::new(), |query| {
+        place_lights(surface, lights, plane, query, radius)
+      });
       let (placed, graph) = match &layer.layer.graph {
         Some(_) => {
           let (placed, graph) = place_graph(placed, plane);
@@ -32,10 +38,27 @@ impl LightPlacement {
         }
         None => (placed, None),
       };
-      let lights = placed.into_iter().map(|(light, at)| PlacedLight { address: light.address.clone(), name: light.name.clone(), at }).collect();
-      PlacedLayer { index, z: layer.z, surface, plane, placed: lights, graph, visits: None }
+      let lights = placed
+        .into_iter()
+        .map(|(light, at)| PlacedLight {
+          address: light.address.clone(),
+          name: light.name.clone(),
+          at,
+        })
+        .collect();
+      PlacedLayer {
+        index,
+        z: layer.z,
+        surface,
+        plane,
+        placed: lights,
+        graph,
+        visits: None,
+      }
     });
-    Self { layers: layers.collect() }
+    Self {
+      layers: layers.collect(),
+    }
   }
 
   /// The scene's light layers, in its order
@@ -62,11 +85,20 @@ impl LightPlacement {
       let colors = by_z.entry(placed.z).or_default();
       for light in &placed.placed {
         let color = layer.sample(&light.at);
-        let entry = colors.entry(&light.address).or_insert((light, Rgba([0, 0, 0, 0])));
+        let entry = colors
+          .entry(&light.address)
+          .or_insert((light, Rgba([0, 0, 0, 0])));
         entry.1 = color.composite_over(entry.1);
       }
     }
-    by_z.into_iter().flat_map(|(z, colors)| colors.into_values().map(move |(light, color)| (z, light, color))).collect()
+    by_z
+      .into_iter()
+      .flat_map(|(z, colors)| {
+        colors
+          .into_values()
+          .map(move |(light, color)| (z, light, color))
+      })
+      .collect()
   }
 }
 
@@ -100,7 +132,11 @@ impl PlacedLayer {
 
   /// What it draws, from the scene it was placed from
   pub fn layer<'a>(&self, scene: &'a Scene) -> Option<&'a Layer> {
-    scene.layers.get(self.index)?.as_lights().map(|layer| &layer.layer)
+    scene
+      .layers
+      .get(self.index)?
+      .as_lights()
+      .map(|layer| &layer.layer)
   }
 
   /// What to sample its layer with at `moment`
@@ -112,9 +148,19 @@ impl PlacedLayer {
     let Some(graph) = &self.graph else {
       return;
     };
-    let cycle = scene.timing.map_or(0, |timing| timing.cycle_index(moment.time));
-    let current = VisitsFor { cycle, playback_seed: moment.playback_seed, variables: moment.variables.clone() };
-    if self.visits.as_ref().is_none_or(|(kept, _)| *kept != current) {
+    let cycle = scene
+      .timing
+      .map_or(0, |timing| timing.cycle_index(moment.time));
+    let current = VisitsFor {
+      cycle,
+      playback_seed: moment.playback_seed,
+      variables: moment.variables.clone(),
+    };
+    if self
+      .visits
+      .as_ref()
+      .is_none_or(|(kept, _)| *kept != current)
+    {
       let frame = scene.frame(moment, self.surface, self.size(), None);
       if let Some(layer) = self.layer(scene) {
         self.visits = Some((current, layer.visits(graph, &frame)));
@@ -156,8 +202,21 @@ pub fn place_lights<'a>(
 
 /// The lights matching `query`, each with where it samples a layer when projected straight onto `plane`, which may be past
 /// the plane's extent. Lights without a location don't take part.
-fn place_on_plane<'a>(lights: &'a LightLookup, plane: &ReferencePlane, query: &'a LightQ, radius: f32) -> Vec<(&'a Light, Sample)> {
-  lights.query_iter(query).filter_map(|light| Some((light, Sample::new(plane.to_relative(light.location?), radius)))).collect()
+fn place_on_plane<'a>(
+  lights: &'a LightLookup,
+  plane: &ReferencePlane,
+  query: &'a LightQ,
+  radius: f32,
+) -> Vec<(&'a Light, Sample)> {
+  lights
+    .query_iter(query)
+    .filter_map(|light| {
+      Some((
+        light,
+        Sample::new(plane.to_relative(light.location?), radius),
+      ))
+    })
+    .collect()
 }
 
 /// What a cycle's visits were worked out for
@@ -176,14 +235,21 @@ mod tests {
 
   use super::*;
 
-  static PLANE: ReferencePlane = ReferencePlane::new("Plane").extent(Vec2::new(10.0, 10.0)).build();
+  static PLANE: ReferencePlane = ReferencePlane::new("Plane")
+    .extent(Vec2::new(10.0, 10.0))
+    .build();
 
   /// Lights "light0".. at these locations, with the plane added
   fn placed_lights(locations: &[Option<Vec3>]) -> TestContext {
     let mut context = TestContext::default();
     for (i, location) in locations.iter().enumerate() {
       let address = LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, i as u8));
-      context.insert_light(Light { name: format!("light{i}"), address, location: *location, ..Default::default() });
+      context.insert_light(Light {
+        name: format!("light{i}"),
+        address,
+        location: *location,
+        ..Default::default()
+      });
     }
     context.add_plane(&PLANE);
     context
@@ -198,7 +264,12 @@ mod tests {
   }
 
   fn graph_layer() -> Layer {
-    let wave = Traversal::new("wave", NodeRef::name("light0"), TraversalAlgorithm::BreadthFirst { wander: 0.0.into() }, 1.0);
+    let wave = Traversal::new(
+      "wave",
+      NodeRef::name("light0"),
+      TraversalAlgorithm::BreadthFirst { wander: 0.0.into() },
+      1.0,
+    );
     solid().graph(GraphMask::new(vec![wave]))
   }
 
@@ -206,8 +277,17 @@ mod tests {
   fn place_lights_spreads_a_sequence_along_the_lights_in_order() {
     let context = placed_lights(&[None, None, None]);
     let query = LightQ::names(vec!["light2", "light0", "light1"]);
-    let placed = place_lights(scene::Surface::Sequence, &context.base.lights, None, &query, DEFAULT_LIGHT_RADIUS);
-    let names: Vec<_> = placed.iter().map(|(light, _)| light.name.as_str()).collect();
+    let placed = place_lights(
+      scene::Surface::Sequence,
+      &context.base.lights,
+      None,
+      &query,
+      DEFAULT_LIGHT_RADIUS,
+    );
+    let names: Vec<_> = placed
+      .iter()
+      .map(|(light, _)| light.name.as_str())
+      .collect();
     let spots: Vec<_> = placed.iter().map(|(_, sample)| sample.pos.x).collect();
     assert_eq!(names, ["light2", "light0", "light1"]);
     assert_eq!(spots, [0.0, 0.5, 1.0]);
@@ -217,7 +297,13 @@ mod tests {
   fn place_lights_puts_an_area_on_the_plane_with_the_radius_its_given() {
     let context = placed_lights(&[at(2.0, 3.0), at(50.0, 3.0), None]);
     let query = LightQ::every();
-    let placed = place_lights(scene::Surface::Area, &context.base.lights, Some(&PLANE), &query, 0.25);
+    let placed = place_lights(
+      scene::Surface::Area,
+      &context.base.lights,
+      Some(&PLANE),
+      &query,
+      0.25,
+    );
     assert_eq!(placed.len(), 2);
     assert_eq!(placed[0].0.name, "light0");
     assert_eq!(placed[0].1, Sample::new(Vec2::new(2.0, 3.0), 0.25));
@@ -228,7 +314,16 @@ mod tests {
   fn place_lights_reaches_nothing_on_an_area_without_a_plane() {
     let context = placed_lights(&[at(2.0, 3.0)]);
     let query = LightQ::every();
-    assert!(place_lights(scene::Surface::Area, &context.base.lights, None, &query, DEFAULT_LIGHT_RADIUS).is_empty());
+    assert!(
+      place_lights(
+        scene::Surface::Area,
+        &context.base.lights,
+        None,
+        &query,
+        DEFAULT_LIGHT_RADIUS
+      )
+      .is_empty()
+    );
   }
 
   #[test]
@@ -236,11 +331,16 @@ mod tests {
     let context = placed_lights(&[at(2.0, 3.0)]);
     let scene = Scene::new(vec![
       frontbox_scene::DisplayLayer::new("Dmd", solid()).into(),
-      LightLayer::area(LightQ::every(), "Plane", solid()).at_z(2).into(),
+      LightLayer::area(LightQ::every(), "Plane", solid())
+        .at_z(2)
+        .into(),
     ]);
     let placement = LightPlacement::new(&scene, &context.base.lights, DEFAULT_LIGHT_RADIUS);
     let placed = &placement.layers()[0];
-    assert_eq!((placement.layers().len(), placed.index, placed.z), (1, 1, 2));
+    assert_eq!(
+      (placement.layers().len(), placed.index, placed.z),
+      (1, 1, 2)
+    );
     assert_eq!(placed.size(), PLANE.extent);
     assert_eq!(placed.placed[0].name, "light0");
   }
@@ -248,21 +348,43 @@ mod tests {
   #[test]
   fn a_layer_on_a_missing_plane_or_with_no_lights_reaches_none() {
     let context = placed_lights(&[at(2.0, 3.0)]);
-    let no_lights = LightLayer { lights: None, z: 0, surface: LightSurface::Sequence, layer: solid() };
-    let scene = Scene::new(vec![LightLayer::area(LightQ::every(), "Nowhere", solid()).into(), no_lights.into()]);
+    let no_lights = LightLayer {
+      lights: None,
+      z: 0,
+      surface: LightSurface::Sequence,
+      layer: solid(),
+    };
+    let scene = Scene::new(vec![
+      LightLayer::area(LightQ::every(), "Nowhere", solid()).into(),
+      no_lights.into(),
+    ]);
     let placement = LightPlacement::new(&scene, &context.base.lights, DEFAULT_LIGHT_RADIUS);
-    assert!(placement.layers().iter().all(|placed| placed.placed.is_empty()));
+    assert!(
+      placement
+        .layers()
+        .iter()
+        .all(|placed| placed.placed.is_empty())
+    );
     assert_eq!(placement.layers()[0].plane, None);
   }
 
   #[test]
   fn a_graph_layer_numbers_its_lights_as_nodes() {
     let context = placed_lights(&[at(1.0, 5.0), at(2.0, 5.0), at(3.0, 5.0)]);
-    let scene = Scene::new(vec![LightLayer::area(LightQ::every(), "Plane", graph_layer()).into()]);
+    let scene = Scene::new(vec![
+      LightLayer::area(LightQ::every(), "Plane", graph_layer()).into(),
+    ]);
     let placement = LightPlacement::new(&scene, &context.base.lights, DEFAULT_LIGHT_RADIUS);
     let placed = &placement.layers()[0];
     assert_eq!(placed.graph.as_ref().unwrap().nodes().len(), 3);
-    assert_eq!(placed.placed.iter().map(|light| light.at.node).collect::<Vec<_>>(), [Some(0), Some(1), Some(2)]);
+    assert_eq!(
+      placed
+        .placed
+        .iter()
+        .map(|light| light.at.node)
+        .collect::<Vec<_>>(),
+      [Some(0), Some(1), Some(2)]
+    );
   }
 
   #[test]
@@ -270,7 +392,13 @@ mod tests {
     let context = placed_lights(&[at(1.0, 5.0), at(2.0, 5.0), at(3.0, 5.0), at(4.0, 5.0)]);
     let graph = || {
       let every = LightQ::every();
-      let placed = place_lights(scene::Surface::Area, &context.base.lights, Some(&PLANE), &every, DEFAULT_LIGHT_RADIUS);
+      let placed = place_lights(
+        scene::Surface::Area,
+        &context.base.lights,
+        Some(&PLANE),
+        &every,
+        DEFAULT_LIGHT_RADIUS,
+      );
       place_graph(placed, Some(&PLANE)).1
     };
     assert!(Arc::ptr_eq(&graph(), &graph()));

@@ -8,6 +8,7 @@ export default defineConfig({
     proxy: {
       '/ws': { target: 'ws://localhost:3000', ws: true },
       '/content': 'http://localhost:3000',
+      '/export': 'http://localhost:3000',
     },
   },
 })
