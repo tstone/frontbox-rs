@@ -63,21 +63,36 @@ fn main() {
     return;
   };
 
-  if !web.join("node_modules").exists() {
+  if needs_install(&web) {
     run(node.npm(&web).arg("ci"), "npm ci");
   }
   // No `tsc -b`: the generated TS types are written by an example in this crate, so a type check here would fail on
   // stale types before they could be regenerated. Vite strips types without checking them; `npm run build` and the
   // editor still check.
-  run(
-    node.command(&web).args([
+  let built = node
+    .command(&web)
+    .args([
       "node_modules/vite/bin/vite.js",
       "build",
       "--logLevel",
       "warn",
-    ]),
-    "vite build",
-  );
+    ])
+    .output();
+  // A failed Vite build still writes index.html. Removing it keeps the build stale, so the next cargo build tries
+  // again rather than embedding the broken app.
+  if !matches!(&built, Ok(output) if output.status.success()) {
+    let _ = std::fs::remove_file(dist.join("index.html"));
+  }
+  check(built, "vite build");
+}
+
+/// Whether `npm ci` is due: there are no packages yet, or package-lock.json changed since they were installed. npm
+/// writes `node_modules/.package-lock.json` on every install.
+fn needs_install(web: &Path) -> bool {
+  let Some(installed) = modified(&web.join("node_modules/.package-lock.json")) else {
+    return true;
+  };
+  modified(&web.join("package-lock.json")).is_some_and(|lock| lock > installed)
 }
 
 /// Whether any source is newer than the last build. A build writes web/dist, which reruns this script, so without
@@ -217,9 +232,11 @@ fn vite_supports((major, minor, _): (u32, u32, u32)) -> bool {
 /// Runs a step of the web build, failing the cargo build with its output if it fails: a web app that doesn't build is
 /// as much a build error as Rust that doesn't
 fn run(command: &mut Command, step: &str) {
-  let output = command
-    .output()
-    .unwrap_or_else(|err| panic!("web console: couldn't start `{step}`: {err}"));
+  check(command.output(), step);
+}
+
+fn check(output: std::io::Result<std::process::Output>, step: &str) {
+  let output = output.unwrap_or_else(|err| panic!("web console: couldn't start `{step}`: {err}"));
   if !output.status.success() {
     panic!(
       "web console: `{step}` failed\n{}{}",
