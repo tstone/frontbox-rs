@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::machine::driver_triggers::DriverTriggers;
 use crate::machine::neuron::BootError;
@@ -22,12 +22,17 @@ pub struct Neuron {
   watchdog_interval: Duration,
   /// Failures in a row of the watchdog command being sent, to stop resending it after `WATCHDOG_ATTEMPTS`
   watchdog_failures: u32,
+  /// When the hardware last took a watchdog renewal, to report how close it came to running out. None while the
+  /// watchdog is off.
+  watchdog_renewed: Option<Instant>,
   driver_triggers: DriverTriggers,
 }
 
 impl Neuron {
   /// How many times in a row a watchdog command is sent before giving up until the next one
   const WATCHDOG_ATTEMPTS: u32 = 3;
+  /// A renewal this close to the watchdog running out is logged as a near miss
+  const WATCHDOG_WARNING: Duration = Duration::from_millis(100);
   /// How long to wait after the first failed attempt to reconnect. It doubles with each failure, up to
   /// `RECONNECT_MAX_DELAY`.
   const RECONNECT_DELAY: Duration = Duration::from_millis(500);
@@ -164,8 +169,38 @@ impl Neuron {
           self.watchdog_failures = 0;
         }
       }
-      Ok(_) => self.watchdog_failures = 0,
+      Ok(_) => {
+        self.watchdog_failures = 0;
+        self.watchdog_taken(matches!(again, MachineMessage::WatchdogPing));
+      }
     }
+  }
+
+  /// Note the hardware took a watchdog command, and report a renewal that came close to the watchdog running out, or
+  /// came after it did. The run loop asks for one every so often, so a late one means either it or this task was held
+  /// up; the run loop logs its own lateness, which tells the two apart.
+  fn watchdog_taken(&mut self, renewed: bool) {
+    let now = Instant::now();
+    if let Some(last) = self.watchdog_renewed.filter(|_| renewed) {
+      let gap = now - last;
+      if gap >= self.watchdog_interval {
+        log::error!(
+          target: "frontbox::watchdog",
+          "🐶 {:?} between watchdog renewals, past its {:?}, so the hardware cut power to the drivers",
+          gap,
+          self.watchdog_interval
+        );
+      } else if gap + Self::WATCHDOG_WARNING >= self.watchdog_interval {
+        log::warn!(
+          target: "frontbox::watchdog",
+          "🐶 {:?} between watchdog renewals, {:?} short of its {:?}",
+          gap,
+          self.watchdog_interval - gap,
+          self.watchdog_interval
+        );
+      }
+    }
+    self.watchdog_renewed = renewed.then_some(now);
   }
 
   /// Whether both ports are still connected. They're on the same USB connection, so losing either (e.g. because the
@@ -212,8 +247,9 @@ impl Neuron {
           Err(e @ BootError::Misconfigured(_)) => return Err(e),
           Err(e) => {
             // the first failure says why, and the rest repeat it until the hardware is back
-            if attempt == 1 {
-              log::warn!(target: "frontbox::machine", "🔌 Couldn't reconnect to the machine ({e}), retrying until it's back");
+            // and again once in a while, so a machine that never comes back isn't silent
+            if attempt == 1 || attempt % 12 == 0 {
+              log::warn!(target: "frontbox::machine", "🔌 Couldn't reconnect to the machine ({e}), attempt {attempt}, retrying until it's back");
             } else {
               log::debug!(target: "frontbox::machine", "🔌 Couldn't reconnect to the machine ({e}), attempt {attempt}");
             }
@@ -239,6 +275,7 @@ impl Neuron {
     // the hardware may have lost power, which leaves every driver untriggered
     self.driver_triggers = DriverTriggers::default();
     self.watchdog_failures = 0;
+    self.watchdog_renewed = None;
     while self.machine_receiver.try_recv().is_ok() {}
 
     Ok(connection.switch_states)
@@ -341,6 +378,7 @@ impl MachineBoot for Neuron {
       machine_receiver,
       watchdog_interval: app_config.watchdog_interval.unwrap(),
       watchdog_failures: 0,
+      watchdog_renewed: None,
       driver_triggers: DriverTriggers::default(),
     };
 

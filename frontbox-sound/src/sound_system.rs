@@ -203,7 +203,25 @@ impl System for SoundSystem {
       PlatformKind::Hardware => OutputDevice::Named(self.device_name),
       PlatformKind::Virtual => OutputDevice::SystemDefault,
     };
-    tokio::spawn(SoundManager::new(device, rx, completed_tx).run());
+    // On a thread of its own, as decoding a sound blocks for a while, a long track for seconds. On the app's runtime
+    // that would hold up other tasks on the same worker, such as the machine's, which keeps the watchdog fed.
+    let manager = SoundManager::new(device, rx, completed_tx);
+    let started = std::thread::Builder::new()
+      .name("sound".into())
+      .spawn(move || {
+        match tokio::runtime::Builder::new_current_thread()
+          .enable_time()
+          .build()
+        {
+          Ok(runtime) => runtime.block_on(manager.run()),
+          Err(e) => {
+            log::error!(target: "frontbox::sound", "🔇 Couldn't start the sound runtime: {}", e)
+          }
+        }
+      });
+    if let Err(e) = started {
+      log::error!(target: "frontbox::sound", "🔇 Couldn't start the sound thread: {}", e);
+    }
   }
 
   fn on_tick(&mut self, _delta: Duration, ctx: &SystemContext) {

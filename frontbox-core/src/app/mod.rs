@@ -37,8 +37,8 @@
 //!
 //!   App::new(BootConfig {
 //!       platform: Platform::Neuron {
-//!         io_net_port_path: "/dev/ttyACM0",
-//!         exp_port_path: "/dev/ttyACM1",
+//!         io_net_port_path: "/dev/serial/by-id/usb-FAST_Pinball_Neuron_Controller_<serial>-if00",
+//!         exp_port_path: "/dev/serial/by-id/usb-FAST_Pinball_Neuron_Controller_<serial>-if02",
 //!         watchdog_interval: Duration::from_millis(1500),
 //!       },
 //!       // see section on hardware for how these are configured
