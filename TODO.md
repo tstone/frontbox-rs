@@ -30,22 +30,21 @@
 
 ### Scenes/Editor
 
+- Noise and noise masks: `FillNode::Noise`, plus a threshold `ColorAdjust` for noise masks
+- Plug in custom shapes or graphics with their own settings (e.g. a kinematics/skeleton extension)
+- Outer glow/drop shadow on regions (Adjust?)
 - Rotate transform gets an adjustable center point (X/Y prop)
 - Line-based fills (polyline, spiral, logarithmic spiral, etc. snake patterns) 
 - Line based fill patterns usable for Sweep
+- Outline/stroke shouldn't take over fill
 - Change sweep to, instead of having a nested line/shape, you choose to use an existing one.
 - Graph algorithms have a "Reverse" option to perform the algo in reverse (ie. calculate then play backwards)
-- Noise and noise masks: `FillNode::Noise`, plus a threshold `ColorAdjust` for noise masks
+- Graph region: a "cellular" mode that highlights all segments of a cell
 - Changing a sound's volume while it plays (fades, modulators). Scene sound volume is a fixed number for now, as sounds are fire-and-forget; kira's `set_volume` on a kept handle could do it, but it may not belong in the scene.
-- Ability to compose curves in editor (sorta wondering about a "Curves" custom curves area where these can be built up)
 - Ability to compose LightQ in editor (are Reverse, Take, etc. still needed?)
 - SVG import for layer shapes
 - Animations should be able to be specified as relative to the frame rate
 - Proper BPM sync between music+scenes: a playback clock that follows music
-- Keyframes show more like Ableton automation, visually displaying the curve between points, and allowing the dots to be movable as today
-- Outline/stroke shouldn't take over fill
-- Graph region: a "cellular" mode that highlights all segments of a cell
-- Plug in custom shapes or graphics with their own settings (e.g. a kinematics/skeleton extension)
 - Idea: reflect is bisect + mirror (e.g. a leaf shape from a circle)
 - Events and callouts fired when the clock passes them, tracked like sounds (`SoundLayer::started`). An event would be
   one untyped `SceneMilestoneReached { playback, name }`. Wait until a game needs them.
@@ -56,28 +55,21 @@
 
 ### gfx
 
-- Outer glow/drop shadow on regions (Adjust?)
-- Non-affine transforms: apply the transform list as point mappings, then add `Repeat(size)` (wrap), `Mirror`, and
-  polar. `Translate` + `Repeat` replaces the `lap` plumbing; `Rotate` on a `Sequence` becomes sugar for it. This is a
-  format change that rewrites every file.
+- Non-affine transforms: apply the transform list as point mappings, then add `Repeat(size)` (wrap), `Mirror`, and  polar. `Translate` + `Repeat` replaces the `lap` plumbing; `Rotate` on a `Sequence` becomes sugar for it. This is a format change that rewrites every file.
 - Marquee: `Translate` + `Repeat` inside a mask.
 - Per-layer `blend` (additive, `Max`, `Multiply`).
-- Float color: sample in `f32` premultiplied, convert once at the device edge (where LED gamma and per-strip
-  calibration go). Fixes dark fringes fading to transparent and precision loss in `ColorAdjust` chains.
+- Float color: sample in `f32` premultiplied, convert once at the device edge (where LED gamma and per-strip calibration go). Fixes dark fringes fading to transparent and precision loss in `ColorAdjust` chains.
 - Strokes on `Polyline`/`Bezier`: give their edge an unsigned distance to the line.
 - `ShapeAdjust::Feather(width)` for soft edges.
-- Name `(fill, region)` as one type shared by `Layer` and `Mask`: collapses `outlines`/`mask_outlines` and
-  `shapes`/`mask_shapes`, allows `mask: Vec<...>` and masks with a `graph`.
+- Name `(fill, region)` as one type shared by `Layer` and `Mask`: collapses `outlines`/`mask_outlines` and  `shapes`/`mask_shapes`, allows `mask: Vec<...>` and masks with a `graph`.
 - `Stop::at` as a `Prop<f32>`.
 - Per-point phase for `Modulated`: a prop source that reads the point's position or `Sequence` index.
-- One internal walker over every `Prop`, replacing the hand-written `is_animated`, `read_inputs`, `image_names`,
-  `font_names`, and `check` walks.
-- Gaps in `check`: `Visit`/`Fit` naming a missing traversal; `Modulated` naming a missing modulator; unsorted `Keyframes::keys`, `Random::picks`, gradient
-  `stops` (sort on load); `Prop::Sweep` on a non-position type built in code.
+- One internal walker over every `Prop`, replacing the hand-written `is_animated`, `read_inputs`, `image_names`,  `font_names`, and `check` walks.
+- Gaps in `check`: `Visit`/`Fit` naming a missing traversal; `Modulated` naming a missing modulator; unsorted `Keyframes::keys`, `Random::picks`, gradient `stops` (sort on load); `Prop::Sweep` on a non-position type built in code.
 - Replace `DefaultHasher` in `scene/random.rs` with a fixed integer hash (stable across Rust releases, cheaper).
 - Images on hard-edged displays are point-sampled and alias when shrunk: give images their own footprint.
 - Plane stitching for playback (or should this just be real 3d rendering?)
-- 
+
 ### Lighting
 
 - Alternate resolver doesn't work with animated inputs: key its state on declaration ids, not colors
@@ -87,9 +79,8 @@
 - `undeclare_by_system` leaves empty maps behind; clean them up as `undeclare` does.
 - Keep each light's declarations ordered by `(z, order)` to drop the per-tick sort.
 - `light_graph.rs` `GRAPHS` cache is never evicted (grows with each light position edit in the console).
-- Scenes are good for moments but not for status. Figure out what the equivalent of status looks like for lights
 - Defining (hardware) an LED grid like strip, but with rows/cols and serpentine directions?
-- NeoSeg support
+- Alphanumeric/NeoSeg support
 - Evaluate if declaring named colors with FAST and reference by ID is worth itc
 
 ### Sound
