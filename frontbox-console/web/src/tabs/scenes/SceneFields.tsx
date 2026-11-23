@@ -4,9 +4,9 @@ import { Dynamic } from 'solid-js/web'
 import { createListCollection, Select } from '@ark-ui/solid/select'
 import { Slider } from '@ark-ui/solid/slider'
 import { Switch as Toggle } from '@ark-ui/solid/switch'
-import { createContext, createMemo, createSignal, For, Match, Show, Switch, useContext, type Accessor, type Signal } from 'solid-js'
+import { SegmentGroup } from '@ark-ui/solid/segment-group'
+import { createContext, createMemo, createSignal, For, Index, Match, Show, Switch, useContext, type Accessor, type Signal } from 'solid-js'
 import ScenePortal, { layerColorClass, type LayerColor } from './ScenePortal'
-import InfoTip from '../../components/InfoTip'
 import { AudioWaveform, ChartSpline, Dices, Eye, EyeOff, Footprints, Orbit, Pin, Pipette, Plus, SlidersHorizontal, Variable, X } from '../../components/icons'
 import type { Color } from '../../types/generated/Color'
 import { NAMED_COLORS } from '../../types/generated/namedColors'
@@ -18,11 +18,12 @@ import type { Modulated } from '../../types/generated/Modulated'
 import type { Modulator } from '../../types/generated/Modulator'
 import type { Overlap } from '../../types/generated/Overlap'
 import type { Spread } from '../../types/generated/Spread'
+import type { Value } from '../../types/generated/Value'
 import type { VisitResponse } from '../../types/generated/VisitResponse'
 import CurvePicker, { CurveGraph } from './CurvePicker'
 import { curveHeight, curveText, PLAIN_CURVES } from './curves'
 import NumberBox from './NumberBox'
-import { field, freshVariableName, fullSpread, HUE, newPick, newSweep, newVisit, variableReads, spreadFits, startingValue, STEPS, variant, WAVE_RATE, withNewModulator, withVariable, withTiming, type Lens, type Range, type Ranges, type LayerSurfaces, type Scene, type SceneValue, type Selection, type Surface, type Vec2 } from './sceneModel'
+import { field, freshVariableName, fullSpread, HUE, item, newPick, newSweep, newVisit, poolOf, removed, unwrapValue, variableReads, spreadFits, startingValue, STEPS, variant, WAVE_RATE, withNewModulator, withVariable, withTiming, wrapValue, type Lens, type PropValue,type Range, type Ranges, type LayerSurfaces, type Scene, type SceneValue, type Selection, type Surface, type Vec2 } from './sceneModel'
 
 /** The scene being edited, for fields whose edits reach past their own place in it */
 export const SceneContext = createContext<Lens<Scene>>()
@@ -295,14 +296,20 @@ function hueTrack(min: number, max: number) {
 }
 
 /**
- * What a random prop can pick from, or a wave moves through, with a control for each thing about it that varies. A
- * color only varies in hue: how bright or see-through it is is up to the layer's adjusts.
+ * What a random prop can pick from, or a wave moves through: a range, with a control for each thing about it that
+ * varies, or a pool of set values. A color range only varies in hue: how bright or see-through it is is up to the
+ * layer's adjusts. A pool's colors are whole colors.
  */
-function SpreadField(props: { label: string; lens: Lens<Spread>; ranges: Ranges }) {
+function SpreadField(props: { label: string; lens: Lens<Spread>; ranges: Ranges; like: SceneValue }) {
   const spread = () => props.lens.get()
   const float = () => variant(props.lens, 'Float')
   const vec2 = () => variant(props.lens, 'Vec2')
   const color = () => variant(props.lens, 'Color')
+  const mode = () => ('Pool' in spread() ? 'Pool' : 'Range')
+  const choose = (next: string | null) => {
+    if (!next || next === mode()) return
+    props.lens.set(next === 'Pool' ? poolOf(spread(), props.like, props.ranges) : fullSpread(props.like, props.ranges))
+  }
 
   const axis = (name: 'x' | 'y', index: 0 | 1) => (
     <div class="scene-axis">
@@ -317,26 +324,99 @@ function SpreadField(props: { label: string; lens: Lens<Spread>; ranges: Ranges 
   )
 
   return (
-    <Switch>
-      <Match when={'Float' in spread()}>
-        <RangeField label={props.label} range={props.ranges[0]} value={float().get()} onChange={float().set} />
-      </Match>
-      <Match when={'Vec2' in spread()}>
-        {axis('x', 0)}
-        {axis('y', 1)}
-      </Match>
-      <Match when={'Color' in spread()}>
-        <FieldRow label="Hue">
-          <RangeField
-            label={`${props.label} hue`}
-            range={HUE}
-            track={hueTrack}
-            value={field(color(), 'hue').get()}
-            onChange={field(color(), 'hue').set}
-          />
-        </FieldRow>
-      </Match>
-    </Switch>
+    <>
+      <SegmentGroup.Root class="scene-prop-kind scene-spread-mode" aria-label={`${props.label} picks from`} value={mode()} onValueChange={(details) => choose(details.value)}>
+        <SegmentGroup.Indicator />
+        <For each={['Range', 'Pool']}>
+          {(option) => (
+            <SegmentGroup.Item value={option} title={option === 'Range' ? 'Anywhere between a low and a high value' : 'One of a set of values'}>
+              <SegmentGroup.ItemText>{option}</SegmentGroup.ItemText>
+              <SegmentGroup.ItemControl />
+              <SegmentGroup.ItemHiddenInput />
+            </SegmentGroup.Item>
+          )}
+        </For>
+      </SegmentGroup.Root>
+      <Switch>
+        <Match when={'Pool' in spread()}>
+          <PoolField label={props.label} lens={variant(props.lens, 'Pool')} ranges={props.ranges} like={props.like} />
+        </Match>
+        <Match when={'Float' in spread()}>
+          <RangeField label={props.label} range={props.ranges[0]} value={float().get()} onChange={float().set} />
+        </Match>
+        <Match when={'Vec2' in spread()}>
+          {axis('x', 0)}
+          {axis('y', 1)}
+        </Match>
+        <Match when={'Color' in spread()}>
+          <FieldRow label="Hue">
+            <RangeField
+              label={`${props.label} hue`}
+              range={HUE}
+              track={hueTrack}
+              value={field(color(), 'hue').get()}
+              onChange={field(color(), 'hue').set}
+            />
+          </FieldRow>
+        </Match>
+      </Switch>
+      <Show when={!spreadFits(spread(), props.like)}>
+        <p class="scene-note scene-note-warn">
+          {'Pool' in spread()
+            ? (spread() as { Pool: Value[] }).Pool.length === 0
+              ? 'The pool is empty, so this reads as zero.'
+              : 'Some of these values are for another type of value, and read as zero.'
+            : 'This range is for another type of value, so this reads as zero.'}
+        </p>
+      </Show>
+    </>
+  )
+}
+
+/** The values a pool picks from, each with its own control, in the order a wave steps through them */
+function PoolField(props: { label: string; lens: Lens<Value[]>; ranges: Ranges; like: SceneValue }) {
+  // a value of another type shows as a new one of the right type, which editing it replaces it with
+  const valueLens = (index: number): Lens<SceneValue> => {
+    const value = item(props.lens, index)
+    return {
+      get: () => {
+        const current = value.get()
+        return spreadFits({ Pool: [current] }, props.like) ? unwrapValue(current as PropValue) : props.like
+      },
+      set: (next) => value.set(wrapValue(next)),
+    }
+  }
+  const add = () => {
+    const values = props.lens.get()
+    props.lens.set([...values, values[values.length - 1] ?? wrapValue(props.like)])
+  }
+
+  return (
+    <div class="scene-pool">
+      <Index each={props.lens.get()}>
+        {(_, index) => (
+          <div class="scene-pool-value">
+            <div class="scene-pool-control">
+              <ValueField label={`${props.label} ${index + 1}`} ranges={props.ranges} lens={valueLens(index)} />
+            </div>
+            <button
+              type="button"
+              class="scene-icon-button"
+              aria-label={`Remove ${props.label} ${index + 1}`}
+              title="Remove this value"
+              disabled={props.lens.get().length <= 1}
+              onClick={() => props.lens.set(removed(props.lens.get(), index))}
+            >
+              <X aria-hidden="true" />
+            </button>
+          </div>
+        )}
+      </Index>
+      <button type="button" class="scene-add-modifier" onClick={add}>
+        <Plus aria-hidden="true" />
+        Add value
+      </button>
+    </div>
   )
 }
 
@@ -585,12 +665,9 @@ export function PropField<T extends SceneValue>(
           <SpreadField
             label={props.label}
             ranges={props.ranges}
+            like={props.fallback}
             lens={field(variant(props.lens, 'Random'), 'spread')}
           />
-          <Show when={!spreadFits((prop() as { Random: { spread: Spread } }).Random.spread, props.fallback)}>
-            <p class="scene-note scene-note-warn">This range is for another type of value, so this reads as zero.</p>
-          </Show>
-          <ForceUniqueField label={props.label} lens={field(variant(props.lens, 'Random'), 'force_unique')} />
           <p class="scene-note">When to pick a new value is on its row in the timeline.</p>
         </Match>
         <Match when={kind() === 'Modulated'}>
@@ -634,7 +711,7 @@ export function PropSource<T extends SceneValue>(props: PropProps<T>) {
     if (next === 'Random') {
       scene.set(withTiming(scene.get()))
       const seed = Math.floor(Math.random() * 2 ** 32)
-      props.lens.set({ Random: { picks: [newPick(0)], spread: fullSpread(current, props.ranges), seed, force_unique: true } })
+      props.lens.set({ Random: { picks: [newPick(0)], spread: fullSpread(current, props.ranges), seed } })
     }
     if (next === 'Modulated') {
       // moves by the scene's first modulator, or a new one if it has none yet
@@ -827,10 +904,7 @@ function ModulatedField(props: { label: string; lens: Lens<Modulated>; ranges: R
       <Show when={missing()}>
         <p class="scene-note scene-note-warn">The scene has no modulator by that name, so this reads as zero.</p>
       </Show>
-      <SpreadField label={props.label} ranges={props.ranges} lens={field(props.lens, 'spread')} />
-      <Show when={!spreadFits(props.lens.get().spread, props.fallback)}>
-        <p class="scene-note scene-note-warn">This range is for another type of value, so this reads as zero.</p>
-      </Show>
+      <SpreadField label={props.label} ranges={props.ranges} like={props.fallback} lens={field(props.lens, 'spread')} />
       <p class="scene-note">The modulator sets the wave's shape and rate, and can be shared. The phase under it shifts this prop's wave along, and keyframing it can speed the wave up or slow it down.</p>
     </>
   )
@@ -872,25 +946,6 @@ function EnvelopeCurveField<T extends Curve | undefined>(props: { label: string;
           </button>
         </Show>
       </div>
-    </div>
-  )
-}
-
-function ForceUniqueField(props: { label: string; lens: Lens<boolean> }) {
-  return (
-    <div class="scene-unique">
-      <Toggle.Root
-        class="scene-switch"
-        checked={props.lens.get()}
-        onCheckedChange={(details) => props.lens.set(details.checked)}
-      >
-        <Toggle.Control>
-          <Toggle.Thumb />
-        </Toggle.Control>
-        <Toggle.Label>Force unique</Toggle.Label>
-        <Toggle.HiddenInput aria-label={`${props.label} force unique`} />
-      </Toggle.Root>
-      <InfoTip text="Each new pick has to be different from the one before it, so the value never stays the same across a pick. Turn this off to let a value repeat." />
     </div>
   )
 }

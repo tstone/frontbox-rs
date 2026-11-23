@@ -282,7 +282,28 @@ export function withoutModulator(scene: Scene, name: string): Scene {
 
 /** Whether a random prop holding values like `like` can pick from a spread. One of the wrong type gives the type's default. */
 export function spreadFits(spread: Spread, like: SceneValue) {
-  return kindReads(Object.keys(wrapValue(like))[0], Object.keys(spread)[0])
+  const kind = Object.keys(wrapValue(like))[0]
+  if ('Pool' in spread) return spread.Pool.length > 0 && spread.Pool.every((value) => kindReads(kind, Object.keys(value)[0]))
+  return kindReads(kind, Object.keys(spread)[0])
+}
+
+/** The value of a pool at `height`, from its first at 0 to its last at 1, as `Spread::sample` in frontbox-gfx has it */
+function poolAt(pool: Value[], height: number): Value | undefined {
+  return pool[Math.max(0, Math.min(Math.floor(height * pool.length), pool.length - 1))]
+}
+
+/**
+ * A pool to switch a range to: its two ends, or for a color three hues across it, as the ends of a full turn are the
+ * same red. A number stays within its range, which a spread can go one past.
+ */
+export function poolOf(spread: Spread, like: SceneValue, [x]: Ranges): Spread {
+  if ('Pool' in spread) return spread
+  const heights = 'Color' in spread ? [0, 1 / 3, 2 / 3] : [0, 1]
+  const at = (height: number) => {
+    const value = spreadAt(spread, height)
+    return asLike(typeof value === 'number' ? Math.min(value, x.max) : value, like)
+  }
+  return { Pool: heights.map((height) => wrapValue(at(height))) }
 }
 
 /** The fully saturated, fully bright, opaque color at a hue in degrees */
@@ -294,9 +315,13 @@ function hueColor(hue: number): Color {
   return [channel(5), channel(3), channel(1), 255]
 }
 
-/** What a spread comes to at `height`, from its low end at 0 to its high end at 1, as `Animatable::from_spread` has it */
+/**
+ * What a spread comes to at `height`, from its low end at 0 to its high end at 1, as `Spread::sample` in frontbox-gfx has
+ * it. A pool has to fit, as `spreadFits` checks.
+ */
 function spreadAt(spread: Spread, height: number): SceneValue {
   const at = ([low, high]: [number, number]) => low + (high - low) * height
+  if ('Pool' in spread) return unwrapValue(poolAt(spread.Pool, height) as PropValue)
   if ('Float' in spread) return at(spread.Float)
   if ('Vec2' in spread) return [at(spread.Vec2.x), at(spread.Vec2.y)]
   return hueColor(at(spread.Color.hue))
@@ -750,6 +775,10 @@ export function withHidden(prop: Prop<SceneValue>, hidden: boolean) {
 /** A spread that can only pick the point `height` of the way through it, from its low end at 0 to its high end at 1 */
 function pointOf(spread: Spread, height: number): Spread {
   const point = ([low, high]: [number, number]): [number, number] => [low + (high - low) * height, low + (high - low) * height]
+  if ('Pool' in spread) {
+    const value = poolAt(spread.Pool, height)
+    return { Pool: value ? [value] : [] }
+  }
   if ('Float' in spread) return { Float: point(spread.Float) }
   if ('Vec2' in spread) return { Vec2: { x: point(spread.Vec2.x), y: point(spread.Vec2.y) } }
   return { Color: { hue: point(spread.Color.hue) } }
@@ -766,9 +795,9 @@ function held(prop: Prop<SceneValue>, scene: Scene): Prop<SceneValue> {
     const modulator = scene.modulators?.[name]
     if (!modulator) return prop
     const height = envelopeHeight(modulator.envelope, wavePosition(modulator, startingValue(phase, scene, 0), 0))
-    return { Random: { picks: [newPick(0)], spread: pointOf(spread, height), seed: 0, force_unique: false } }
+    return { Random: { picks: [newPick(0)], spread: pointOf(spread, height), seed: 0 } }
   }
-  if ('Random' in prop) return { Random: { ...prop.Random, spread: pointOf(prop.Random.spread, 0.5), force_unique: false } }
+  if ('Random' in prop) return { Random: { ...prop.Random, spread: pointOf(prop.Random.spread, 0.5) } }
   return 'Keyframes' in prop && prop.Keyframes.keys.length > 0 ? { Fixed: prop.Keyframes.keys[0].value } : prop
 }
 

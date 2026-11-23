@@ -90,7 +90,7 @@ impl<T: Animatable> Prop<T> {
 
 impl Prop<f32> {
   /// Like `resolve`, for values that are truncated to a whole number where they're used (blade counts, frame numbers).
-  /// For a `Random`, this makes `force_unique` compare whole numbers, so consecutive picks don't truncate to the same one.
+  /// For a `Random`, this makes each pick differ from the one before as a whole number, even from a range.
   pub(crate) fn resolve_truncated(&self, env: &Env) -> f32 {
     match self {
       Self::Random(random) => random.resolve_truncated(env),

@@ -64,7 +64,7 @@ function randomProp(kind: (typeof SOURCES)[number]['kind'], like: SceneValue, ra
     return { Keyframes: { keys, cycle: 'Once' } }
   }
   if (kind === 'Random') {
-    return { Random: { picks: [newPick(0)], spread: fullSpread(like, ranges), seed: Math.floor(Math.random() * 2 ** 32), force_unique: true } }
+    return { Random: { picks: [newPick(0)], spread: fullSpread(like, ranges), seed: Math.floor(Math.random() * 2 ** 32) } }
   }
   if (kind === 'Modulated' && typeof like !== 'boolean') {
     return { Modulated: { modulator: modulator(), spread: fullSpread(like, ranges), phase: { Fixed: Math.round(Math.random() * 100) / 100 } } }

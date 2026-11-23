@@ -7,6 +7,9 @@ import type { Spread } from "./Spread";
  *
  * There's no running random generator. Each value is a hash of the seed, playback seed, cycle, and pick, so any moment
  * can be sampled directly, in any order, with the same result. Values still differ every cycle and every playback.
+ *
+ * A pick from a pool always differs from the one before, so the value never stays the same across a pick. A pick from
+ * a range can come up the same, which only matters for a value truncated to a whole number, and those differ too.
  */
 export type Random = { 
 /**
@@ -17,8 +20,4 @@ picks: Array<Pick>, spread: Spread,
 /**
  * Distinguishes this prop's values from another random prop with the same picks
  */
-seed: number, 
-/**
- * Require each pick to differ from the one before. On by default.
- */
-force_unique: boolean, };
+seed: number, };

@@ -3910,3 +3910,36 @@ label.scene-button:hover {
 .scene-track-expand:focus-visible {
   opacity: 1;
 }
+
+/* ---- pool ---- */
+
+.scene-spread-mode {
+  align-self: flex-start;
+}
+
+.scene-pool {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.scene-pool-value {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+/* a position's two axes stack, as they do anywhere else */
+.scene-pool-control {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.scene-pool > .scene-add-modifier {
+  align-self: flex-start;
+}

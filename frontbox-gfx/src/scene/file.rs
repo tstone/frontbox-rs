@@ -399,18 +399,14 @@ mod tests {
   }
 
   #[test]
-  fn a_random_forces_unique_picks_unless_told_otherwise() {
-    let scene = load(
-      "(timing: (duration: 1.0), layers: [(fill: (base: Solid(Random(
+  fn a_random_from_before_force_unique_was_dropped_still_loads() {
+    let source = "(timing: (duration: 1.0), layers: [(fill: (base: Solid(Random(
       picks: [(at: 0.0)],
       spread: Color(hue: (0.0, 360.0)),
-    ))))])",
-    );
-    let scene = scene.unwrap();
-    let FillNode::Solid(Prop::Random(random)) = &scene.layers[0].fill.base else {
-      panic!("{scene:?}");
-    };
-    assert!(random.force_unique);
+      force_unique: false,
+    ))))])";
+    let written = save(&load(source).unwrap()).unwrap();
+    assert!(!written.contains("force_unique"), "{written}");
   }
 
   #[test]
@@ -419,7 +415,6 @@ mod tests {
       picks: [(at: 0.0), (at: 1.0, smooth_in: 0.25, smooth_out: 0.5)],
       spread: Color(hue: (330.0, 390.0)),
       seed: 7,
-      force_unique: false,
     ))))])";
     let written = save(&load(source).unwrap()).unwrap();
     let loaded = load(&written).unwrap();
@@ -444,7 +439,26 @@ mod tests {
       }
     );
     assert_eq!(random.seed, 7);
-    assert!(!random.force_unique);
+  }
+
+  #[test]
+  fn a_pool_reads_and_writes() {
+    let source = "(timing: (duration: 2.0), layers: [(fill: (base: Solid(Random(
+      picks: [(at: 0.0)],
+      spread: Pool([Color(255, 0, 0, 255), Color(0, 0, 255, 255)]),
+    ))))])";
+    let written = save(&load(source).unwrap()).unwrap();
+    let loaded = load(&written).unwrap();
+    let FillNode::Solid(Prop::Random(random)) = &loaded.layers[0].fill.base else {
+      panic!("{written}");
+    };
+    assert_eq!(
+      random.spread,
+      Spread::Pool(vec![
+        Value::Color(Color(Rgba([255, 0, 0, 255]))),
+        Value::Color(Color(Rgba([0, 0, 255, 255])))
+      ])
+    );
   }
 
   #[test]

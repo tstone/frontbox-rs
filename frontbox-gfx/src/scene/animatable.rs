@@ -14,7 +14,7 @@ pub trait Animatable: Lerp + Clone + Default + PartialEq {
   fn from_value(value: &Value) -> Option<Self>;
 
   /// Picks a value within a spread, using `rnd` (random numbers, each 0 to 1) for where in each range. `None` if the
-  /// spread is a different type.
+  /// spread is a different type. A `Pool` never reaches this: it's read with `from_value`.
   fn from_spread(spread: &Spread, rnd: [f32; 3]) -> Option<Self>;
 
   /// Converts a point from a `Sweep`. `None` for types that aren't positions.

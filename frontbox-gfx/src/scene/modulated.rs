@@ -28,7 +28,7 @@ impl Modulated {
       return T::default();
     };
     let height = modulator.height(env, self.phase.resolve(env));
-    T::from_spread(&self.spread, [height; 3]).unwrap_or_default()
+    self.spread.sample([height; 3]).unwrap_or_default()
   }
 }
 
@@ -353,6 +353,25 @@ mod tests {
       ..env(3.0, &variables)
     };
     assert_eq!(shifted.resolve::<f32>(&env), 20.0);
+  }
+
+  #[test]
+  fn a_wave_steps_through_a_pool_in_order() {
+    let variables = Variables::new();
+    let modulators = modulators(rising(), 1.0);
+    let timing = Timing::new(4.0, Cycle::Forever);
+    let pooled = Modulated {
+      spread: Spread::Pool([1.0, 2.0, 3.0, 4.0].map(Value::Float).to_vec()),
+      ..modulated()
+    };
+    let at = |time| {
+      pooled.resolve::<f32>(&Env {
+        timing: Some(timing),
+        modulators: &modulators,
+        ..env(time, &variables)
+      })
+    };
+    assert_eq!([0.0, 1.5, 2.5, 3.9].map(at), [1.0, 2.0, 3.0, 4.0]);
   }
 
   #[test]

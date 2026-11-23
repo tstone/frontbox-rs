@@ -373,7 +373,6 @@ fn random_color(cycle: Cycle) -> Scene {
     picks: vec![Pick::new(0.0)],
     spread,
     seed: 1,
-    force_unique: true,
   });
   Scene::new(
     Surface::Sequence,
@@ -488,7 +487,6 @@ fn random_picks_smooth_into_the_next_cycle() {
       picks: vec![pick],
       spread,
       seed: 1,
-      force_unique: true,
     });
     Scene::new(
       Surface::Sequence,
@@ -1369,7 +1367,6 @@ fn a_spread_up_to_the_frame_count_picks_each_frame_about_as_often() {
     picks: vec![Pick::new(0.0)],
     spread: Spread::Float(0.0, 4.0),
     seed: 1,
-    force_unique: true,
   };
   let scene = playing(Prop::Random(random));
   let mut times = [0; 4];
@@ -1388,7 +1385,6 @@ fn a_random_frame_is_a_different_frame_at_every_pick() {
     picks: vec![Pick::new(0.0)],
     spread: Spread::Float(0.0, 4.0),
     seed: 1,
-    force_unique: true,
   };
   let scene = playing(Prop::Random(random));
   let frames: Vec<u8> = (0..300)

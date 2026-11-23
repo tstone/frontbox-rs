@@ -3,7 +3,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use serde::{Deserialize, Serialize};
 
 use crate::animation::Curve;
-use crate::scene::{Animatable, Env};
+use crate::scene::{Animatable, Env, Value};
 
 /// Attempts at a value that differs from its neighbors before giving up (the spread may not have one)
 const MAX_RETRIES: u32 = 64;
@@ -12,6 +12,9 @@ const MAX_RETRIES: u32 = 64;
 ///
 /// There's no running random generator. Each value is a hash of the seed, playback seed, cycle, and pick, so any moment
 /// can be sampled directly, in any order, with the same result. Values still differ every cycle and every playback.
+///
+/// A pick from a pool always differs from the one before, so the value never stays the same across a pick. A pick from
+/// a range can come up the same, which only matters for a value truncated to a whole number, and those differ too.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Random {
@@ -22,25 +25,25 @@ pub struct Random {
   /// Distinguishes this prop's values from another random prop with the same picks
   #[serde(default)]
   pub seed: u32,
-  /// Require each pick to differ from the one before. On by default.
-  #[serde(default = "on")]
-  pub force_unique: bool,
 }
 
 impl Random {
   pub(crate) fn resolve<T: Animatable>(&self, env: &Env) -> T {
+    let candidate = |instance, attempt| self.candidate::<T>(instance, attempt, env);
+    if !matches!(self.spread, Spread::Pool(_)) {
+      return self.blended(env, |instance| candidate(instance, 0));
+    }
+    let two_values = self.spread.pools_two_values();
     self.blended(env, |instance| {
-      self.unique(instance, env, false, |instance, attempt| {
-        self.candidate::<T>(instance, attempt, env)
-      })
+      self.unique(instance, env, two_values, candidate)
     })
   }
 
-  /// Like [`Self::resolve`], but `force_unique` compares whole numbers, for values that get truncated. A spread of
-  /// exactly two whole numbers needs special handling in [`Self::unique`].
+  /// Like [`Self::resolve`], for values that get truncated, so each pick differs from the one before as a whole number.
+  /// A spread of exactly two whole numbers needs special handling in [`Self::unique`], as does a pool of two values.
   pub(crate) fn resolve_truncated(&self, env: &Env) -> f32 {
-    let two_values =
-      matches!(self.spread, Spread::Float(low, high) if high.ceil() - low.floor() == 2.0);
+    let two_values = self.spread.pools_two_values()
+      || matches!(self.spread, Spread::Float(low, high) if high.ceil() - low.floor() == 2.0);
     self.blended(env, |instance| {
       self.unique(instance, env, two_values, |instance, attempt| {
         self.candidate::<f32>(instance, attempt, env).floor()
@@ -72,7 +75,7 @@ impl Random {
     }
   }
 
-  /// A pick's value, made to differ from its neighbors when `force_unique` is set
+  /// A pick's value, made to differ from its neighbors
   ///
   /// Each pick is computed independently, so a pick can't know what the previous one ended up as. Instead, even picks
   /// keep their first candidate and odd picks try more until one differs from both even neighbors. With only two
@@ -85,10 +88,6 @@ impl Random {
     two_values: bool,
     candidate: impl Fn(PickInstance, u32) -> T,
   ) -> T {
-    if !self.force_unique {
-      return candidate(instance, 0);
-    }
-
     let kept = |instance: PickInstance| {
       candidate(
         if two_values {
@@ -115,17 +114,16 @@ impl Random {
 
   /// A random value for a pick. Each `attempt` gives a different value, for retries.
   fn candidate<T: Animatable>(&self, instance: PickInstance, attempt: u32, env: &Env) -> T {
-    T::from_spread(
-      &self.spread,
-      rnd((
+    self
+      .spread
+      .sample(rnd((
         self.seed,
         env.playback_seed,
         instance.cycle,
         instance.pick,
         attempt,
-      )),
-    )
-    .unwrap_or_default()
+      )))
+      .unwrap_or_default()
   }
 
   /// The pick that's in effect. `None` if there are none.
@@ -227,10 +225,10 @@ impl Pick {
   }
 }
 
-/// The range a [`Random`] picks from. Each pair is `(min, max)`. A spread that doesn't match the prop's type gives the
-/// type's default.
+/// What a [`Random`] picks from, or a [`Modulated`](crate::scene::Modulated) moves through: a range, or a pool of set
+/// values. Each pair is `(min, max)`. A spread that doesn't match the prop's type gives the type's default.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Spread {
   Float(f32, f32),
   Vec2 {
@@ -241,10 +239,40 @@ pub enum Spread {
   /// the reds on both sides of 0. How bright or see-through they are is up to the `Brightness` and `Opacity` adjusts,
   /// as only the hue varies here.
   Color { hue: (f32, f32) },
+  /// One of these values, each as likely as the others. A wave steps through them in order, from its low point to its
+  /// high point. A value the prop's type can't read gives the type's default, as a variable of the wrong type does.
+  ///
+  /// In RON: `Pool([Float(2.0), Float(5.0)])` or `Pool([Color(255, 0, 0, 255), Color(0, 0, 255, 255)])`
+  Pool(Vec<Value>),
 }
 
-fn on() -> bool {
-  true
+impl Spread {
+  /// The value at `rnd` (numbers from 0 to 1): where in each range, or which of a pool. `None` if the spread is a
+  /// different type, or an empty pool.
+  pub(crate) fn sample<T: Animatable>(&self, rnd: [f32; 3]) -> Option<T> {
+    match self {
+      Self::Pool(values) => {
+        let last = values.len().checked_sub(1)?;
+        let index = ((rnd[0] * values.len() as f32) as usize).min(last);
+        T::from_value(&values[index])
+      }
+      range => T::from_spread(range, rnd),
+    }
+  }
+
+  /// Whether it's a pool of exactly two different values, which [`Random::unique`] has to alternate between
+  fn pools_two_values(&self) -> bool {
+    let Self::Pool(values) = self else {
+      return false;
+    };
+    let mut distinct: Vec<&Value> = Vec::new();
+    for value in values {
+      if !distinct.contains(&value) {
+        distinct.push(value);
+      }
+    }
+    distinct.len() == 2
+  }
 }
 
 /// One occurrence of a pick: the pick's index within a particular scene cycle
@@ -278,7 +306,6 @@ mod tests {
       picks: picks.into_iter().map(Pick::new).collect(),
       spread: Spread::Float(0.0, 1000.0),
       seed: 1,
-      force_unique: true,
     }
   }
 
@@ -374,9 +401,8 @@ mod tests {
     for seed in 0..500 {
       let value: Vec2 = Random {
         picks: vec![Pick::new(0.0)],
-        spread,
+        spread: spread.clone(),
         seed,
-        force_unique: true,
       }
       .resolve(&env(0.0, &variables));
       assert!((2.0..=3.0).contains(&value.x), "{value}");
@@ -391,7 +417,6 @@ mod tests {
       picks: vec![Pick::new(0.0)],
       spread: Spread::Float(4.0, 4.0),
       seed: 1,
-      force_unique: true,
     };
     assert_eq!(random.resolve::<f32>(&env(0.0, &variables)), 4.0);
   }
@@ -405,7 +430,6 @@ mod tests {
         picks: vec![Pick::new(0.0)],
         spread,
         seed: 1,
-        force_unique: true,
       }
       .resolve::<Color>(&env(0.0, &variables))
       .0
@@ -426,7 +450,6 @@ mod tests {
         picks,
         spread,
         seed,
-        force_unique: true,
       }
       .resolve::<Color>(&env(0.0, &variables))
       .0;
@@ -626,17 +649,7 @@ mod tests {
   }
 
   #[test]
-  fn without_force_unique_a_value_can_repeat() {
-    let random = Random {
-      force_unique: false,
-      ..numbers(1, 2, 1)
-    };
-    let picks = whole_picks(&random, 50);
-    assert!(picks.windows(2).any(|pair| pair[0] == pair[1]), "{picks:?}");
-  }
-
-  #[test]
-  fn colors_differ_from_the_one_before_too() {
+  fn a_range_that_isnt_truncated_can_repeat() {
     let variables = Variables::new();
     let timing = Timing::new(1.0, Cycle::Forever);
     // only a few colors are this close in hue
@@ -656,7 +669,7 @@ mod tests {
         })
       })
       .collect();
-    assert!(colors.windows(2).all(|pair| pair[0] != pair[1]));
+    assert!(colors.windows(2).any(|pair| pair[0] == pair[1]));
   }
 
   #[test]
@@ -671,6 +684,80 @@ mod tests {
     assert_eq!(
       random(vec![0.0]).resolve::<Color>(&env(0.0, &variables)),
       Color::default()
+    );
+  }
+
+  /// What a pick from a pool of these numbers comes to over `cycles` cycles of a looping scene, one pick each
+  fn pool_picks(pool: &[f32], cycles: u32) -> Vec<f32> {
+    let variables = Variables::new();
+    let timing = Timing::new(1.0, Cycle::Forever);
+    let random = Random {
+      spread: Spread::Pool(pool.iter().map(|&number| Value::Float(number)).collect()),
+      ..random(vec![0.0])
+    };
+    (0..cycles)
+      .map(|cycle| {
+        random.resolve(&Env {
+          cycle,
+          timing: Some(timing),
+          ..env(0.0, &variables)
+        })
+      })
+      .collect()
+  }
+
+  #[test]
+  fn a_pool_picks_each_of_its_values_about_as_often() {
+    let picks = pool_picks(&[2.0, 5.0, 11.0], 6000);
+    for value in [2.0, 5.0, 11.0] {
+      let seen = picks.iter().filter(|pick| **pick == value).count();
+      assert!((1600..2400).contains(&seen), "{value} came up {seen} times");
+    }
+  }
+
+  #[test]
+  fn a_pool_value_never_comes_up_twice_in_a_row() {
+    let picks = pool_picks(&[2.0, 5.0, 11.0], 200);
+    assert!(picks.windows(2).all(|pair| pair[0] != pair[1]), "{picks:?}");
+  }
+
+  #[test]
+  fn a_pool_of_two_values_takes_turns_even_with_repeats() {
+    let picks = pool_picks(&[2.0, 5.0, 5.0], 50);
+    assert!(
+      picks
+        .windows(3)
+        .all(|three| three[0] == three[2] && three[0] != three[1]),
+      "{picks:?}"
+    );
+  }
+
+  #[test]
+  fn a_pool_of_colors_picks_those_colors() {
+    let variables = Variables::new();
+    let (red, blue) = (Color(Rgba([255, 0, 0, 255])), Color(Rgba([0, 0, 255, 128])));
+    for seed in 0..50 {
+      let color: Color = Random {
+        spread: Spread::Pool(vec![Value::Color(red), Value::Color(blue)]),
+        seed,
+        ..random(vec![0.0])
+      }
+      .resolve(&env(0.0, &variables));
+      assert!(color == red || color == blue, "{color:?}");
+    }
+  }
+
+  #[test]
+  fn an_empty_pool_or_one_of_another_type_is_the_default() {
+    let variables = Variables::new();
+    let pool = |values| Random {
+      spread: Spread::Pool(values),
+      ..random(vec![0.0])
+    };
+    assert_eq!(pool(vec![]).resolve::<f32>(&env(0.0, &variables)), 0.0);
+    assert_eq!(
+      pool(vec![Value::Text("big".into())]).resolve::<f32>(&env(0.0, &variables)),
+      0.0
     );
   }
 

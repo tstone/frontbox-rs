@@ -226,16 +226,11 @@ fn can_hold_its_last_moment() {
 #[test]
 fn each_play_picks_its_own_random_values() {
   let (context, addresses) = three_lights();
-  let spread = Spread::Color {
-    hue: (0.0, 360.0),
-    brightness: (1.0, 1.0),
-    alpha: (1.0, 1.0),
-  };
+  let spread = Spread::Color { hue: (0.0, 360.0) };
   let color = Prop::Random(Random {
     picks: vec![Pick::new(0.0)],
     spread,
     seed: 0,
-    force_unique: true,
   });
   let scene = on(
     LightQ::name("light0"),
