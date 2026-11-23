@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use frontbox_core::prelude::*;
 use frontbox_gfx::layout::Line;
-use frontbox_gfx::prelude::{Rgba, RgbaColor};
+use frontbox_gfx::prelude::Rgba;
 use frontbox_gfx::scene::{self, Graph, Layer, LayerFrame, Sample, Variables, Visits};
 use frontbox_scene::{Moment, Scene};
 

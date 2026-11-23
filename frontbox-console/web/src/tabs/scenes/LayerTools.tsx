@@ -19,25 +19,23 @@ import { SoundDialog } from './SoundPicker'
  * on `place`, the plane or display chosen for the preview, which is `null` with `reason` saying why when there's nowhere
  * to draw one. An image and a sound are chosen first, and a shape or text is drawn on the preview: picking one of those
  * hands it to `onDraw`, and `drawing` is the one being drawn. A sequence and a sound go where they always do, and a
- * sequence isn't offered on a display. Each tool is in the color of the layers it adds. Below them are the modifiers
- * that can be added to what's selected.
+ * sequence isn't offered on a display. A full layer has no region, so it covers all of what it's on. Each tool is in
+ * the color of the layers it adds. Below them are the modifiers that can be added to what's selected.
  */
 export default function LayerTools(props: { place: LayerPlace | null; reason: string | null; drawing: DrawnTool | null; onDraw: (tool: DrawnTool | null) => void }) {
   const scene = useContext(SceneContext)!
   const surfaces = useContext(LayerSurfacesContext)!
   const tree = useContext(ConfigTreeContext)!
   const [choosing, setChoosing] = createSignal<'Image' | 'Sound' | null>(null)
-  // how the image being chosen is to be laid out
-  const [imageFit, setImageFit] = createSignal<ImageFit>('Full')
   const onLights = () => props.place?.startsWith('Area:') === true
   const onDisplay = () => props.place?.startsWith('Display:') === true
   const drawnColor = (): LayerColor => (onDisplay() ? 'display' : 'lights')
   const graphReason = () => props.reason ?? (onLights() ? null : "A graph is made of the machine's lights, so it's added on a plane")
 
   const add = (tool: Tool) => {
-    if (tool === 'Image' || tool === 'Sound') return setChoosing(tool)
     if (isDrawn(tool)) return props.onDraw(props.drawing === tool ? null : tool)
     props.onDraw(null)
+    if (tool === 'Image' || tool === 'Sound') return setChoosing(tool)
     const place = tool === 'Sequence' ? 'Sequence' : props.place
     if (place === null) return
     batch(() => {
@@ -47,15 +45,9 @@ export default function LayerTools(props: { place: LayerPlace | null; reason: st
     })
   }
 
-  const chooseImage = (fit: ImageFit) => {
-    props.onDraw(null)
-    setImageFit(fit)
-    setChoosing('Image')
-  }
-
   /**
-   * An image covering all of what it's on, stretched to fit, or in a rectangle of its own shape in the middle. On a
-   * display that's a pixel for each of the display's, and on a plane, whose units are far bigger than an image's
+   * An image in a rectangle of its own shape in the middle of what it's on. For one over all of it, add a full layer and
+   * pick its image. On a display that's a pixel for each of the display's, and on a plane, whose units are far bigger than an image's
    * pixels, it's the size a new shape is, stretched to fit.
    */
   const addImage = async (name: string) => {
@@ -63,7 +55,6 @@ export default function LayerTools(props: { place: LayerPlace | null; reason: st
     const place = props.place
     if (place === null) return
     const layer = newLayer('Image', scene.get(), place, surfaces)
-    if (imageFit() === 'Full') return tree.addLayer({ ...layer, fill: { base: { Image: { name } } } })
     const surface = surfaces(layer)
     const [width, height] = surface ?? [1, 0]
     const pixels = await contentImageSize(name)
@@ -103,14 +94,8 @@ export default function LayerTools(props: { place: LayerPlace | null; reason: st
       <Show when={!onDisplay()}>{button('Sequence', 'lights', null)}</Show>
       {button('Sound', 'sound', null)}
       <span class="scene-tools-divider" />
-      <MenuTool
-        label="Add image layer"
-        icon={icons.ImageIcon}
-        groups={[IMAGE_FITS.map(({ value, label, icon }) => ({ value, label, icon }))]}
-        color={drawnColor()}
-        reason={props.reason}
-        onPick={chooseImage}
-      />
+      {button('Image', drawnColor())}
+      {button('Full', drawnColor())}
       {button('Circle', drawnColor())}
       {button('Rect', drawnColor())}
       <MenuTool
@@ -131,13 +116,16 @@ export default function LayerTools(props: { place: LayerPlace | null; reason: st
   )
 }
 
-/** What a tool adds: a shape, an image, a graph of lights, a sequence of lights, or a sound */
-type Tool = Exclude<ShapeKind, 'None' | 'Polyline' | 'Bezier'> | TemplateKind | 'Image' | 'Graph' | 'Sequence' | 'Sound'
+/**
+ * What a tool adds: a shape, an image, a layer over all of what it's on (with no region), a graph of lights, a sequence
+ * of lights, or a sound
+ */
+type Tool = Exclude<ShapeKind, 'None' | 'Polyline' | 'Bezier'> | TemplateKind | 'Image' | 'Full' | 'Graph' | 'Sequence' | 'Sound'
 
 /** A tool whose layer is drawn on the preview: text or a shape, which a polygon is drawn a corner at a time and the rest as a box */
-export type DrawnTool = Exclude<Tool, 'Image' | 'Graph' | 'Sequence' | 'Sound'>
+export type DrawnTool = Exclude<Tool, 'Image' | 'Full' | 'Graph' | 'Sequence' | 'Sound'>
 
-const isDrawn = (tool: Tool): tool is DrawnTool => !['Image', 'Graph', 'Sequence', 'Sound'].includes(tool)
+const isDrawn = (tool: Tool): tool is DrawnTool => !['Image', 'Full', 'Graph', 'Sequence', 'Sound'].includes(tool)
 
 /**
  * A layer of a drawn tool's kind on `place`, filling the box that was drawn, or through the corners of a polygon. A
@@ -149,14 +137,6 @@ export function drawnLayer(tool: DrawnTool, scene: Scene, place: LayerPlace, sur
   const across = newShapeSize(surfaces(layer))
   return { ...layer, region: drawnShape(tool, drawn.center, drawn.size ?? [across, across]) }
 }
-
-/** How an image layer is laid out: over all of what it's on, or in a rectangle of the image's own shape */
-type ImageFit = 'Full' | 'Sized'
-
-const IMAGE_FITS: { value: ImageFit; label: string; icon: typeof icons.Circle }[] = [
-  { value: 'Full', label: 'Full - stretched over all of it', icon: icons.Maximize2 },
-  { value: 'Sized', label: 'Sized - a rectangle the image’s shape', icon: icons.ImageIcon },
-]
 
 /** The shapes behind the menu, as circles and rectangles have buttons of their own */
 const MORE_SHAPES: Tool[][] = [
@@ -177,6 +157,7 @@ const TOOL_LABELS: Record<Tool, string> = {
   Propeller: 'Propeller',
   Text: 'Text',
   Image: 'Image',
+  Full: 'Full',
   Graph: 'Graph',
   Sequence: 'Sequence',
   Sound: 'Sound',
@@ -195,6 +176,7 @@ const TOOL_ICONS: Record<Tool, typeof icons.Circle> = {
   Propeller: icons.Plus,
   Text: icons.Type,
   Image: icons.ImageIcon,
+  Full: icons.Scan,
   Graph: icons.Network,
   Sequence: icons.GripHorizontal,
   Sound: icons.AudioLines,
@@ -265,7 +247,7 @@ function ModifierTools() {
     const found = targets()
     const adds = new Map<ModifierKind, { label: string; add: () => void }>()
     if (!found) return adds
-    const offer = (node: ModifiersNode | null, groups: ('transforms' | 'adjusts' | 'strokes')[]) => {
+    const offer = (node: ModifiersNode | null, groups: ('transforms' | 'fillTransforms' | 'adjusts' | 'strokes')[]) => {
       if (!node) return
       const options = modifierOptions(node, found.traversals)
       for (const group of groups) {
@@ -273,7 +255,7 @@ function ModifierTools() {
       }
     }
     offer(found.transforms, ['transforms', 'strokes'])
-    offer(found.adjusts, ['adjusts'])
+    offer(found.adjusts, ['fillTransforms', 'adjusts'])
     return adds
   })
   const sections = () =>
@@ -321,7 +303,7 @@ function ModifierTools() {
 
 /** The modifiers that have buttons, which are those used most, and the menu the rest of them are in, in groups */
 const MODIFIER_SECTIONS: { label: string; icon: typeof icons.Circle; buttons: ModifierKind[]; menu: ModifierKind[][] }[] = [
-  { label: 'More transforms', icon: icons.WandSparkles, buttons: ['Translate', 'Rotate', 'Scale', 'Round'], menu: [['Mirror', 'Revolve', 'Bisect'], ['Shift', 'Bulge'], ['Fit'], ['Stroke']] },
+  { label: 'More transforms', icon: icons.WandSparkles, buttons: ['Translate', 'Rotate', 'Scale', 'Round'], menu: [['Mirror', 'Revolve', 'Bisect'], ['Shift', 'Bulge'], ['Warp'], ['Fit'], ['Stroke']] },
   { label: 'More adjustments', icon: icons.SlidersHorizontal, buttons: ['Opacity', 'Brightness'], menu: [['HueShift', 'Contrast']] },
 ]
 
@@ -362,7 +344,7 @@ function modifierTargets(tree: ConfigTree, id: string | null) {
 function newLayer(tool: Exclude<Tool, 'Sound'>, scene: Scene, place: LayerPlace, surfaces: LayerSurfaces): SceneLayer {
   const layer: SceneLayer = { ...newLayerPlace(scene, place), name: freshLayerName(scene, TOOL_LABELS[tool]), fill: { base: { Solid: { Fixed: WHITE } } } }
   const surface = surfaces(layer)
-  if (tool === 'Image') return layer
+  if (tool === 'Image' || tool === 'Full') return layer
   if (tool === 'Graph') return { ...layer, graph: { traversals: [newTraversal(freshTraversalName(layer, 'walk'), [], surface)] } }
   if (tool === 'Sequence') return layer
   return { ...layer, region: newShape(tool, surface) }

@@ -78,7 +78,25 @@ export function treeChildren(node: ConfigNode): TreeChild[] {
 
 /** Spaces stops evenly in their order, from 0 to 1 */
 export function spreadStops(stops: Stop[]): Stop[] {
-  return stops.map((stop, i) => ({ ...stop, at: stops.length > 1 ? i / (stops.length - 1) : 0 }))
+  return stops.map((stop, i) => ({ ...stop, at: { Fixed: evenAt(i, stops.length) } }))
+}
+
+/** Whether stops are where spreading them would put them, so none has been placed by hand */
+export function evenlySpread(stops: Stop[]) {
+  return stops.every(({ at }, i) => 'Fixed' in at && Math.abs(at.Fixed - evenAt(i, stops.length)) < 1e-6)
+}
+
+/** Where the `index`th of `count` stops spaced evenly is */
+const evenAt = (index: number, count: number) => (count > 1 ? index / (count - 1) : 0)
+
+/** Stops after one is taken out: spaced evenly again if they were, or else left where they are */
+function respaced(before: Stop[], after: Stop[]) {
+  return evenlySpread(before) ? spreadStops(after) : after
+}
+
+/** Stops after one is moved in the list: the positions stay in their places, so its color is what moves */
+function positionsKept(before: Stop[], after: Stop[]) {
+  return after.map((stop, i) => ({ ...stop, at: before[i].at }))
 }
 
 /** `nodes` is empty until the scene can be read */
@@ -216,14 +234,14 @@ export function createConfigTree(scene: Lens<Scene>, nodes: Accessor<ConfigNode[
     move: ({ list, listId, index, spread }, by) =>
       batch(() => {
         const after = moved(list.get(), index, by)
-        list.set(spread ? spreadStops(after as Stop[]) : after)
+        list.set(spread ? positionsKept(list.get() as Stop[], after as Stop[]) : after)
         // the ones it passes each shift a place toward where it was
         relocate(listId, (i) => (i === index ? index + by : by > 0 && i > index && i <= index + by ? i - 1 : by < 0 && i < index && i >= index + by ? i + 1 : i))
       }),
     remove: ({ list, listId, index, spread }) =>
       batch(() => {
         const after = removed(list.get(), index)
-        list.set(spread ? spreadStops(after as Stop[]) : after)
+        list.set(spread ? respaced(list.get() as Stop[], after as Stop[]) : after)
         relocate(listId, (i) => (i === index ? null : i > index ? i - 1 : i))
       }),
     duplicate: ({ list, listId, index }, change = (copy) => copy) =>

@@ -823,8 +823,8 @@ mod tests {
 
   const RED_TO_BLUE: &str = r#"Scene(
     version: 2, layers: [Lights(surface: Sequence, layer: (fill: (base: Gradient(stops: [
-        (at: 0.0, color: Fixed(255, 0, 0, 255)),
-        (at: 1.0, color: Fixed(0, 0, 255, 255)),
+        (at: Fixed(0.0), color: Fixed(255, 0, 0, 255)),
+        (at: Fixed(1.0), color: Fixed(0, 0, 255, 255)),
       ]))))],)"#;
 
   const SIZE: SceneSize = SceneSize {
@@ -895,8 +895,8 @@ mod tests {
   /// Red at x = 0, blue at x = 10
   const AREA: &str = r#"Scene(
     version: 2, layers: [Lights(surface: Area("Square"), layer: (fill: (base: Gradient(stops: [
-        (at: 0.0, color: Fixed(255, 0, 0, 255)),
-        (at: 1.0, color: Fixed(0, 0, 255, 255)),
+        (at: Fixed(0.0), color: Fixed(255, 0, 0, 255)),
+        (at: Fixed(1.0), color: Fixed(0, 0, 255, 255)),
       ]))))],)"#;
 
   fn colors(source: &str, target: PreviewMachine) -> BTreeMap<String, Rgb> {

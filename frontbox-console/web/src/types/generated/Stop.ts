@@ -3,6 +3,11 @@ import type { Color } from "./Color";
 import type { Prop } from "./Prop";
 
 /**
- * A gradient color stop. `at` runs from 0 to 1.
+ * A gradient color stop
  */
-export type Stop = { at: number, color: Prop<Color>, };
+export type Stop = { 
+/**
+ * Where it is along the gradient, from 0 to 1. Moving it can take it past others, as stops are drawn in order of
+ * where they are, and two in the same place make a hard edge, the one earlier in the list on the low side.
+ */
+at: Prop<number>, color: Prop<Color>, };

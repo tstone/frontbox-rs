@@ -46,6 +46,8 @@ import {
   UNIT,
   variant,
   WANDER,
+  EVOLUTION,
+  NOISE_SCALE,
   type LayerSurfaces,
   type AdjustKind,
   type Lens,
@@ -106,7 +108,7 @@ export type NodeData =
   | { kind: 'mask'; lens: Lens<SceneLayer> }
   /** A fit transform, which picks its traversal in its row. Other transforms are props. */
   | { kind: 'fit'; lens: Lens<Transform> }
-  /** A scale, mirror, revolve, bisect, or shift, which has its props under it */
+  /** A scale, mirror, revolve, bisect, shift, or warp, which has its props under it */
   | { kind: 'copy'; lens: Lens<Transform> }
   /**
    * The row for adding a transform, or an adjust where there's `adjusts`. With `shape`, it also offers a mirror, revolve,
@@ -152,7 +154,10 @@ export type ListPlace = {
   listId: string
   index: number
   canRemove?: boolean
-  /** For a gradient's stops, whose `at` comes of their order: they're spaced evenly again after any change */
+  /**
+   * For a gradient's stops: moving one keeps the positions in their places, so its color is what moves, and taking one
+   * out spaces the rest evenly again if they were
+   */
   spread?: boolean
 }
 
@@ -163,7 +168,7 @@ export const WANDERING: AlgorithmKind[] = ['BreadthFirst', 'Dijkstra', 'Shortest
 export const BY_DISTANCE: AlgorithmKind[] = ['Dijkstra', 'ShortestPath', 'FanOut', 'Growth']
 export const algorithmKind = (algorithm: TraversalAlgorithm) => (typeof algorithm === 'string' ? algorithm : Object.keys(algorithm)[0]) as AlgorithmKind
 
-export const TRANSFORM_LABELS = { Translate: 'Translate', Rotate: 'Rotate', Scale: 'Scale', Fit: 'Fit to traversal', Mirror: 'Mirror', Revolve: 'Revolve', Bisect: 'Bisect', Shift: 'Shift', Bulge: 'Bulge', Round: 'Round corners' }
+export const TRANSFORM_LABELS = { Translate: 'Translate', Rotate: 'Rotate', Scale: 'Scale', Fit: 'Fit to traversal', Mirror: 'Mirror', Revolve: 'Revolve', Bisect: 'Bisect', Shift: 'Shift', Bulge: 'Bulge', Round: 'Round corners', Warp: 'Warp' }
 export type TransformKind = keyof typeof TRANSFORM_LABELS
 export const transformKind = (transform: Transform) => Object.keys(transform)[0] as TransformKind
 
@@ -387,7 +392,7 @@ function pointsNode(id: string, shape: PointsShape, lens: Lens<Prop<Vec2>[]> | L
 /**
  * Transforms then adjusts, as rows beside the props of what they change, and a row for adding either. Translates,
  * rotates, bulges, rounds, and adjusts are props of their own, a fit picks its traversal in its row, and a scale,
- * mirror, revolve, bisect, or shift has its props under it. With `shape`, the row for adding offers those too, and its
+ * mirror, revolve, bisect, shift, or warp has its props under it. With `shape`, the row for adding offers those too, and its
  * strokes are listed after its transforms, each with its props under it.
  */
 function modifierNodes(id: string, transforms: Lens<Transform[]>, space: TransformSpace, surface: Surface, adjusts?: Lens<ColorAdjust[]>, shape?: Lens<Shape>): ConfigNode[] {
@@ -400,12 +405,13 @@ function modifierNodes(id: string, transforms: Lens<Transform[]>, space: Transfo
     const place = { list: transforms as Lens<unknown[]>, listId: transformList, index }
     const kind = transformKind(transform)
     if (kind === 'Fit') return { id: transformId, label: TRANSFORM_LABELS.Fit, kind: 'fit', lens, value: transform, place }
-    if (kind === 'Mirror' || kind === 'Revolve' || kind === 'Bisect' || kind === 'Shift' || kind === 'Scale') {
+    if (kind === 'Mirror' || kind === 'Revolve' || kind === 'Bisect' || kind === 'Shift' || kind === 'Scale' || kind === 'Warp') {
       const children = transformProps(lens, surface, space).map(({ key, label, fallback, lens: propLens, ranges }) => {
         const anchorOf = key === 'anchor' && shape ? { shape, index } : undefined
         return propNode(`${transformId}/${key}`, label, { lens: propLens, variableName: `${kind.toLowerCase()}_${key}`, fallback, ranges, anchorOf }, surface)
       })
-      return branch({ id: transformId, label: TRANSFORM_LABELS[kind], kind: 'copy', lens, value: transform, place, modifier: kind, children })
+      // a warp's detail and pattern aren't props, so they're its fields
+      return branch({ id: transformId, label: TRANSFORM_LABELS[kind], kind: 'copy', lens, value: transform, place, modifier: kind, fields: kind === 'Warp', children })
     }
     const spec: PropSpec =
       kind === 'Translate'
@@ -441,7 +447,10 @@ function modifierNodes(id: string, transforms: Lens<Transform[]>, space: Transfo
   return [...transformNodes, ...adjustNodes, ...strokeNodes, add]
 }
 
-/** A solid's color, a gradient's stops, an animated image's frame, or a sprite sheet's sprite, then its transforms and adjusts */
+/**
+ * A solid's color, a gradient's stops, a noise's scale, evolution, and stops, an animated image's frame, or a sprite
+ * sheet's sprite, then its transforms and adjusts
+ */
 function fillNode(id: string, lens: Lens<Fill>, surface: Surface): ConfigNode {
   const base = field(lens, 'base')
   const current = base.get()
@@ -450,6 +459,14 @@ function fillNode(id: string, lens: Lens<Fill>, surface: Surface): ConfigNode {
     own.push(propNode(`${id}/color`, 'Color', { lens: variant(base, 'Solid') as Lens<Prop<SceneValue>>, variableName: 'color', fallback: [255, 255, 255, 255], ranges: both(UNIT) }, surface))
   }
   if ('Gradient' in current) own.push(stopsNode(`${id}/stops`, field(variant(base, 'Gradient'), 'stops'), surface))
+  if ('Noise' in current) {
+    const noise = variant(base, 'Noise')
+    own.push(
+      propNode(`${id}/scale`, 'Scale', { lens: field(noise, 'scale') as Lens<Prop<SceneValue>>, variableName: 'noise_scale', fallback: 0.25, ranges: both(NOISE_SCALE) }, surface),
+      propNode(`${id}/evolution`, 'Evolution', { lens: field(noise, 'evolution') as Lens<Prop<SceneValue>>, variableName: 'evolution', fallback: 0, ranges: both(EVOLUTION) }, surface),
+      stopsNode(`${id}/stops`, field(noise, 'stops'), surface),
+    )
+  }
   if ('Image' in current) {
     const frames = contentImageInfo(current.Image.name)?.frames
     const frame = current.Image.frame
@@ -470,18 +487,23 @@ function fillNode(id: string, lens: Lens<Fill>, surface: Surface): ConfigNode {
     kind: 'fill',
     lens,
     value: lens.get(),
-    fields: 'Image' in current || 'Spritesheet' in current,
+    fields: 'Image' in current || 'Spritesheet' in current || 'Noise' in current,
     children: [...own, ...modifierNodes(id, orEmpty(field(lens, 'transform')), 'fill', surface, orEmpty(field(lens, 'adjust')))],
   })
 }
 
-/** Each stop is its color, spaced evenly by its order. There's always one, as a gradient of none would be nothing. */
+/**
+ * Each stop is its color, with its position under it, so the colors are all in sight at once. There's always one, as a
+ * gradient of none would be nothing.
+ */
 function stopsNode(id: string, lens: Lens<Stop[]>, surface: Surface): ConfigNode {
   const list = lens as Lens<unknown[]>
   const children = lens.get().map((_, index) => {
-    const color = field(item(lens, index), 'color') as Lens<Prop<SceneValue>>
+    const stop = item(lens, index)
+    const color = propNode(`${id}/${index}`, `Stop ${index + 1}`, { lens: field(stop, 'color') as Lens<Prop<SceneValue>>, variableName: 'stop_color', fallback: [255, 255, 255, 255], ranges: both(UNIT) }, surface)
+    const position = propNode(`${id}/${index}/at`, 'Position', { lens: field(stop, 'at') as Lens<Prop<SceneValue>>, variableName: 'stop_position', fallback: 0, ranges: both(UNIT) }, surface)
     const place = { list, listId: id, index, canRemove: lens.get().length > 1, spread: true }
-    return { ...propNode(`${id}/${index}`, `Stop ${index + 1}`, { lens: color, variableName: 'stop_color', fallback: [255, 255, 255, 255], ranges: both(UNIT) }, surface), place }
+    return { ...color, place, children: [...(color.children ?? []), position] }
   })
   return branch({ id, label: 'Stops', kind: 'stops', lens, value: lens.get(), children })
 }

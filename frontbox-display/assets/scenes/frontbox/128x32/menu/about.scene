@@ -12,15 +12,15 @@ Scene(
           base: Gradient(
             stops: [
               (
-                at: 0.0,
+                at: Fixed(0.0),
                 color: Fixed(211, 211, 206, 255),
               ),
               (
-                at: 0.25,
+                at: Fixed(0.25),
                 color: Fixed(0, 255, 255, 255),
               ),
               (
-                at: 1.0,
+                at: Fixed(1.0),
                 color: Fixed(249, 38, 114, 255),
               ),
             ],

@@ -25,8 +25,8 @@ Scene(
         fill: (
           base: Gradient(
             stops: [
-              (at: 0.0, color: Fixed(255, 220, 0, 255)),
-              (at: 1.0, color: Fixed(255, 60, 0, 255)),
+              (at: Fixed(0.0), color: Fixed(255, 220, 0, 255)),
+              (at: Fixed(1.0), color: Fixed(255, 60, 0, 255)),
             ],
             style: Linear,
           ),

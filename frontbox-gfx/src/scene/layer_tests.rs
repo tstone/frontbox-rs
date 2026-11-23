@@ -779,6 +779,45 @@ fn a_mask_draws_none_of_its_own_color() {
   assert_eq!(sample(&scene, 50.0, 25.0, 0.5)[3], 0);
 }
 
+/// A noise mask over the viewport, cut at `level`: two stops there, from transparent to opaque, make a hard edge
+fn dissolve(level: f32) -> Layer {
+  let noise = Fill::new(FillNode::Noise {
+    style: NoiseStyle::Smooth,
+    scale: 0.25.into(),
+    octaves: 3,
+    evolution: 0.0.into(),
+    seed: 0,
+    stops: vec![
+      Stop::new(level, Color(Rgba([0, 0, 0, 0]))),
+      Stop::new(level, Color(Rgba([0, 0, 0, 255]))),
+    ],
+  });
+  Layer::new(noise).mask()
+}
+
+#[test]
+fn a_noise_mask_cut_by_two_stops_shows_more_as_they_move_down() {
+  let points: Vec<_> = (0..20)
+    .flat_map(|x| (0..10).map(move |y| (x as f32 * 5.0 + 2.5, y as f32 * 5.0 + 2.5)))
+    .collect();
+  // each point shows fully or not at all, and one shown at a level is shown at every lower one
+  let shown = |level| {
+    let scene = masked(dissolve(level));
+    points
+      .iter()
+      .map(|&(x, y)| match sample(&scene, x, y, 0.5) {
+        RED => true,
+        color if color[3] == 0 => false,
+        color => panic!("{color:?} at ({x}, {y}) is neither shown nor hidden"),
+      })
+      .collect::<Vec<_>>()
+  };
+  let (most, some) = (shown(0.3), shown(0.6));
+  assert!(some.iter().zip(&most).all(|(&some, &most)| !some || most));
+  let count = |shown: &[bool]| shown.iter().filter(|&&shown| shown).count();
+  assert!(count(&some) > 0 && count(&some) < count(&most) && count(&most) < points.len());
+}
+
 #[test]
 fn an_inverted_mask_shows_the_layers_below_only_outside_it() {
   let scene = masked(

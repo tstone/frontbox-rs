@@ -161,6 +161,31 @@ mod tests {
             }))),
         ),
         Layer::new(
+          Fill::new(FillNode::Noise {
+            style: NoiseStyle::Ridged,
+            scale: 0.5.into(),
+            octaves: 4,
+            evolution: Prop::Variable("boil".into()),
+            seed: 7,
+            stops: vec![
+              Stop::new(Prop::Variable("cut".into()), Color(Rgba([0, 0, 0, 0]))),
+              Stop::new(1.0, Color(Rgba([0, 255, 255, 255]))),
+            ],
+          })
+          .transform(Transform::Translate(Vec2::new(3.0, 0.0).into()))
+          .transform(Transform::Warp {
+            amount: 0.1.into(),
+            scale: 0.4.into(),
+            octaves: 2,
+            evolution: Prop::Variable("boil".into()),
+            seed: 3,
+          }),
+        )
+        .region(Shape::new(ShapeNode::Rect {
+          width: 60.0.into(),
+          height: 15.0.into(),
+        })),
+        Layer::new(
           Fill::new(FillNode::Solid(Color(Rgba([0, 0, 255, 255])).into())).adjust(
             ColorAdjust::Opacity(Prop::Modulated(Modulated {
               modulator: "pulse".into(),
@@ -540,8 +565,8 @@ mod tests {
       r#"(
         layers: [
           (fill: (base: Gradient(stops: [
-            (at: 0.0, color: Fixed(255, 0, 0, 255)),
-            (at: 1.0, color: Fixed(0, 0, 255, 255)),
+            (at: Fixed(0.0), color: Fixed(255, 0, 0, 255)),
+            (at: Fixed(1.0), color: Fixed(0, 0, 255, 255)),
           ]))),
         ],
       )"#,
@@ -585,7 +610,7 @@ mod tests {
   fn a_gradient_from_before_colors_only_mixed_in_rgb_still_reads() {
     let scene = load(
       "(layers: [(fill: (base: Gradient(stops: [
-        (at: 0.0, color: Fixed(255, 0, 0, 255)),
+        (at: Fixed(0.0), color: Fixed(255, 0, 0, 255)),
       ], space: Oklab, style: Radial)))])",
     )
     .unwrap();

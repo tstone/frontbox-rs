@@ -21,6 +21,7 @@ import type { ShapeAdjust } from '../../types/generated/ShapeAdjust'
 import type { ShapeNode } from '../../types/generated/ShapeNode'
 import type { SoundLayer } from '../../types/generated/SoundLayer'
 import type { Speed } from '../../types/generated/Speed'
+import type { Stop } from '../../types/generated/Stop'
 import type { Spread } from '../../types/generated/Spread'
 import type { Sweep } from '../../types/generated/Sweep'
 import type { TextSource } from '../../types/generated/TextSource'
@@ -596,6 +597,12 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
     strokes.get().forEach((_, i) => strokeProps(item(strokes, i), surface).forEach((prop) => use(prop.lens, `${label} · Stroke · ${prop.label}`, prop.ranges)))
   }
 
+  const stops = (lens: Lens<Stop[]>, label: string) =>
+    lens.get().forEach((_, stop) => {
+      use(field(item(lens, stop), 'color'), `${label} · Stop ${stop + 1}`, both(UNIT))
+      use(field(item(lens, stop), 'at'), `${label} · Stop ${stop + 1} position`, both(UNIT))
+    })
+
   const fill =(lens: Lens<Layer['fill']>, label: string) => {
     transforms(orEmpty(field(lens, 'transform')), `${label} · Fill`, 'fill')
     const base = field(lens, 'base')
@@ -603,8 +610,12 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
     if ('Solid' in current) {
       use(variant(base, 'Solid'), `${label} · Color`, both(UNIT))
     } else if ('Gradient' in current) {
-      const stops = field(variant(base, 'Gradient'), 'stops')
-      stops.get().forEach((_, stop) => use(field(item(stops, stop), 'color'), `${label} · Stop ${stop + 1}`, both(UNIT)))
+      stops(field(variant(base, 'Gradient'), 'stops'), label)
+    } else if ('Noise' in current) {
+      const noise = variant(base, 'Noise')
+      use(field(noise, 'scale'), `${label} · Scale`, both(NOISE_SCALE))
+      use(field(noise, 'evolution'), `${label} · Evolution`, both(EVOLUTION))
+      stops(field(noise, 'stops'), label)
     } else if ('Image' in current && current.Image.frame) {
       const frames = contentImageInfo(current.Image.name)?.frames
       use(field(variant(base, 'Image'), 'frame'), `${label} · Frame`, frameRanges(frames))
@@ -1069,6 +1080,10 @@ const FACTOR: Range = { min: 0, max: 2, step: 0.01, rest: 1 }
 export const UNREFERENCED: Range = { min: -100, max: 100, step: 0.1, rest: 0 }
 const FILL_MOVE: Range = { min: -1, max: 1, step: 0.01, rest: 0 }
 const SCALE: Range = { min: 0, max: 16, step: 0.01, rest: 1 }
+/** A noise fill's largest blobs, as a share of its region's shorter side */
+export const NOISE_SCALE: Range = { min: 0.02, max: 2, step: 0.01, rest: 0.25 }
+/** A noise fill's evolution, which loops at every whole number */
+export const EVOLUTION: Range = { min: 0, max: 4, step: 0.01, spreadEnd: 1, rest: 0 }
 /** Steps a second, or for a traversal that goes by distance, scene units a second */
 export const RATE: Range = { min: 0.1, max: 60, step: 0.1, rest: 10 }
 /** How much longer a traversal's edges can be made at random, as a fraction of each */
@@ -1097,6 +1112,8 @@ export const REVOLVE_ANGLE: Range = { min: -360, max: 360, step: 1, rest: 360 }
 export const BULGE: Range = { min: -1, max: 1, step: 0.01, rest: 0 }
 /** How far a shift moves a shape's middle, as a share of the way to one end or the other */
 export const SHIFT: Range = { min: -1, max: 1, step: 0.01, rest: 0 }
+/** How far a warp pushes, as a share of the region's shorter side */
+export const WARP_AMOUNT: Range = { min: 0, max: 0.5, step: 0.01, rest: 0.05 }
 /** How far up a chevron's notch reaches */
 export const NOTCH: Range = { ...UNIT, rest: 0.5 }
 /** How wide a star's legs are where they meet, as a fraction of its radius. It rests at 2·tan(18°), where a 5-legged
@@ -1163,7 +1180,8 @@ export type PropField = { key: string; label: string; fallback: SceneValue; lens
  * The props of a transform that has props of its own rather than being one. For a scale, how much, then the point that
  * stays put, from the center. For a mirror, revolve, or bisect, its center, which is in the space the transforms before
  * it put the shape in, then how its line is turned or how its copies are spread. For a shift, how far it moves the
- * shape's middle, then how its line is turned. None for other transforms.
+ * shape's middle, then how its line is turned. For a warp, how far it pushes, how big its ripples are, and its
+ * evolution. None for other transforms.
  */
 export function transformProps(transform: Lens<Transform>, surface: Surface, space: TransformSpace): PropField[] {
   const current = transform.get()
@@ -1177,6 +1195,14 @@ export function transformProps(transform: Lens<Transform>, surface: Surface, spa
     return [
       propField('amount', 'Amount', SHIFT.rest!, both(SHIFT), field(shift, 'amount')),
       propField('rotation', 'Rotation', 0, both(ROTATION), field(shift, 'rotation')),
+    ]
+  }
+  if ('Warp' in current) {
+    const warp = variant(transform as Lens<Extract<Transform, { Warp: unknown }>>, 'Warp')
+    return [
+      propField('amount', 'Amount', WARP_AMOUNT.rest!, both(WARP_AMOUNT), field(warp, 'amount')),
+      propField('scale', 'Scale', NOISE_SCALE.rest!, both(NOISE_SCALE), field(warp, 'scale')),
+      propField('evolution', 'Evolution', 0, both(EVOLUTION), field(warp, 'evolution')),
     ]
   }
   const center = (lens: Lens<unknown>) => propField('center', 'Center', [0, 0], pointRanges(surface), lens)

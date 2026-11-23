@@ -2,6 +2,7 @@
 import type { Color } from "./Color";
 import type { GradientStyle } from "./GradientStyle";
 import type { ImageSize } from "./ImageSize";
+import type { NoiseStyle } from "./NoiseStyle";
 import type { Prop } from "./Prop";
 import type { Stop } from "./Stop";
 
@@ -10,9 +11,31 @@ import type { Stop } from "./Stop";
  */
 export type FillNode = { "Solid": Prop<Color> } | { "Gradient": { 
 /**
- * Sorted by `at`
+ * In any order, as they're drawn by where they are at the time
  */
-stops: Array<Stop>, style: GradientStyle, } } | { "Image": { 
+stops: Array<Stop>, style: GradientStyle, } } | { "Noise": { style?: NoiseStyle, 
+/**
+ * How big the largest blobs are, as a share of the region's shorter side: 0.25 fits four across it
+ */
+scale: Prop<number>, 
+/**
+ * Layers of finer detail summed on top, each half the size and half as strong as the one before, from 1 (just the
+ * blobs) to 8. More takes longer to draw.
+ */
+octaves: number, 
+/**
+ * Changes the noise in place, where a `Translate` scrolls it. It comes back to where it started at every whole
+ * number, so animating it from 0 to a whole number over a loop repeats seamlessly; to a larger one changes faster.
+ */
+evolution: Prop<number>, 
+/**
+ * Picks a different noise for the same settings
+ */
+seed: number, 
+/**
+ * In any order, as they're drawn by where they are at the time
+ */
+stops: Array<Stop>, } } | { "Image": { 
 /**
  * Path within the [`Content`](crate::scene::Content) folder. Empty draws nothing, for an image not chosen yet.
  */

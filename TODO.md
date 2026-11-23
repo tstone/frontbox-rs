@@ -30,9 +30,13 @@
 
 ### Scenes/Editor
 
-- Noise and noise masks: `FillNode::Noise`, plus a threshold `ColorAdjust` for noise masks
+- `FillNode::Cells`: cellular (Worley) noise with a `jitter`, in two modes. Edges is a web of thin lines where cells
+  meet (cracks, scales), and Value is a flat random shade per cell (mosaic, stained glass). Both are looks noise can't
+  make on a DMD. Skip a Distance mode, as at DMD sizes it reads like Smooth noise. Not worth it for sparse LEDs, where
+  a light samples one point and the cell shapes are lost.
+- `Transform::Warp` on shapes: bend the outline by noise too, as fills already are. A shape's edges need cutting into short pieces first, or a rect barely bends.
 - Plug in custom shapes or graphics with their own settings (e.g. a kinematics/skeleton extension)
-- Outer glow/drop shadow on regions (Adjust?)
+- Outer glow/drop shadow on regions (Maybe a blur adjust instead?)
 - Rotate transform gets an adjustable center point (X/Y prop)
 - Line-based fills (polyline, spiral, logarithmic spiral, etc. snake patterns) 
 - Line based fill patterns usable for Sweep
@@ -51,6 +55,8 @@
 - Scene transitions (cut, cross-fade, wipe, push) between two playbacks. First version drives opacity or a mask on both; with nested scenes, a transition is a scene with two slots.
 - Live reload of scenes and fonts, as `Content` already does for images.
 - Golden-image tests: render a scene at a time to PNG and compare with a stored one.
+- New Prop type: Envelope - follows the rise/fall of a sound
+- All the different scene features will probably need a library of demos/templates ("presets")
 
 ### gfx
 

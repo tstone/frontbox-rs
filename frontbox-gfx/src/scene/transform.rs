@@ -1,7 +1,8 @@
 use glam::{Affine2, Mat2, Vec2};
 use serde::{Deserialize, Serialize};
 
-use crate::scene::{Contour, Env, Inputs, Prop, Shape};
+use crate::scene::noise::{MAX_OCTAVES, default_octaves, to_cells};
+use crate::scene::{Contour, Env, Inputs, NoiseStyle, Prop, Shape};
 
 /// Cap on the copies one `Revolve` makes, well past where they can be told apart
 const MAX_COPIES: f32 = 360.0;
@@ -11,6 +12,7 @@ const MAX_COPIES: f32 = 360.0;
 /// `Mirror`, `Revolve`, `Bisect`, `Shift`, `Bulge`, and `Round` are for shapes. Their `center` is in the space the
 /// transforms before them put the shape in, and the transforms after them apply to everything they leave, so
 /// `[Revolve(..), Translate(..)]` moves every copy. A sweep follows only the shape itself, and a fill ignores them.
+/// `Warp` is for fills, and a shape ignores it.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Transform {
@@ -71,6 +73,22 @@ pub enum Transform {
   /// shape in. Where an edge is too short for the arcs at both its ends, they share it and are tighter. A line's ends
   /// stay as they are, and text isn't rounded, as with a `Shift`.
   Round(Prop<f32>),
+  /// Pushes each point of the fill a different way by smooth noise, so it ripples and wavers: wavy gradient bands, heat
+  /// haze over an image, swirled noise. The transforms before it are bent by it, and the ones after move what it bent,
+  /// so a `Rotate` before it turns the drawing and one after turns the ripples too. Its noise is sized like a
+  /// [`FillNode::Noise`](crate::scene::FillNode::Noise)'s, and its `evolution` loops the same way.
+  Warp {
+    /// How far a point is pushed at most, as a share of the region's shorter side
+    amount: Prop<f32>,
+    /// How big the ripples are, as a share of the region's shorter side
+    scale: Prop<f32>,
+    /// Layers of finer ripples on top, from 1 to 8, as for noise
+    #[serde(default = "default_octaves")]
+    octaves: u32,
+    evolution: Prop<f32>,
+    #[serde(default)]
+    seed: u32,
+  },
 }
 
 impl Transform {
@@ -113,7 +131,9 @@ impl Transform {
       | Self::Bisect { .. }
       | Self::Shift { .. }
       | Self::Bulge(_)
-      | Self::Round(_) => Affine2::IDENTITY,
+      | Self::Round(_)
+      // it bends the fill between the affines on either side of it, as `warp` says
+      | Self::Warp { .. } => Affine2::IDENTITY,
     }
   }
 
@@ -217,6 +237,28 @@ impl Transform {
     }
   }
 
+  /// For a `Warp`, how it bends a fill whose unit box is `unit_box` across in scene units
+  pub(crate) fn warp(&self, unit_box: Vec2, env: &Env) -> Option<Warp> {
+    match self {
+      Self::Warp {
+        amount,
+        scale,
+        octaves,
+        evolution,
+        seed,
+      } => Some(Warp {
+        to_cells: to_cells(unit_box, scale.resolve(env)),
+        // the push is a share of the shorter side, so it's as far across as it is down
+        push: amount.resolve(env) * unit_box.min_element()
+          / unit_box.max(Vec2::splat(f32::EPSILON)),
+        octaves: *octaves,
+        evolution: evolution.resolve(env),
+        seed: *seed,
+      }),
+      _ => None,
+    }
+  }
+
   /// The path of a `Sweep` translate, if this is one
   pub(crate) fn path(&self) -> Option<&Shape> {
     match self {
@@ -235,6 +277,14 @@ impl Transform {
         center.is_animated() || rotation.is_animated()
       }
       Self::Shift { amount, rotation } => amount.is_animated() || rotation.is_animated(),
+      Self::Warp {
+        amount,
+        scale,
+        evolution,
+        ..
+      } => [amount, scale, evolution]
+        .iter()
+        .any(|prop| prop.is_animated()),
       Self::Revolve {
         center,
         angle,
@@ -257,6 +307,14 @@ impl Transform {
         rotation.read_inputs(inputs);
       }
       Self::Shift { amount, rotation } => [amount, rotation]
+        .iter()
+        .for_each(|prop| prop.read_inputs(inputs)),
+      Self::Warp {
+        amount,
+        scale,
+        evolution,
+        ..
+      } => [amount, scale, evolution]
         .iter()
         .for_each(|prop| prop.read_inputs(inputs)),
       Self::Revolve {
@@ -346,6 +404,29 @@ impl Cut {
       point: affine.transform_point2(self.point),
       out: out.normalize_or(self.out),
     }
+  }
+}
+
+/// A `Warp`, resolved
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Warp {
+  /// Takes a point in the unit box to noise cells
+  to_cells: Vec2,
+  /// The most a point moves along each axis, in the unit box
+  push: Vec2,
+  octaves: u32,
+  evolution: f32,
+  seed: u32,
+}
+
+impl Warp {
+  /// Where `p`, in the unit box, is drawn from
+  pub(crate) fn apply(&self, p: Vec2) -> Vec2 {
+    let cells = p * self.to_cells;
+    // a noise for each axis, -1 to 1. Seeds past the octaves the first one uses, so the two don't share any.
+    let along =
+      |seed: u32| NoiseStyle::Smooth.sample(cells, self.evolution, self.octaves, seed) * 2.0 - 1.0;
+    p + Vec2::new(along(self.seed), along(self.seed.wrapping_add(MAX_OCTAVES))) * self.push
   }
 }
 

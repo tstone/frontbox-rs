@@ -18,6 +18,7 @@ import type { FillNode } from '../../types/generated/FillNode'
 import type { ImageInfo } from '../../types/generated/ImageInfo'
 import type { ImageSize } from '../../types/generated/ImageSize'
 import type { NodeRef } from '../../types/generated/NodeRef'
+import type { NoiseStyle } from '../../types/generated/NoiseStyle'
 import type { NumberFormat } from '../../types/generated/NumberFormat'
 import type { Prop } from '../../types/generated/Prop'
 import type { ShapeNode } from '../../types/generated/ShapeNode'
@@ -53,7 +54,8 @@ import { ImagePicker } from './ImagePicker'
 import { SoundPicker } from './SoundPicker'
 import { anchorPresets, writer } from './ShapeHandles'
 import { displayNames, LayerLights, LightsNote } from './LayerPlace'
-import { spreadStops } from './configTree'
+import { evenlySpread, spreadStops } from './configTree'
+import { randomSeed } from './curves'
 import {
   Dropdown,
   EyeButton,
@@ -114,6 +116,7 @@ import {
   WANDER,
   RESHAPE_KINDS,
   SHIFT,
+  WARP_AMOUNT,
   withDuration,
   withVariableValue,
   withTiming,
@@ -132,7 +135,9 @@ import {
   type Vec2,
 } from './sceneModel'
 
-type FillKind = 'Solid' | GradientStyle | 'Image' | 'Spritesheet'
+type FillKind = 'Solid' | GradientStyle | 'Noise' | 'Image' | 'Spritesheet'
+type NoiseFill = Extract<FillNode, { Noise: unknown }>['Noise']
+type WarpTransform = Extract<Transform, { Warp: unknown }>
 type ImageFill = Extract<FillNode, { Image: unknown }>['Image']
 type SpritesheetFill = Extract<FillNode, { Spritesheet: unknown }>['Spritesheet']
 export type ShapeKind = 'None' | 'Circle' | 'Ellipse' | 'Rect' | 'Diamond' | 'Star' | 'Chevron' | 'Text' | 'Polygon' | 'Polyline' | 'Bezier'
@@ -159,6 +164,7 @@ const FILL_OPTIONS: { value: FillKind; label: string }[] = [
   { value: 'Linear', label: 'Linear gradient' },
   { value: 'Radial', label: 'Radial gradient' },
   { value: 'Conical', label: 'Conical gradient' },
+  { value: 'Noise', label: 'Noise' },
   { value: 'Image', label: 'Image' },
   { value: 'Spritesheet', label: 'Sprite sheet' },
 ]
@@ -199,6 +205,8 @@ const SHAPE_TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = [...C
 const GRAPH_REGION_OPTIONS: ShapeOption[] = [ALL, { value: 'Graph', label: 'Graph' }, ...SHAPES, ...TEMPLATES]
 /** Only for a layer with traversals to fit to */
 const FIT_OPTION: { value: TransformKind; label: string } = { value: 'Fit', label: TRANSFORM_LABELS.Fit }
+/** Only for a fill */
+const FILL_TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = [{ value: 'Warp', label: TRANSFORM_LABELS.Warp }]
 const ALGORITHM_OPTIONS: { value: AlgorithmKind; label: string }[] = [
   { value: 'DepthFirst', label: 'Depth first' },
   { value: 'ShortestPath', label: 'Direct path (targeted)' },
@@ -252,6 +260,19 @@ const TEXT_OVERFLOW_OPTIONS: { value: TextOverflow; label: string }[] = [
   { value: 'Wrap', label: 'Wraps onto more lines' },
   { value: 'Ellipsis', label: 'Cut short with …' },
 ]
+const NOISE_STYLE_OPTIONS: { value: NoiseStyle; label: string }[] = [
+  { value: 'Smooth', label: 'Smooth' },
+  { value: 'Turbulent', label: 'Turbulent' },
+  { value: 'Ridged', label: 'Ridged' },
+]
+/** What each noise style looks like, under its picker */
+const NOISE_STYLE_NOTES: Record<NoiseStyle, string> = {
+  Smooth: 'Soft rolling blobs, for clouds, smoke, and fog.',
+  Turbulent: 'Mostly low with soft bright billows, for fire and churning smoke.',
+  Ridged: 'Thin bright veins, for lightning, arcs, and marble.',
+}
+/** Most octaves a noise fill sums, as in the engine */
+const MAX_OCTAVES = 8
 const IMAGE_SIZE_OPTIONS: { value: ImageSize; label: string }[] = [
   { value: 'Stretch', label: 'Stretch to fit' },
   { value: 'Native', label: 'Native (a pixel per unit)' },
@@ -284,7 +305,7 @@ const SHAPE_ICONS: Record<RegionKind, Icon> = {
   Bezier: icons.Spline,
   Graph: icons.Network,
 }
-const FILL_ICONS: Record<FillKind, Icon> = { Solid: icons.PaintBucket, Linear: icons.Blend, Radial: icons.Blend, Conical: icons.Blend, Image: icons.ImageIcon, Spritesheet: icons.ImageIcon }
+const FILL_ICONS: Record<FillKind, Icon> = { Solid: icons.PaintBucket, Linear: icons.Blend, Radial: icons.Blend, Conical: icons.Blend, Noise: icons.Cloud, Image: icons.ImageIcon, Spritesheet: icons.ImageIcon }
 /** A transform's or an adjust's icon says which kind it is, in place of where its value comes from */
 const MODIFIER_ICONS: Record<TransformKind | AdjustKind, Icon> = {
   Translate: icons.Move,
@@ -297,6 +318,7 @@ const MODIFIER_ICONS: Record<TransformKind | AdjustKind, Icon> = {
   Shift: icons.MoveVertical,
   Bulge: icons.Squircle,
   Round: icons.SquareRoundCorner,
+  Warp: icons.Waves,
   HueShift: icons.Palette,
   Opacity: icons.Droplet,
   Brightness: icons.Sun,
@@ -940,6 +962,7 @@ function NodeFields(props: { node: ConfigNode }) {
       </Match>
       <Match when={is(props.node, 'fill')}>{(fill) => <FillFields lens={fill().lens} />}</Match>
       <Match when={is(props.node, 'stroke')}>{(stroke) => <StrokeFields node={stroke()} />}</Match>
+      <Match when={props.node.modifier === 'Warp' && is(props.node, 'copy')}>{(warp) => <WarpFields lens={warp().lens as Lens<WarpTransform>} />}</Match>
       <Match when={is(props.node, 'traversal')}>{(traversal) => <TraversalFields lens={traversal().lens} layer={traversal().layer} />}</Match>
       <Match when={is(props.node, 'node-ref')}>{(ref) => <NodeRefFields label={ref().label} lens={ref().lens} />}</Match>
       <Match when={is(props.node, 'prop')}>
@@ -1500,8 +1523,14 @@ function NodeRefFields(props: { label: string; lens: Lens<NodeRef> }) {
 
 const fillKind = (lens: Lens<Fill>): FillKind => {
   const current = lens.get().base
-  return 'Solid' in current ? 'Solid' : 'Gradient' in current ? current.Gradient.style : 'Image' in current ? 'Image' : 'Spritesheet'
+  if ('Solid' in current) return 'Solid'
+  if ('Gradient' in current) return current.Gradient.style
+  if ('Noise' in current) return 'Noise'
+  return 'Image' in current ? 'Image' : 'Spritesheet'
 }
+
+/** A gradient's or a noise's stops, which carry over when switching between the two */
+const stopsOf = (node: FillNode) => ('Gradient' in node ? node.Gradient.stops : 'Noise' in node ? node.Noise.stops : undefined)
 
 /** What a fill is. A solid's color is under it, as is an animated image's frame. */
 function FillKindPicker(props: { node: Extract<ConfigNode, { kind: 'fill' }> }) {
@@ -1511,7 +1540,7 @@ function FillKindPicker(props: { node: Extract<ConfigNode, { kind: 'fill' }> }) 
 
   const setKind = (next: FillKind) => {
     const current = base().get()
-    const color = 'Solid' in current ? current.Solid : 'Gradient' in current ? current.Gradient.stops[0]?.color : undefined
+    const color = 'Solid' in current ? current.Solid : stopsOf(current)?.[0]?.color
     if (next === kind()) return
     batch(() => {
       if (next === 'Solid') {
@@ -1522,12 +1551,19 @@ function FillKindPicker(props: { node: Extract<ConfigNode, { kind: 'fill' }> }) 
       } else if (next === 'Spritesheet') {
         const image = 'Image' in current ? current.Image : undefined
         base().set({ Spritesheet: { name: image?.name ?? '', rows: 1, columns: 1, size: image?.size } })
+      } else if (next === 'Noise') {
+        // dark to the color, so a solid turned into noise keeps its color on the bright parts
+        const stops = stopsOf(current) ?? [
+          { at: { Fixed: 0 }, color: { Fixed: BLACK } },
+          { at: { Fixed: 1 }, color: color ?? { Fixed: WHITE } },
+        ]
+        base().set({ Noise: { scale: { Fixed: 0.25 }, octaves: 3, evolution: { Fixed: 0 }, seed: randomSeed(), stops } })
       } else if ('Gradient' in current) {
         base().set({ Gradient: { ...current.Gradient, style: next } })
       } else {
-        const stops = [
-          { at: 0, color: color ?? { Fixed: WHITE } },
-          { at: 1, color: { Fixed: BLACK } },
+        const stops = stopsOf(current) ?? [
+          { at: { Fixed: 0 }, color: color ?? { Fixed: WHITE } },
+          { at: { Fixed: 1 }, color: { Fixed: BLACK } },
         ]
         base().set({ Gradient: { stops, style: next } })
       }
@@ -1542,11 +1578,14 @@ function FillKindPicker(props: { node: Extract<ConfigNode, { kind: 'fill' }> }) 
   )
 }
 
-/** The image a fill shows. A gradient's stops are under it. */
+/** The image a fill shows, or how a noise looks. A gradient's stops are under it, as are a noise's. */
 function FillFields(props: { lens: Lens<Fill> }) {
   const base = field(props.lens, 'base')
   return (
     <Switch>
+      <Match when={'Noise' in base.get()}>
+        <NoiseEditor lens={variant(base, 'Noise')} />
+      </Match>
       <Match when={'Image' in base.get()}>
         <ImageEditor lens={variant(base, 'Image')} />
       </Match>
@@ -1554,6 +1593,44 @@ function FillFields(props: { lens: Lens<Fill> }) {
         <SpritesheetEditor lens={variant(base, 'Spritesheet')} />
       </Match>
     </Switch>
+  )
+}
+
+/** A noise's style and detail. Its seed is kept out of the way: a new random one is all that's usually wanted. */
+function NoiseEditor(props: { lens: Lens<NoiseFill> }) {
+  const style = () => props.lens.get().style ?? 'Smooth'
+  const octaves = (value: number) => field(props.lens, 'octaves').set(Math.min(MAX_OCTAVES, Math.max(1, Math.round(value) || 1)))
+  return (
+    <>
+      <FieldRow label="Style">
+        <Dropdown label="Style" options={NOISE_STYLE_OPTIONS} value={style()} onChange={(next) => field(props.lens, 'style').set(next === 'Smooth' ? undefined : next)} />
+      </FieldRow>
+      <span class="scene-note">{NOISE_STYLE_NOTES[style()]}</span>
+      <FieldRow label="Detail">
+        <NumberBox class="scene-tree-number" aria-label="Detail" title="Octaves: layers of finer detail on top of the largest blobs" min="1" max={MAX_OCTAVES} step="1" value={props.lens.get().octaves} onNumber={octaves} />
+      </FieldRow>
+      <button type="button" class="scene-button" title="Pick a different noise at random, keeping these settings" onClick={() => field(props.lens, 'seed').set(randomSeed())}>
+        <icons.Dices aria-hidden="true" /> New pattern
+      </button>
+      <p class="scene-note">Evolution changes the noise in place and loops at every whole number, so taking it from 0 to 1 over the timeline repeats seamlessly. A Translate scrolls it instead.</p>
+    </>
+  )
+}
+
+/** A warp's detail and pattern, as for noise */
+function WarpFields(props: { lens: Lens<WarpTransform> }) {
+  const warp = () => variant(props.lens, 'Warp')
+  const octaves = (value: number) => field(warp(), 'octaves').set(Math.min(MAX_OCTAVES, Math.max(1, Math.round(value) || 1)))
+  return (
+    <>
+      <FieldRow label="Detail">
+        <NumberBox class="scene-tree-number" aria-label="Detail" title="Octaves: layers of finer ripples on top of the largest" min="1" max={MAX_OCTAVES} step="1" value={warp().get().octaves} onNumber={octaves} />
+      </FieldRow>
+      <button type="button" class="scene-button" title="Pick different ripples at random, keeping these settings" onClick={() => field(warp(), 'seed').set(randomSeed())}>
+        <icons.Dices aria-hidden="true" /> New pattern
+      </button>
+      <p class="scene-note">Bends the fill, not the region. Transforms above it are bent with the fill; those below move the ripples too.</p>
+    </>
   )
 }
 
@@ -1656,7 +1733,10 @@ function describeImage({ width, height, frames, duration }: ImageInfo) {
   return `${size}, ${frames} frames (0 to ${frames - 1})${length}`
 }
 
-/** Adds a stop at the end, in the color of the last one */
+/**
+ * Adds a stop at the end, in the color of the last one. Stops still spaced evenly are spaced again to fit it, and
+ * otherwise it goes at the end of the gradient, leaving where the others have been put.
+ */
 function AddStop(props: { node: Extract<ConfigNode, { kind: 'stops' }> }) {
   const tree = useContext(ConfigTreeContext)!
   const add = () => {
@@ -1664,7 +1744,8 @@ function AddStop(props: { node: Extract<ConfigNode, { kind: 'stops' }> }) {
     // its own copy, as a prop is told from another by which one it is
     const color = list.length > 0 ? structuredClone(list[list.length - 1].color) : { Fixed: WHITE }
     batch(() => {
-      props.node.lens.set(spreadStops([...list, { at: 1, color }]))
+      const added = [...list, { at: { Fixed: 1 }, color }]
+      props.node.lens.set(evenlySpread(list) ? spreadStops(added) : added)
       tree.expand(props.node.id)
     })
   }
@@ -1950,6 +2031,7 @@ function newTransform(kind: TransformKind, traversals: string[], size: Vec2): Tr
   if (kind === 'Shift') return { Shift: { amount: { Fixed: SHIFT.rest! }, rotation: { Fixed: 0 } } }
   if (kind === 'Bulge') return { Bulge: { Fixed: BULGE.rest! } }
   if (kind === 'Round') return { Round: { Fixed: 0 } }
+  if (kind === 'Warp') return { Warp: { amount: { Fixed: WARP_AMOUNT.rest! }, scale: { Fixed: 0.5 }, octaves: 2, evolution: { Fixed: 0 }, seed: randomSeed() } }
   return { Fit: traversals[0] ?? '' }
 }
 
@@ -1963,11 +2045,17 @@ type ModifierOption = { value: ModifierKind; label: string }
 
 /**
  * The modifiers a row offers, with `traversals` the layer's: transforms, with those only for a drawn shape and a fit
- * only for a layer with traversals to fit to, then adjusts on a fill, then a stroke on a drawn shape.
+ * only for a layer with traversals to fit to, then transforms only for a fill and adjusts on a fill, then a stroke on
+ * a drawn shape.
  */
-export function modifierOptions(node: ModifiersNode, traversals: string[]): { transforms: ModifierOption[]; adjusts: ModifierOption[]; strokes: ModifierOption[] } {
+export function modifierOptions(
+  node: ModifiersNode,
+  traversals: string[],
+): { transforms: ModifierOption[]; fillTransforms: ModifierOption[]; adjusts: ModifierOption[]; strokes: ModifierOption[] } {
   return {
     transforms: [...TRANSFORM_OPTIONS, ...(node.shape ? SHAPE_TRANSFORM_OPTIONS : []), ...(traversals.length > 0 ? [FIT_OPTION] : [])],
+    // a fill is the node with adjusts
+    fillTransforms: node.adjusts ? FILL_TRANSFORM_OPTIONS : [],
     adjusts: node.adjusts ? ADJUST_OPTIONS : [],
     strokes: node.shape ? [STROKE_OPTION] : [],
   }
@@ -2019,8 +2107,8 @@ function AddModifier(props: { node: ModifiersNode }) {
   const surface = useContext(SurfaceContext)!
   const traversals = useContext(TraversalsContext)
   const groups = () => {
-    const { transforms, adjusts, strokes } = modifierOptions(props.node, traversals())
-    return [transforms, adjusts, strokes].filter((group) => group.length > 0)
+    const { transforms, fillTransforms, adjusts, strokes } = modifierOptions(props.node, traversals())
+    return [transforms, fillTransforms, adjusts, strokes].filter((group) => group.length > 0)
   }
   const add = (kind: ModifierKind) => addModifier(tree, scene.get(), props.node, kind, surface(), traversals())
   return (

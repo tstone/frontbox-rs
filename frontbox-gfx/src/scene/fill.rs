@@ -3,7 +3,10 @@ use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::animation::Lerp;
-use crate::scene::{Color, ColorAdjust, Env, Inputs, Node, Picture, Prop, Transform, Wrap};
+use crate::scene::noise::{default_octaves, to_cells};
+use crate::scene::{
+  Color, ColorAdjust, Env, Inputs, Node, NoiseStyle, Picture, Prop, Transform, Warp, Wrap,
+};
 
 /// The colors a layer is drawn with
 ///
@@ -28,11 +31,12 @@ impl Fill {
       ..*env
     };
     let to_scene = self.to_scene(Vec2::ZERO, env)?;
-    let to_local = to_scene.inverse();
+    let (warps, to_local) = self.warps(size, env);
     Some(PreparedFill {
       wrap: self.wrap(Vec2::ZERO, to_scene, env),
+      warps,
       to_local,
-      footprint: to_local.matrix2.abs() * footprint,
+      footprint: to_scene.inverse().matrix2.abs() * footprint,
       base: self.base.resolve(size, env),
       adjust: self
         .adjust
@@ -40,6 +44,29 @@ impl Fill {
         .map(|adjust| (adjust, adjust.amount(env)))
         .collect(),
     })
+  }
+
+  /// The way back from a sample point to the fill's local space, split at each `Warp`: the affine to take before each
+  /// warp, starting from the last, and the affine after the first. Without a warp, that's just `to_scene` inverted.
+  fn warps(&self, unit_box: Vec2, env: &Env) -> (Vec<(Affine2, Warp)>, Affine2) {
+    let mut warps = Vec::new();
+    // the transforms after the warp last met, combined
+    let mut after = Affine2::IDENTITY;
+    for (transform, affine) in self
+      .transform
+      .iter()
+      .zip(self.affines(Vec2::ZERO, env))
+      .rev()
+    {
+      match transform.warp(unit_box, env) {
+        Some(warp) => {
+          warps.push((after.inverse(), warp));
+          after = Affine2::IDENTITY;
+        }
+        None => after *= affine,
+      }
+    }
+    (warps, after.inverse())
   }
 
   pub(crate) fn is_animated(&self) -> bool {
@@ -68,10 +95,32 @@ pub enum FillNode {
   Solid(Prop<Color>),
   /// Runs left to right. Add a `Rotate` transform for other directions, or to move where a `Conical` one starts.
   Gradient {
-    /// Sorted by `at`
+    /// In any order, as they're drawn by where they are at the time
     stops: Vec<Stop>,
     #[serde(default)]
     style: GradientStyle,
+  },
+  /// Smooth random noise, its value from 0 to 1 colored by `stops` like a gradient's position. With stops from
+  /// transparent to opaque, it makes a noise mask. Unlike a gradient it doesn't stretch with its region: its cells stay
+  /// square, sized by the region's shorter side, and a `Scale` transform stretches them on purpose.
+  Noise {
+    #[serde(default, skip_serializing_if = "NoiseStyle::is_smooth")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<NoiseStyle>", optional))]
+    style: NoiseStyle,
+    /// How big the largest blobs are, as a share of the region's shorter side: 0.25 fits four across it
+    scale: Prop<f32>,
+    /// Layers of finer detail summed on top, each half the size and half as strong as the one before, from 1 (just the
+    /// blobs) to 8. More takes longer to draw.
+    #[serde(default = "default_octaves")]
+    octaves: u32,
+    /// Changes the noise in place, where a `Translate` scrolls it. It comes back to where it started at every whole
+    /// number, so animating it from 0 to a whole number over a loop repeats seamlessly; to a larger one changes faster.
+    evolution: Prop<f32>,
+    /// Picks a different noise for the same settings
+    #[serde(default)]
+    seed: u32,
+    /// In any order, as they're drawn by where they are at the time
+    stops: Vec<Stop>,
   },
   /// An image over the unit box at its `size`, and transparent outside it. On a `Sequence`, samples run along its
   /// middle row.
@@ -105,20 +154,31 @@ pub enum FillNode {
   },
 }
 
-/// A gradient color stop. `at` runs from 0 to 1.
+/// A gradient color stop
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Stop {
-  pub at: f32,
+  /// Where it is along the gradient, from 0 to 1. Moving it can take it past others, as stops are drawn in order of
+  /// where they are, and two in the same place make a hard edge, the one earlier in the list on the low side.
+  pub at: Prop<f32>,
   pub color: Prop<Color>,
 }
 
 impl Stop {
-  pub fn new(at: f32, color: impl Into<Prop<Color>>) -> Self {
+  pub fn new(at: impl Into<Prop<f32>>, color: impl Into<Prop<Color>>) -> Self {
     Self {
-      at,
+      at: at.into(),
       color: color.into(),
     }
+  }
+
+  fn is_animated(&self) -> bool {
+    self.at.is_animated() || self.color.is_animated()
+  }
+
+  fn read_inputs(&self, inputs: &mut Inputs) {
+    self.at.read_inputs(inputs);
+    self.color.read_inputs(inputs);
   }
 }
 
@@ -190,7 +250,13 @@ impl FillNode {
   fn is_animated(&self) -> bool {
     match self {
       Self::Solid(color) => color.is_animated(),
-      Self::Gradient { stops, .. } => stops.iter().any(|stop| stop.color.is_animated()),
+      Self::Gradient { stops, .. } => stops.iter().any(Stop::is_animated),
+      Self::Noise {
+        scale,
+        evolution,
+        stops,
+        ..
+      } => scale.is_animated() || evolution.is_animated() || stops.iter().any(Stop::is_animated),
       Self::Image { frame, .. } => frame.as_ref().is_some_and(Prop::is_animated),
       Self::Spritesheet { sprite, .. } => sprite.as_ref().is_some_and(Prop::is_animated),
     }
@@ -199,7 +265,17 @@ impl FillNode {
   fn read_inputs(&self, inputs: &mut Inputs) {
     match self {
       Self::Solid(color) => color.read_inputs(inputs),
-      Self::Gradient { stops, .. } => stops.iter().for_each(|stop| stop.color.read_inputs(inputs)),
+      Self::Gradient { stops, .. } => stops.iter().for_each(|stop| stop.read_inputs(inputs)),
+      Self::Noise {
+        scale,
+        evolution,
+        stops,
+        ..
+      } => {
+        scale.read_inputs(inputs);
+        evolution.read_inputs(inputs);
+        stops.iter().for_each(|stop| stop.read_inputs(inputs));
+      }
       Self::Image { frame, .. } => frame.iter().for_each(|frame| frame.read_inputs(inputs)),
       Self::Spritesheet { sprite, .. } => {
         sprite.iter().for_each(|sprite| sprite.read_inputs(inputs))
@@ -219,11 +295,23 @@ impl FillNode {
     match self {
       Self::Solid(color) => ResolvedFillNode::Solid(color.resolve(env).0),
       Self::Gradient { stops, style } => ResolvedFillNode::Gradient {
-        stops: stops
-          .iter()
-          .map(|stop| (stop.at, stop.color.resolve(env).0))
-          .collect(),
+        stops: resolve_stops(stops, env),
         style: *style,
+      },
+      Self::Noise {
+        style,
+        scale,
+        octaves,
+        evolution,
+        seed,
+        stops,
+      } => ResolvedFillNode::Noise {
+        style: *style,
+        to_cells: to_cells(unit_box, scale.resolve(env)),
+        octaves: *octaves,
+        evolution: evolution.resolve(env),
+        seed: *seed,
+        stops: resolve_stops(stops, env),
       },
       Self::Image { name, frame, size } => {
         let picture = env.assets.picture(name);
@@ -266,6 +354,9 @@ impl FillNode {
 /// A [`Fill`] resolved for one frame, with what coloring a sample needs
 pub(crate) struct PreparedFill<'a> {
   wrap: Option<Wrap>,
+  /// From the sample point, each `Warp` from the last, with the affine taken before it
+  warps: Vec<(Affine2, Warp)>,
+  /// To the fill's local space, after the warps
   to_local: Affine2,
   /// The samples' radius along each axis, in the fill's local space
   footprint: Vec2,
@@ -278,6 +369,9 @@ impl PreparedFill<'_> {
   /// The color at a point in the unit box
   pub(crate) fn color(&self, p: Vec2) -> Rgba<u8> {
     let p = self.wrap.map_or(p, |wrap| wrap.apply(p));
+    let p = self.warps.iter().fold(p, |p, (affine, warp)| {
+      warp.apply(affine.transform_point2(p))
+    });
     let color = self
       .base
       .color(self.to_local.transform_point2(p), self.footprint);
@@ -294,6 +388,15 @@ enum ResolvedFillNode<'a> {
   Gradient {
     stops: Vec<(f32, Rgba<u8>)>,
     style: GradientStyle,
+  },
+  /// `to_cells` takes a point in the unit box to noise cells, where a cell is 1 across. Stops are as for `Gradient`.
+  Noise {
+    style: NoiseStyle,
+    to_cells: Vec2,
+    octaves: u32,
+    evolution: f32,
+    seed: u32,
+    stops: Vec<(f32, Rgba<u8>)>,
   },
   /// `None` for an image that isn't loaded, which draws nothing. `scale` takes a point in the unit box to the image's
   /// own unit box.
@@ -317,6 +420,17 @@ impl ResolvedFillNode<'_> {
     match self {
       Self::Solid(color) => *color,
       Self::Gradient { stops, style } => gradient(stops, style.at(p)),
+      Self::Noise {
+        style,
+        to_cells,
+        octaves,
+        evolution,
+        seed,
+        stops,
+      } => gradient(
+        stops,
+        style.sample(p * *to_cells, *evolution, *octaves, *seed),
+      ),
       Self::Image {
         picture,
         frame,
@@ -339,6 +453,17 @@ impl ResolvedFillNode<'_> {
 /// A picture's width and height in pixels
 fn pixels(picture: &Picture) -> Vec2 {
   Vec2::new(picture.width() as f32, picture.height() as f32)
+}
+
+/// Each stop's position and color in `env`, in order of position. A stable sort, so stops in the same place stay in
+/// list order.
+fn resolve_stops(stops: &[Stop], env: &Env) -> Vec<(f32, Rgba<u8>)> {
+  let mut resolved: Vec<_> = stops
+    .iter()
+    .map(|stop| (stop.at.resolve(env), stop.color.resolve(env).0))
+    .collect();
+  resolved.sort_by(|a, b| a.0.total_cmp(&b.0));
+  resolved
 }
 
 fn gradient(stops: &[(f32, Rgba<u8>)], t: f32) -> Rgba<u8> {
@@ -364,9 +489,10 @@ fn gradient(stops: &[(f32, Rgba<u8>)], t: f32) -> Rgba<u8> {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::animation::{Curve, Cycle};
   use crate::scene::Transform;
   use crate::scene::value::tests::env;
-  use crate::scene::{Prop, Variables};
+  use crate::scene::{Key, Keyframes, Prop, Variables};
 
   const RED: Rgba<u8> = Rgba([255, 0, 0, 255]);
   const BLUE: Rgba<u8> = Rgba([0, 0, 255, 255]);
@@ -480,6 +606,57 @@ mod tests {
   }
 
   #[test]
+  fn stops_are_drawn_in_order_of_where_they_are() {
+    let fill = Fill::new(FillNode::Gradient {
+      stops: vec![Stop::new(1.0, Color(BLUE)), Stop::new(0.0, Color(RED))],
+      style: GradientStyle::Linear,
+    });
+    assert_eq!(color(&fill, -0.5, 0.0), RED);
+    assert_eq!(color(&fill, 0.5, 0.0), BLUE);
+  }
+
+  #[test]
+  fn two_stops_in_one_place_make_a_hard_edge() {
+    let green = Rgba([0, 255, 0, 255]);
+    let fill = Fill::new(FillNode::Gradient {
+      stops: vec![Stop::new(0.5, Color(RED)), Stop::new(0.5, Color(green))],
+      style: GradientStyle::Linear,
+    });
+    assert_eq!(color(&fill, -0.01, 0.0), RED);
+    assert_eq!(color(&fill, 0.01, 0.0), green);
+  }
+
+  #[test]
+  fn a_stop_can_move_over_time() {
+    let variables = Variables::new();
+    let moving = Prop::Keyframes(Keyframes {
+      keys: vec![
+        Key::new(0.0, 0.0, Curve::Linear),
+        Key::new(1.0, 1.0, Curve::Linear),
+      ],
+      cycle: Cycle::Once,
+    });
+    // a hard edge from red to blue that sweeps left to right
+    let fill = Fill::new(FillNode::Gradient {
+      stops: vec![
+        Stop::new(moving.clone(), Color(RED)),
+        Stop::new(moving, Color(BLUE)),
+      ],
+      style: GradientStyle::Linear,
+    });
+    assert!(fill.is_animated());
+    let at = |time, x| {
+      fill
+        .prepare(Vec2::ZERO, Vec2::ONE, &env(time, &variables))
+        .map(|fill| fill.color(Vec2::new(x, 0.0)))
+    };
+    assert_eq!(at(0.25, -0.3), Some(RED));
+    assert_eq!(at(0.25, -0.2), Some(BLUE));
+    assert_eq!(at(0.75, 0.2), Some(RED));
+    assert_eq!(at(0.75, 0.3), Some(BLUE));
+  }
+
+  #[test]
   fn adjusts_apply_in_order_after_the_kind() {
     let mut fill = red_to_blue();
     fill.adjust.push(ColorAdjust::HueShift(120.0.into()));
@@ -487,6 +664,126 @@ mod tests {
     // red turned 60 degrees is yellow; blue turned 60 degrees is magenta
     assert_eq!(color(&fill, -0.5, 0.0), Rgba([255, 255, 0, 255]));
     assert_eq!(color(&fill, 0.5, 0.0), Rgba([255, 0, 255, 255]));
+  }
+
+  fn noise(stops: Vec<Stop>) -> Fill {
+    Fill::new(FillNode::Noise {
+      style: NoiseStyle::Smooth,
+      scale: 0.25.into(),
+      octaves: 3,
+      evolution: 0.0.into(),
+      seed: 0,
+      stops,
+    })
+  }
+
+  fn color_sized(fill: &Fill, size: Vec2, p: Vec2) -> Rgba<u8> {
+    let variables = Variables::new();
+    fill
+      .prepare(Vec2::ZERO, size, &env(0.0, &variables))
+      .map_or(Rgba([0, 0, 0, 0]), |fill| fill.color(p))
+  }
+
+  #[test]
+  fn noise_is_colored_by_its_stops() {
+    let fill = noise(vec![
+      Stop::new(0.0, Color(Rgba([255, 255, 255, 0]))),
+      Stop::new(1.0, Color(Rgba([255, 255, 255, 255]))),
+    ]);
+    let alphas: Vec<u8> = (0..50)
+      .map(|i| color(&fill, i as f32 / 50.0 - 0.5, 0.1)[3])
+      .collect();
+    assert!(
+      alphas.iter().min().unwrap() < &100 && alphas.iter().max().unwrap() > &155,
+      "{alphas:?}"
+    );
+  }
+
+  #[test]
+  fn noise_cells_stay_square_on_a_wide_region() {
+    let fill = red_noise();
+    // a quarter of the way across a 4:1 region is as far, in scene units, as all the way across a square one's height
+    for (x, y) in [(0.1, 0.2), (-0.05, -0.3), (0.12, 0.0)] {
+      assert_eq!(
+        color_sized(&fill, Vec2::new(4.0, 1.0), Vec2::new(x, y)),
+        color_sized(&fill, Vec2::ONE, Vec2::new(x * 4.0, y)),
+      );
+    }
+  }
+
+  #[test]
+  fn noise_is_sized_by_the_regions_shorter_side() {
+    let fill = red_noise();
+    for (x, y) in [(0.1, 0.2), (-0.05, -0.3)] {
+      assert_eq!(
+        color_sized(&fill, Vec2::new(10.0, 10.0), Vec2::new(x, y)),
+        color_sized(&fill, Vec2::new(30.0, 30.0), Vec2::new(x, y)),
+      );
+    }
+  }
+
+  fn red_noise() -> Fill {
+    noise(vec![
+      Stop::new(0.0, Color(RED)),
+      Stop::new(1.0, Color(BLUE)),
+    ])
+  }
+
+  fn warp(amount: f32) -> Transform {
+    Transform::Warp {
+      amount: amount.into(),
+      scale: 0.3.into(),
+      octaves: 2,
+      evolution: 0.0.into(),
+      seed: 0,
+    }
+  }
+
+  fn warped(transform: Vec<Transform>) -> Fill {
+    Fill {
+      transform,
+      ..red_to_blue()
+    }
+  }
+
+  fn points() -> impl Iterator<Item = (f32, f32)> {
+    (0..12).flat_map(|x| (0..12).map(move |y| (x as f32 / 20.0 - 0.3, y as f32 / 20.0 - 0.3)))
+  }
+
+  #[test]
+  fn a_warp_pushes_a_gradient_around_by_no_more_than_its_amount() {
+    let fill = warped(vec![warp(0.1)]);
+    let pushes: Vec<f32> = points()
+      .map(|(x, y)| {
+        // the gradient runs red to blue left to right, so its blue says where across it was drawn from
+        let from = color(&fill, x, y)[2] as f32 / 255.0 - 0.5;
+        (from - x).abs()
+      })
+      .collect();
+    assert!(pushes.iter().all(|push| *push <= 0.11), "{pushes:?}");
+    assert!(pushes.iter().any(|push| *push > 0.03), "{pushes:?}");
+  }
+
+  #[test]
+  fn a_warp_of_nothing_changes_nothing() {
+    let (plain, fill) = (red_to_blue(), warped(vec![warp(0.0)]));
+    for (x, y) in points() {
+      assert_eq!(color(&fill, x, y), color(&plain, x, y));
+    }
+  }
+
+  #[test]
+  fn transforms_after_a_warp_move_its_ripples_and_ones_before_it_dont() {
+    let down = || Transform::Translate(Vec2::new(0.0, 0.2).into());
+    let alone = warped(vec![warp(0.1)]);
+    // the gradient doesn't change going down, so moving it down first leaves only the ripples, where they were
+    let before = warped(vec![down(), warp(0.1)]);
+    let after = warped(vec![warp(0.1), down()]);
+    for (x, y) in points() {
+      assert_eq!(color(&before, x, y), color(&alone, x, y));
+      assert_eq!(color(&after, x, y + 0.2), color(&alone, x, y));
+    }
+    assert!(points().any(|(x, y)| color(&after, x, y) != color(&alone, x, y)));
   }
 
   #[test]
