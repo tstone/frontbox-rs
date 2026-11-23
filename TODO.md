@@ -30,24 +30,6 @@
 
 ### Scenes/Editor
 
-- Groups and mask layers, replacing `Layer::mask` and the `Mask` type:
-  - Any layer can be a mask (`mask: bool`, `invert: bool`). It draws nothing; its alpha (fill × region coverage)
-    multiplies the alpha of everything below it, or `1 - alpha` inverted. Per sample that's destination-in on the
-    color built up so far, so no buffers.
-  - "Below" stops at the bottom of its group. A mask at the root affects everything below it in the scene; one in a
-    group affects only layers in that group. Groups are the only way to limit a mask's reach.
-  - A mask only affects layers in its own scene, never other scenes playing at the same time.
-  - A mask only affects like layers: a light mask masks light layers, a display mask masks layers on its display.
-    Light masks also only reach layers at their z. Undecided: on lights below that the mask doesn't land on, it either
-    leaves them alone or hides them.
-  - A hidden or `visible: false` mask has no effect.
-  - Masks are ordinary layers, so they get `graph`, keyframes, etc. for free, and two masks stack as an intersection.
-  - `SceneLayer::Group { name, hidden, visible, layers }`. Rendering becomes recursive (a group composites its own
-    layers, applying its masks, then lands on what's below), so write that once in a shared scene sampler rather than
-    in each of the bottom-up loops in `test_scene.rs`, `scene_render.rs` and `layered_light_manager.rs`. Graph visits
-    are keyed by layer index today, so they need a path or a flattened index.
-  - Migration: each `Layer { mask: Some(m) }` becomes a group of that layer with a mask layer from `m` above it, or no
-    group if it's already the bottom-most like layer at its z.
 - Noise and noise masks: `FillNode::Noise`, plus a threshold `ColorAdjust` for noise masks
 - Plug in custom shapes or graphics with their own settings (e.g. a kinematics/skeleton extension)
 - Outer glow/drop shadow on regions (Adjust?)
