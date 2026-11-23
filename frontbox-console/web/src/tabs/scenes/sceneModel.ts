@@ -456,14 +456,14 @@ export function layerPlace(layer: SceneLayer): LayerPlace {
 export const placeDisplay = (place: LayerPlace) => (place.startsWith('Display:') ? place.slice('Display:'.length) : null)
 
 /**
- * Where a new layer on `place` goes: on the lights and at the z of the last layer there, so that stacking is the easy
- * thing to do. A first layer on lights is on every light.
+ * Where a new layer on `place` goes: at the z of the last layer there, so that stacking is the easy thing to do. A layer
+ * on lights starts on every light.
  */
 export function newLayerPlace(scene: Scene, place: LayerPlace): Omit<SceneLayer, keyof Layer> {
   const display = placeDisplay(place)
   if (display !== null) return { display, z: scene.layers.findLast((layer) => layer.display === display)?.z }
   const under = scene.layers.findLast((layer) => layer.display === undefined)
-  return { lights: under?.lights ?? 'Every', z: under?.z, surface: place === 'Sequence' ? 'Sequence' : { Area: place.slice('Area:'.length) } }
+  return { lights: 'Every', z: under?.z, surface: place === 'Sequence' ? 'Sequence' : { Area: place.slice('Area:'.length) } }
 }
 
 /** What code can do with a scene's lights: nothing as it can't play yet, replace them all, or leave them as they are */
@@ -1088,7 +1088,9 @@ export function frameRanges(frames = 100): Ranges {
 export function translateRanges(surface: Surface, space: TransformSpace): Ranges {
   if (space === 'fill') return both(FILL_MOVE)
   if (!surface) return [UNIT, { min: -0.5, max: 0.5, step: 0.01, rest: 0 }]
-  return [{ ...span(0, surface[0]), rest: 0 }, { ...span(0, surface[1]), rest: 0 }]
+  // half its size past each edge, so a shape can be moved on from off to one side and off again past the other
+  const along = (size: number) => ({ ...span(-size / 2, size * 1.5), rest: 0 })
+  return [along(surface[0]), along(surface[1])]
 }
 
 export function scaleRanges(): Ranges {

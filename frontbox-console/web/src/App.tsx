@@ -3,6 +3,8 @@ import { createSignal, For, onCleanup } from 'solid-js'
 import { Dynamic } from 'solid-js/web'
 import { machine, startConsole } from './state/console'
 import type { ConnectionStatus } from './state/socket'
+import { headerTakenBy, setHeaderSlot } from './components/HeaderTakeover'
+import DisconnectedOverlay from './components/DisconnectedOverlay'
 import HistoryControls from './components/HistoryControls'
 import { tabGroups, tabs } from './tabs'
 import './App.css'
@@ -37,8 +39,10 @@ function App() {
       // tabs mount on first visit and then stay mounted, so their UI state survives switching
       lazyMount
     >
-      <header class="app-header">
-        <h1>Frontbox Pin Console</h1>
+      <header class="app-header" classList={{ 'app-header-taken': headerTakenBy(active()) }}>
+        <h1>Frontbox</h1>
+        {/* a tab's own controls, such as an open scene's, which stand in for the tabs while it's showing */}
+        <div class="app-header-slot" ref={setHeaderSlot} />
         <Tabs.List>
           {/* grouped by what they show, with the history controls in with the live tabs whose history they clear */}
           <For each={tabGroups}>
@@ -63,6 +67,7 @@ function App() {
           </Tabs.Content>
         )}
       </For>
+      <DisconnectedOverlay />
     </Tabs.Root>
   )
 }

@@ -66,7 +66,7 @@ export type Fill = Layer['fill']
 export type Shape = NonNullable<Layer['region']>
 
 /**
- * A row in the config tree. Its id is its path through the scene, such as `layers/0/fill/transform/1`, so it stays put
+ * A node of the scene, a row in the tree on the timeline. Its id is its path through the scene, such as `layers/0/fill/transform/1`, so it stays put
  * as what's in it changes, and starts with the ids of the nodes it's under.
  */
 export type ConfigNode = NodeData & {
@@ -80,6 +80,8 @@ export type ConfigNode = NodeData & {
   place?: ListPlace
   /** For a prop that's a transform or an adjust, which kind it is */
   modifier?: TransformKind | AdjustKind
+  /** For a shape's first translate, which is where the shape is rather than a modifier added to it */
+  placement?: boolean
   /** For a node with fields and nothing under it, which still opens to show them */
   childrenCount?: number
   children?: ConfigNode[]
@@ -123,6 +125,11 @@ export type NodeData =
   | ({ kind: 'prop' } & PropSpec)
 
 export type NodeKind = NodeData['kind']
+
+/** A node of a kind, or `false` for one of another */
+export function is<K extends NodeKind>(node: ConfigNode, kind: K) {
+  return node.kind === kind ? (node as Extract<ConfigNode, { kind: K }>) : false
+}
 
 /** The tree's roots, by id */
 export type Section = 'scene' | 'variables' | 'values'
@@ -389,6 +396,8 @@ function pointsNode(id: string, shape: PointsShape, lens: Lens<Prop<Vec2>[]> | L
  */
 function modifierNodes(id: string, transforms: Lens<Transform[]>, space: TransformSpace, surface: Surface, adjusts?: Lens<ColorAdjust[]>, shape?: Lens<Shape>): ConfigNode[] {
   const transformList = `${id}/transform`
+  // a drawn shape is placed by its first translate, which the copies and reshapes go before
+  const placement = shape ? transforms.get().findIndex((transform) => 'Translate' in transform) : -1
   const transformNodes = transforms.get().map((transform, index): ConfigNode => {
     const transformId = `${transformList}/${index}`
     const lens = item(transforms, index)
@@ -411,6 +420,7 @@ function modifierNodes(id: string, transforms: Lens<Transform[]>, space: Transfo
             ? { lens: variant(lens, 'Bulge') as Lens<Prop<SceneValue>>, variableName: 'bulge', fallback: BULGE.rest!, ranges: both(BULGE) }
             : { lens: variant(lens, 'Round') as Lens<Prop<SceneValue>>, variableName: 'corner_radius', fallback: 0, ranges: both(cornerRange(surface)) }
     // a translate is a position, so it can sweep around a path, which the prop has under it
+    if (index === placement) return { ...propNode(transformId, 'Position', spec, surface), place, modifier: kind, placement: true }
     return { ...propNode(transformId, TRANSFORM_LABELS[kind], spec, surface), place, modifier: kind }
   })
   const adjustList = `${id}/adjust`

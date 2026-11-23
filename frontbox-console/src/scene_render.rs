@@ -2,11 +2,12 @@ use frontbox_core::prelude::{LightLookup, LightQ, Rgb, Vec2};
 use frontbox_gfx::layout::{Grid, Line};
 use frontbox_gfx::prelude::{Rgba, RgbaColor};
 use frontbox_gfx::scene::{
-  Bounds, Content, LayerFrame, Sample, ShapePose, Surface, Timing, Variables,
+  Bounds, Content, Graph, LayerFrame, PreparedLayer, Sample, ShapePose, Surface, Timing, Variables,
 };
 use frontbox_lighting::{LightPlacement, PlacedLayer, led_color};
 use frontbox_scene::{Moment, Scene, SceneLayer};
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use crate::protocol::{
   ClipCanvas, ClipSound, ReferenceScene, RenderedArea, RenderedCanvas, RenderedClip, RenderedGraph,
@@ -110,11 +111,10 @@ pub(crate) fn render_scene(
   }
 
   let canvases = canvases.iter().enumerate().map(|(index, canvas)| {
-    let colors = canvas.colors(&shown, &views, &moment).collect();
-    let colors = match &reference {
-      Some(reference) => reference.drawn_with(index, colors, &reference_moment),
-      None => colors,
-    };
+    let other = reference
+      .as_ref()
+      .and_then(|reference| reference.stacked(index, &reference_moment));
+    let colors = canvas.colors(&shown, &views, &moment, other).collect();
     RenderedCanvas {
       display: canvas.display.clone(),
       width: canvas.width,
@@ -285,11 +285,10 @@ pub(crate) fn render_clip(
       }
     }
     for (canvas_index, canvas) in canvases.iter().enumerate() {
-      let colors = canvas.colors(&scene, &views, &moment).collect();
-      drawn[canvas_index].extend(match &reference {
-        Some(reference) => reference.drawn_with(canvas_index, colors, &moment),
-        None => colors,
-      });
+      let other = reference
+        .as_ref()
+        .and_then(|reference| reference.stacked(canvas_index, &moment));
+      drawn[canvas_index].extend(canvas.colors(&scene, &views, &moment, other));
     }
     // every light is shown every frame, and in name order, as `lights` has them
     let shown = light_colors(
@@ -345,21 +344,27 @@ fn with_assets(scene: Scene, content: &Content) -> Result<Scene, String> {
   scene.with_assets(content).map_err(|err| err.to_string())
 }
 
-/// What each light shows, as [`Views::light_colors`] has it, with a reference scene's lights over or under
+/// What each light shows, as light management would resolve it: higher z on top, and within a z, later layers on top.
+/// A reference scene's layers are stacked in by z, under the scene's on the same z, as a scene that started playing first
+/// is on the machine.
 fn light_colors(
   scene: &Scene,
   views: &Views,
   moment: &Moment,
   reference: Option<(&Reference, &Moment)>,
 ) -> BTreeMap<String, Rgb> {
-  let mut shown = views.light_colors(scene, moment);
-  if let Some((reference, moment)) = reference {
-    for (name, theirs) in reference.views.light_colors(&reference.scene, moment) {
-      shown
-        .entry(name)
-        .and_modify(|ours| *ours = reference.stacked(*ours, theirs))
-        .or_insert(theirs);
-    }
+  let mut layers = reference.map_or(Vec::new(), |(reference, moment)| {
+    reference.views.placement.colors(&reference.scene, moment)
+  });
+  layers.extend(views.placement.colors(scene, moment));
+  // stable, so on one z the reference's stay under the scene's
+  layers.sort_by_key(|(z, _, _)| *z);
+  let mut shown: BTreeMap<String, Rgba<u8>> = BTreeMap::new();
+  for (_, light, color) in layers {
+    shown
+      .entry(light.name.clone())
+      .and_modify(|below| *below = color.composite_over(*below))
+      .or_insert(color);
   }
   shown
     .into_iter()
@@ -370,7 +375,6 @@ fn light_colors(
 /// A scene from the content folder drawn with the one being rendered, as a [`ReferenceScene`] asks
 struct Reference {
   scene: Scene,
-  above: bool,
   views: Views,
   /// Its own drawing of each of the rendered scene's canvases. `None` where it doesn't draw on the same points, as on a
   /// strip of a different number of rows.
@@ -393,7 +397,6 @@ impl Reference {
     let views = Views::of(&scene, size, machine);
     Ok(Self {
       scene,
-      above: reference.above,
       views,
       canvases: Vec::new(),
     })
@@ -417,26 +420,14 @@ impl Reference {
     }
   }
 
-  /// One of the scene being rendered's colors, with this scene's over or under
-  fn stacked(&self, ours: Rgba<u8>, theirs: Rgba<u8>) -> Rgba<u8> {
-    match self.above {
-      true => theirs.composite_over(ours),
-      false => ours.composite_over(theirs),
-    }
-  }
-
-  /// The colors of the canvas at `index` with this scene's drawn on them, where it draws on the same points
-  fn drawn_with(&self, index: usize, colors: Vec<u8>, moment: &Moment) -> Vec<u8> {
-    let Some(canvas) = &self.canvases[index] else {
-      return colors;
-    };
-    let theirs: Vec<u8> = canvas.colors(&self.scene, &self.views, moment).collect();
-    let pixel = |chunk: &[u8]| Rgba([chunk[0], chunk[1], chunk[2], chunk[3]]);
-    colors
-      .chunks_exact(4)
-      .zip(theirs.chunks_exact(4))
-      .flat_map(|(ours, theirs)| self.stacked(pixel(ours), pixel(theirs)).0)
-      .collect()
+  /// Its drawing of the rendered scene's canvas at `index` at `moment`, where it draws on the same points
+  fn stacked<'a>(&'a self, index: usize, moment: &'a Moment<'a>) -> Option<Stacked<'a>> {
+    Some(Stacked {
+      canvas: self.canvases[index].as_ref()?,
+      scene: &self.scene,
+      views: &self.views,
+      moment,
+    })
   }
 }
 
@@ -521,19 +512,6 @@ impl Views {
       view.size,
       self.placed(index).and_then(PlacedLayer::kept_visits),
     )
-  }
-
-  /// What each light shows while the scene plays on them alone, as light management would resolve it: higher z on top, and
-  /// within a z, later layers on top
-  fn light_colors(&self, scene: &Scene, moment: &Moment) -> BTreeMap<String, Rgba<u8>> {
-    let mut shown: BTreeMap<String, Rgba<u8>> = BTreeMap::new();
-    for (_, light, color) in self.placement.colors(scene, moment) {
-      shown
-        .entry(light.name.clone())
-        .and_modify(|below| *below = color.composite_over(*below))
-        .or_insert(color);
-    }
-    shown
   }
 
   /// Every light a layer is on, by name
@@ -634,31 +612,34 @@ impl Canvas {
     }
   }
 
-  /// Red, green, blue, and alpha for each point. Every row of a display is in the one row of `rows`.
+  /// Red, green, blue, and alpha for each point, with `other`'s layers stacked in among the scene's by z. On one z,
+  /// `other`'s are under the scene's, as a scene that started playing first is on the machine. Every row of a display is
+  /// in the one row of `rows`.
   fn colors<'a>(
     &'a self,
     scene: &'a Scene,
     views: &'a Views,
     moment: &'a Moment,
+    other: Option<Stacked<'a>>,
   ) -> impl Iterator<Item = u8> + 'a {
     let radius = self.samples.first().map_or(0.0, |at| at.radius);
-    self.rows.iter().flat_map(move |row| {
-      let layers: Vec<_> = row
-        .iter()
-        .filter_map(|&index| {
-          let layer = scene.layers[index]
-            .layer()?
-            .prepare(&views.frame(scene, index, moment), radius);
-          Some((
-            layer,
-            views.placed(index).and_then(|placed| placed.graph.as_ref()),
-          ))
-        })
-        .collect();
+    let mut rows = self.prepared(scene, views, moment, radius);
+    if let Some(other) = other {
+      let theirs = other
+        .canvas
+        .prepared(other.scene, other.views, other.moment, radius);
+      for (ours, mut layers) in rows.iter_mut().zip(theirs) {
+        layers.append(ours);
+        // stable, so on one z theirs stay under ours, and each scene's layers stay in its order
+        layers.sort_by_key(|(z, _, _)| *z);
+        *ours = layers;
+      }
+    }
+    rows.into_iter().flat_map(move |layers| {
       self.samples.iter().flat_map(move |at| {
         let color = layers
           .iter()
-          .fold(Rgba([0, 0, 0, 0]), |below, (layer, graph)| {
+          .fold(Rgba([0, 0, 0, 0]), |below, (_, layer, graph)| {
             // the strip has as many points as asked for, not one per light, so each shows its nearest node
             let at = graph
               .and_then(|graph| graph.nearest(at.pos))
@@ -669,6 +650,37 @@ impl Canvas {
       })
     })
   }
+
+  /// The layers each row draws, bottom to top and ready to sample, with each one's z and the graph its points go to
+  fn prepared<'a>(
+    &self,
+    scene: &'a Scene,
+    views: &'a Views,
+    moment: &'a Moment,
+    radius: f32,
+  ) -> Vec<Vec<(i8, PreparedLayer<'a>, Option<&'a Arc<Graph>>)>> {
+    let rows = self.rows.iter().map(|row| {
+      let layers = row.iter().filter_map(|&index| {
+        let layer = &scene.layers[index];
+        let prepared = layer
+          .layer()?
+          .prepare(&views.frame(scene, index, moment), radius);
+        let graph = views.placed(index).and_then(|placed| placed.graph.as_ref());
+        Some((layer.z().unwrap_or_default(), prepared, graph))
+      });
+      layers.collect()
+    });
+    rows.collect()
+  }
+}
+
+/// Another scene's drawing of the same points as a [`Canvas`], to stack in among its layers
+#[derive(Clone, Copy)]
+struct Stacked<'a> {
+  canvas: &'a Canvas,
+  scene: &'a Scene,
+  views: &'a Views,
+  moment: &'a Moment<'a>,
 }
 
 /// The displays a scene draws on, in the order of their first layers, some more than once
@@ -1273,7 +1285,6 @@ mod tests {
       .with_scenes([("reference.scene", solid_display("0, 0, 255, 255").as_str())]);
     let reference = ReferenceScene {
       name: "reference.scene".into(),
-      above: false,
     };
     let rendered = render_scene(
       ron(RED_TO_BLUE),
@@ -2461,11 +2472,16 @@ mod tests {
     )
   }
 
-  fn with_reference(source: &str, reference: &str, above: bool) -> Vec<u8> {
+  fn solid_display_at(z: i8, color: &str) -> String {
+    format!(
+      r#"Scene(version: 2, layers: [Display(display: "Dmd", z: {z}, layer: (fill: (base: Solid(Fixed({color})))))])"#
+    )
+  }
+
+  fn with_reference(source: &str, reference: &str) -> Vec<u8> {
     let content = Content::without_folder().with_scenes([("reference.scene", reference)]);
     let reference = ReferenceScene {
       name: "reference.scene".into(),
-      above,
     };
     render_scene(
       ron(source),
@@ -2484,25 +2500,56 @@ mod tests {
   }
 
   #[test]
-  fn a_reference_scene_above_is_drawn_over_the_scene() {
+  fn a_reference_scene_layer_on_a_higher_z_is_drawn_over_the_scene() {
     let colors = with_reference(
-      &solid_display("255, 0, 0, 255"),
-      &solid_display("0, 0, 255, 255"),
-      true,
+      &solid_display_at(0, "255, 0, 0, 255"),
+      &solid_display_at(1, "0, 0, 255, 255"),
     );
     assert_eq!(colors, [0, 0, 255, 255, 0, 0, 255, 255]);
   }
 
   #[test]
-  fn a_reference_scene_below_shows_where_the_scene_is_clear() {
-    let blue = solid_display("0, 0, 255, 255");
+  fn a_reference_scene_layer_on_a_lower_z_shows_where_the_scene_is_clear() {
+    let blue = solid_display_at(-1, "0, 0, 255, 255");
     assert_eq!(
-      with_reference(&solid_display("255, 0, 0, 255"), &blue, false),
+      with_reference(&solid_display("255, 0, 0, 255"), &blue),
       [255, 0, 0, 255, 255, 0, 0, 255]
     );
     assert_eq!(
-      with_reference(&solid_display("0, 0, 0, 0"), &blue, false),
+      with_reference(&solid_display("0, 0, 0, 0"), &blue),
       [0, 0, 255, 255, 0, 0, 255, 255]
+    );
+  }
+
+  #[test]
+  fn a_reference_scene_layer_on_the_same_z_is_under_the_scene() {
+    let colors = with_reference(
+      &solid_display("255, 0, 0, 255"),
+      &solid_display("0, 0, 255, 255"),
+    );
+    assert_eq!(colors, [255, 0, 0, 255, 255, 0, 0, 255]);
+  }
+
+  #[test]
+  fn a_reference_scene_layer_goes_between_the_scene_layers_by_z() {
+    let scene = |top: &str| {
+      format!(
+        r#"Scene(version: 2, layers: [
+          Display(display: "Dmd", z: 0, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255))))),
+          Display(display: "Dmd", z: 2, layer: (fill: (base: Solid(Fixed({top}))))),
+        ])"#
+      )
+    };
+    let blue = solid_display_at(1, "0, 0, 255, 255");
+    // over the scene's bottom layer
+    assert_eq!(
+      with_reference(&scene("0, 0, 0, 0"), &blue),
+      [0, 0, 255, 255, 0, 0, 255, 255]
+    );
+    // and under its top one
+    assert_eq!(
+      with_reference(&scene("0, 255, 0, 255"), &blue),
+      [0, 255, 0, 255, 0, 255, 0, 255]
     );
   }
 
@@ -2513,7 +2560,6 @@ mod tests {
     let clear = r#"Scene(version: 2, timing: (duration: 0.1, cycle: Once), layers: [Display(display: "Dmd", layer: (fill: (base: Solid(Fixed(0, 0, 0, 0)))))])"#;
     let reference = ReferenceScene {
       name: "reference.scene".into(),
-      above: false,
     };
     let clip = render_clip(
       0,
@@ -2542,7 +2588,6 @@ mod tests {
   fn a_missing_reference_scene_is_left_out_and_says_why() {
     let reference = ReferenceScene {
       name: "gone.scene".into(),
-      above: true,
     };
     let alone = render_scene(
       ron(RED_TO_BLUE),

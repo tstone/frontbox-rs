@@ -447,12 +447,11 @@ pub enum SceneSource {
 
 /// Another scene from the content folder, drawn with the one being rendered to see how the two look together, such as
 /// a game's scores over a transition shown behind them. It plays alongside from the same start, with its own default
-/// variables, and only the scene being rendered has outlines and shapes in the reply.
+/// variables, and only the scene being rendered has outlines and shapes in the reply. The two scenes' layers are stacked
+/// by z, with its layers under the scene's on the same z.
 #[derive(Clone, PartialEq, serde::Deserialize, TS)]
 pub struct ReferenceScene {
   pub name: String,
-  /// Drawn over the scene being rendered, or under it
-  pub above: bool,
 }
 
 /// How many points to sample a scene at where the machine doesn't say. A display is drawn at its own size, and only one

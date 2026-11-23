@@ -20,17 +20,25 @@ export function contentImageInfo(name: string): ImageInfo | undefined {
   return infos()[name]
 }
 
-async function fetchInfo(name: string) {
+/** An image's width and height in pixels, asking the machine if it hasn't yet. `undefined` if it can't say. */
+export async function contentImageSize(name: string): Promise<[number, number] | undefined> {
+  const info = infos()[name] ?? (await fetchInfo(name))
+  return info ? [info.width, info.height] : undefined
+}
+
+async function fetchInfo(name: string): Promise<ImageInfo | undefined> {
   asked.add(name)
   try {
     const response = await fetch(`/content/image-info/${name.split('/').map(encodeURIComponent).join('/')}`)
     if (response.ok) {
       const info: ImageInfo = await response.json()
       setInfos((current) => ({ ...current, [name]: info }))
+      return info
     }
   } catch {
     // the scene's render says what's wrong with an image, and this one can be left as what's known
   }
+  return undefined
 }
 
 /** Scans the folder, which can change on the machine at any time. */

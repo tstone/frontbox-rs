@@ -1,11 +1,10 @@
-import { Editable } from '@ark-ui/solid/editable'
+import { Tabs } from '@ark-ui/solid/tabs'
 import { Menu } from '@ark-ui/solid/menu'
-import { createTreeCollection, TreeView } from '@ark-ui/solid/tree-view'
-import { batch, createContext, createEffect, createMemo, createSignal, For, Index, Match, on, onCleanup, onMount, Show, Switch, untrack, useContext, type JSX, type Signal } from 'solid-js'
-import { Dynamic, Portal } from 'solid-js/web'
+import { batch, createEffect, createMemo, createSignal, For, Index, Match, on, onCleanup, onMount, Show, Switch, useContext, type JSX } from 'solid-js'
+import { Dynamic } from 'solid-js/web'
 import * as icons from '../../components/icons'
-import { selectThenToggle } from '../../components/treeClick'
-import ScenePortal, { LayerColorContext, layerColorClass } from './ScenePortal'
+import ScenePortal, { LayerColorContext, layerColor, layerColorClass, type LayerColor } from './ScenePortal'
+import { ConfigTreeContext, shownInTree, type ConfigTree } from './configTree'
 import { NAMED_VALUE_LABELS, namedValueKind, ValueFields } from './ValueFields'
 import { VariableFields, VariableSource } from './VariableFields'
 import { contentImageInfo } from '../../state/contentImages'
@@ -25,7 +24,6 @@ import type { Prop } from '../../types/generated/Prop'
 import type { ShapeNode } from '../../types/generated/ShapeNode'
 import type { SoundLayer } from '../../types/generated/SoundLayer'
 import type { Speed } from '../../types/generated/Speed'
-import type { Stop } from '../../types/generated/Stop'
 import type { StrokeAlign } from '../../types/generated/StrokeAlign'
 import type { TextAlign } from '../../types/generated/TextAlign'
 import type { TextSource } from '../../types/generated/TextSource'
@@ -37,10 +35,7 @@ import type { VerticalAlign } from '../../types/generated/VerticalAlign'
 import {
   algorithmKind,
   ancestry,
-  configNodes,
-  pathTo,
-  remapped,
-  selectionNode,
+  is,
   selectionOf,
   TRANSFORM_LABELS,
   WANDERING,
@@ -58,9 +53,9 @@ import {
 import { ImagePicker } from './ImagePicker'
 import { SoundPicker } from './SoundPicker'
 import { anchorPresets, writer } from './ShapeHandles'
-import { displayNames, LayerLights, NEW_LAYER_OPTIONS, newPlace, planeNames, type NewLayerPlace } from './LayerPlace'
+import { displayNames, LayerLights, LightsNote } from './LayerPlace'
+import { spreadStops } from './configTree'
 import {
-  ColorField,
   Dropdown,
   EyeButton,
   FieldRow,
@@ -70,13 +65,12 @@ import {
   PropField,
   propKind,
   PropSource,
+  SOURCE_ICONS,
   RegionVisibilityContext,
-  RevealContext,
   SceneContext,
   ShapePosesContext,
   SurfaceContext,
   TraversalsContext,
-  type PropKind,
 } from './SceneFields'
 import {
   ADJUSTS,
@@ -96,16 +90,13 @@ import {
   layerPlane,
   LEG_WIDTH,
   LEGS,
-  moved,
   newAdjust,
-  newLayerPlace,
   newShapeSize,
   newStroke,
   NOTCH,
   orEmpty,
   RATE,
   reachRange,
-  removed,
   REVOLVE_ANGLE,
   shapePoints,
   snap,
@@ -130,12 +121,10 @@ import {
   type Lens,
   type Scene,
   type SceneLayer,
-  type Selection,
   type Surface,
   type NamedValueKind,
   NAMED_VALUE_KINDS,
   withNewValue,
-  withoutValue,
   type SceneValue,
   type Vec2,
 } from './sceneModel'
@@ -143,9 +132,9 @@ import {
 type FillKind = 'Solid' | GradientStyle | 'Image' | 'Spritesheet'
 type ImageFill = Extract<FillNode, { Image: unknown }>['Image']
 type SpritesheetFill = Extract<FillNode, { Spritesheet: unknown }>['Spritesheet']
-type ShapeKind = 'None' | 'Circle' | 'Ellipse' | 'Rect' | 'Diamond' | 'Star' | 'Chevron' | 'Text' | 'Polygon' | 'Polyline' | 'Bezier'
+export type ShapeKind = 'None' | 'Circle' | 'Ellipse' | 'Rect' | 'Diamond' | 'Star' | 'Chevron' | 'Text' | 'Polygon' | 'Polyline' | 'Bezier'
 /** A shape set up from the others, which is a shape of their kind once it's picked */
-type TemplateKind = 'Pinwheel' | 'Propeller' | 'Triangle'
+export type TemplateKind = 'Pinwheel' | 'Propeller' | 'Triangle'
 /** What a layer's region can be: a shape, or on a light scene its graph */
 type RegionKind = ShapeKind | 'Graph'
 type Icon = typeof icons.Circle
@@ -308,16 +297,6 @@ const MODIFIER_ICONS: Record<TransformKind | AdjustKind, Icon> = {
   Brightness: icons.Sun,
   Contrast: icons.Contrast,
 }
-/** A prop's icon says where its value comes from */
-const SOURCE_ICONS: Record<PropKind, Icon> = {
-  Fixed: icons.Pin,
-  Variable: icons.Variable,
-  Keyframes: icons.ChartSpline,
-  Random: icons.Dices,
-  Modulated: icons.AudioWaveform,
-  Sweep: icons.Orbit,
-  Visit: icons.Footprints,
-}
 const KIND_ICONS: Partial<Record<NodeKind, Icon>> = {
   place: icons.MapIcon,
   lights: icons.Lightbulb,
@@ -335,206 +314,86 @@ const KIND_ICONS: Partial<Record<NodeKind, Icon>> = {
 }
 
 type SpeedKind = 'Rate' | 'Duration'
-type NewLayer = NewLayerPlace | 'Sound'
-
-/** A node of a kind, or `false` for one of another */
-function is<K extends NodeKind>(node: ConfigNode, kind: K) {
-  return node.kind === kind ? (node as Extract<ConfigNode, { kind: K }>) : false
-}
-
-/** Moving around the config tree, and keeping it in step as the lists in it change */
-type ConfigTree = {
-  /** Selects a node, which selects the layer or mask it's in for the preview */
-  select(id: string | null): void
-  expand(...ids: string[]): void
-  toggle(id: string): void
-  /** Whether the node is the one selected */
-  isSelected(id: string): boolean
-  move(place: ListPlace, by: number): void
-  remove(place: ListPlace): void
-  /** Shifts the nodes of a list from `index` on down a place, for an item put in at `index` */
-  insert(listId: string, index: number): void
-  /** The place of the row being dragged, which can be dropped elsewhere in its list */
-  dragging(): ListPlace | null
-  setDragging(place: ListPlace | null): void
-  /** The kinds of layer the scene can have added, and adding one */
-  layerOptions(): { value: NewLayer; label: string }[]
-  addLayer(kind: NewLayer): void
-}
-
-const ConfigTreeContext = createContext<ConfigTree>()
 
 /**
- * The scene as a tree, with three roots: its layers and sound layers, its variables, and its named values. Each layer's
- * settings and props are nodes under it, and any of those with settings of its own has them under it in turn. Selecting a node selects the layer, or the mask, it's in. Its
- * button for closing every node goes in `toolbar`, and `onSelect` hears which node is selected, by id, and `null` once
- * the panel is gone.
+ * The label of a node's control in its properties, for each kind that has one. `null` is for a button, which says what
+ * it does itself. A light by name or position is labeled with which end of the traversal it is.
  */
-export default function ConfigPanel(props: { selection: Signal<Selection | null>; toolbar?: HTMLElement; onSelect?: (id: string | null) => void }) {
-  const scene = useContext(SceneContext)!
-  const surfaces = useContext(LayerSurfacesContext)!
-  const [revealing] = useContext(RevealContext)!
+const CONTROL_LABELS: Partial<Record<NodeKind, string | null>> = {
+  place: 'Draws on',
+  lights: 'Lights',
+  z: 'Z-index',
+  mask: 'Mask',
+  region: 'Region',
+  path: 'Path',
+  fill: 'Fill',
+  fit: 'Fit to',
+  variable: 'Source',
+  stops: null,
+  points: null,
+  traversals: null,
+}
+
+/** The kinds of node whose control is small enough to go beside its label */
+const INLINE_KINDS: NodeKind[] = ['lights', 'z', 'mask', 'fit', 'fill', 'region', 'path']
+
+/** The kinds of node under a layer that are its settings, shown in its properties */
+const SETTING_KINDS: NodeKind[] = ['lights', 'z', 'mask']
+
+/** The sidebar's sections, which open and close on their own */
+type SidebarSection = 'properties' | 'variables'
+
+/**
+ * The sidebar, in tabs: the properties of what's selected, in the tree on the timeline or by a click in the preview, the
+ * scene's variables, and its named values. Selecting something goes to its properties.
+ */
+export default function PropertiesPanel() {
+  const tree = useContext(ConfigTreeContext)!
   const graphNodes = useGraphNodes()
-  const [open, setOpen] = props.selection
   onMount(refreshContentSounds)
   onMount(refreshContentFonts)
-
-  const nodes = createMemo(() => configNodes(scene, surfaces))
-  const collection = createMemo(() =>
-    createTreeCollection<ConfigNode>({
-      nodeToValue: (node) => node.id,
-      nodeToString: (node) => node.label,
-      rootNode: { id: '', label: '', children: nodes() } as unknown as ConfigNode,
-    }),
-  )
-
-  // A branch's content only opens with it if it's open from the start or opened once it's up, so what's open to begin
-  // with is set here rather than by the effect below, and anything added and opened at once is opened in the same batch.
-  const initial = untrack(open)
-  const [selected, setSelected] = createSignal<string | null>(initial && selectionNode(initial))
-  const [expanded, setExpanded] = createSignal<string[]>(initial ? ancestry(selectionNode(initial)) : ['scene'])
-  createEffect(() => props.onSelect?.(selected()))
-  onCleanup(() => props.onSelect?.(null))
-
-  const select = (id: string | null) =>
-    batch(() => {
-      setSelected(id)
-      const next = selectionOf(id)
-      if (!sameSelection(next, untrack(open))) setOpen(next)
-    })
-  const expand = (...ids: string[]) => setExpanded((current) => [...new Set([...current, ...ids])])
-  const [dragging, setDragging] = createSignal<ListPlace | null>(null)
-
-  /**
-   * The tree's ids are positions, so they follow a list's items as they move and go. Taking out what's selected selects
-   * its list, or what the list is in where it has no node, such as transforms. The scene's layers and sounds are in nothing.
-   */
-  const relocate = (listId: string, to: (index: number) => number | null) => {
-    setExpanded((ids) => remapped(ids, listId, to))
-    const id = untrack(selected)
-    if (id === null) return
-    const owner = untrack(collection).findNode(listId) ? listId : listId.slice(0, listId.lastIndexOf('/'))
-    select(remapped([id], listId, to)[0] ?? (listId.includes('/') ? owner : null))
-  }
-
-  const tree: ConfigTree = {
-    select,
-    expand,
-    isSelected: (id) => selected() === id,
-    toggle: (id) => setExpanded((ids) => (ids.includes(id) ? ids.filter((open) => open !== id) : [...ids, id])),
-    move: ({ list, listId, index, spread }, by) =>
-      batch(() => {
-        const after = moved(list.get(), index, by)
-        list.set(spread ? spreadStops(after as Stop[]) : after)
-        // the ones it passes each shift a place toward where it was
-        relocate(listId, (i) => (i === index ? index + by : by > 0 && i > index && i <= index + by ? i - 1 : by < 0 && i < index && i >= index + by ? i + 1 : i))
-      }),
-    remove: ({ list, listId, index, spread }) =>
-      batch(() => {
-        const after = removed(list.get(), index)
-        list.set(spread ? spreadStops(after as Stop[]) : after)
-        relocate(listId, (i) => (i === index ? null : i > index ? i - 1 : i))
-      }),
-    insert: (listId, index) => relocate(listId, (i) => (i >= index ? i + 1 : i)),
-    dragging,
-    setDragging,
-    layerOptions: () => options(),
-    addLayer: (kind) => add(kind),
-  }
-
-  // a layer opened from elsewhere, such as by a click in the preview, is selected, opened up, and scrolled to in the tree
-  let treeElement!: HTMLDivElement
+  const [tab, setTab] = createSignal<SidebarSection>('properties')
   createEffect(
-    on(open, (current) => {
-      if (sameSelection(selectionOf(untrack(selected)), current)) return
-      if (current === null) return setSelected(null)
-      const id = selectionNode(current)
-      setSelected(id)
-      expand(...ancestry(id))
-      scrollToRow(treeElement, id)
-    }),
+    on(
+      tree.selected,
+      (id) => {
+        if (id !== null) setTab('properties')
+      },
+      { defer: true },
+    ),
   )
-
-  // a light layer from before layers started on every light has none, which the game can't play, so it's given every light
-  createEffect(() => {
-    const current = scene.get()
-    if (current.layers.every((layer) => layer.display !== undefined || layer.lights !== undefined)) return
-    scene.set({ ...current, layers: current.layers.map((layer) => (layer.display === undefined && layer.lights === undefined ? { ...layer, lights: 'Every' } : layer)) })
-  })
-
-  // a prop's field only comes up once every node it's under is open
-  createEffect(() => {
-    const prop = revealing()
-    if (prop === null) return
-    const path = untrack(() => pathTo(nodes(), prop))
-    if (path) expand(...path)
-  })
-
-  /** A new layer is picked by kind, and goes on a plane or display that "Draws on" can change. An area needs a plane to cover. */
-  const options = (): { value: NewLayer; label: string }[] => [
-    ...NEW_LAYER_OPTIONS.filter(({ value }) => value !== 'Area' || planeNames().length > 0),
-    { value: 'Sound', label: 'Sound' },
-  ]
-
-  const add = (kind: NewLayer) => {
-    if (kind === 'Sound') {
-      // moving its start needs a timing to be in, and the timeline to be put on
-      const timed = withTiming(scene.get())
-      const id = `sounds/${timed.sounds.length}`
-      batch(() => {
-        scene.set({ ...timed, sounds: [...timed.sounds, { sound: timed.sounds.at(-1)?.sound ?? contentSounds()[0] ?? '', start: 0 }] })
-        select(id)
-        expand('scene', id)
-      })
-      return
-    }
-    const place = newLayerPlace(scene.get(), newPlace(scene.get(), kind))
-    const layers = scene.get().layers
-    const id = selectionNode({ layer: layers.length, mask: false })
-    batch(() => {
-      scene.set({ ...scene.get(), layers: [...layers, { ...place, fill: { base: { Solid: { Fixed: WHITE } } } }] })
-      select(id)
-      expand('scene', id)
-    })
-  }
+  const section = (id: 'variables' | 'values') => tree.nodes().find((node) => node.id === id)?.children ?? []
 
   return (
-    <div class="scene-config">
-      <Show when={props.toolbar}>
-        {(toolbar) => (
-          <Portal mount={toolbar()}>
-            <button type="button" class="scene-icon-button" aria-label="Collapse all" title="Collapse all" disabled={expanded().length === 0} onClick={() => setExpanded([])}>
-              <icons.ChevronsDownUp aria-hidden="true" />
-            </button>
-          </Portal>
-        )}
-      </Show>
-      <ConfigTreeContext.Provider value={tree}>
-        <TreeView.Root
-          ref={treeElement}
-          class="scene-config-tree"
-          collection={collection()}
-          selectionMode="single"
-          selectedValue={selected() === null ? [] : [selected()!]}
-          onSelectionChange={(details) => select(details.selectedValue[0] ?? null)}
-          expandedValue={expanded()}
-          onExpandedChange={(details) => setExpanded(details.expandedValue)}
-          // a branch opens or closes on a click once it's selected, or on its arrow (`selectThenToggle`)
-          expandOnClick={false}
-          lazyMount
-          unmountOnExit
-        >
-          <TreeView.Tree>
-            <Index each={nodes()}>
-              {(node, index) => (
-                <Show when={node().id} keyed>
-                  {(_id) => <TreeNode node={node()} indexPath={[index]} />}
-                </Show>
-              )}
-            </Index>
-          </TreeView.Tree>
-        </TreeView.Root>
-      </ConfigTreeContext.Provider>
+    <div class="scene-config scene-properties">
+      <Tabs.Root class="scene-sidebar-tabs" value={tab()} onValueChange={(details) => setTab(details.value as SidebarSection)}>
+        <Tabs.List class="scene-sidebar-tab-list">
+          <SidebarTab value="properties" label="Properties" />
+          <SidebarTab value="variables" label="Variables" count={section('variables').length + section('values').length} />
+        </Tabs.List>
+        <SidebarItem value="properties">
+          <Show when={tree.selected()} keyed fallback={<NothingSelected />}>
+            {(id) => <SelectedProperties id={id} />}
+          </Show>
+        </SidebarItem>
+        {/* the variables, which the game sets, then the named values they can be pointed at */}
+        <SidebarItem value="variables">
+          <section class="scene-sidebar-group" aria-label="Variables">
+            <h4>Variables</h4>
+            <Show when={section('variables').length > 0} fallback={<p class="scene-note">Set a prop to Variable to add one.</p>}>
+              <NamedEntries nodes={section('variables')} />
+            </Show>
+          </section>
+          <section class="scene-sidebar-group" aria-label="Values">
+            <h4>Values</h4>
+            <Show when={section('values').length === 0}>
+              <p class="scene-note">Add a value, then point a variable at it from its default or from the game.</p>
+            </Show>
+            <NamedEntries nodes={section('values')} />
+            <AddValue />
+          </section>
+        </SidebarItem>
+      </Tabs.Root>
       <datalist id={LIGHT_NAMES}>
         <For each={graphNodes()}>{(name) => <option value={name} />}</For>
       </datalist>
@@ -542,294 +401,425 @@ export default function ConfigPanel(props: { selection: Signal<Selection | null>
   )
 }
 
-const sameSelection = (a: Selection | null, b: Selection | null) => a?.layer === b?.layer && a?.mask === b?.mask
-
-/**
- * Scrolls a node's row into view, if it isn't already. A branch only puts up what's in it once it's open, so this waits
- * a few frames for the row to be there.
- */
-function scrollToRow(tree: HTMLElement, id: string, frames = 5) {
-  requestAnimationFrame(() => {
-    const row = tree.querySelector(`:is([data-part="item"], [data-part="branch-control"])[data-value="${CSS.escape(id)}"]`)
-    if (row) row.scrollIntoView({ block: 'nearest' })
-    else if (frames > 1) scrollToRow(tree, id, frames - 1)
-  })
-}
-
-/** A node's row, then its fields and the nodes under it while it's open */
-function TreeNode(props: { node: ConfigNode; indexPath: number[] }) {
-  const tree = useContext(ConfigTreeContext)!
-  const isBranch = () => (props.node.children?.length ?? 0) > 0 || props.node.childrenCount !== undefined
-  const drag = rowDrag(props.node, tree)
-
+/** The tab of one of the sidebar's sections, with how many are in it */
+function SidebarTab(props: { value: SidebarSection; label: string; count?: number }) {
   return (
-    <TreeView.NodeProvider node={props.node} indexPath={props.indexPath}>
-      <NodeScope node={props.node}>
-        <Show
-          when={isBranch()}
-          fallback={
-            <TreeView.Item class="scene-tree-row" {...drag}>
-              <NodeRow node={props.node} depth={props.indexPath.length} />
-            </TreeView.Item>
-          }
-        >
-          <TreeView.Branch class={props.node.kind === 'sound' ? layerColorClass('sound') : undefined}>
-            <TreeView.BranchControl
-              class="scene-tree-row"
-              {...drag}
-              {...selectThenToggle(() => tree.isSelected(props.node.id), () => tree.toggle(props.node.id))}
-            >
-              <TreeView.BranchIndicator>
-                <icons.ChevronRight aria-hidden="true" />
-              </TreeView.BranchIndicator>
-              <NodeRow node={props.node} depth={props.indexPath.length} />
-            </TreeView.BranchControl>
-            <TreeView.BranchContent>
-              <TreeView.BranchIndentGuide />
-              <Show when={props.node.fields}>
-                {/* working in a node's fields selects it, as clicking its row does */}
-                <div class="scene-tree-fields" onPointerDown={() => tree.select(props.node.id)} onFocusIn={() => tree.select(props.node.id)}>
-                  <NodeFields node={props.node} />
-                </div>
-              </Show>
-              <Index each={props.node.children ?? []}>
-                {(child, index) => (
-                  <Show when={child().id} keyed>
-                    {(_id) => <TreeNode node={child()} indexPath={[...props.indexPath, index]} />}
-                  </Show>
-                )}
-              </Index>
-            </TreeView.BranchContent>
-          </TreeView.Branch>
-        </Show>
-      </NodeScope>
-    </TreeView.NodeProvider>
+    <Tabs.Trigger value={props.value} class="scene-sidebar-tab">
+      {props.label}
+      <Show when={props.count}>{(count) => <span class="scene-sidebar-count">{count()}</span>}</Show>
+    </Tabs.Trigger>
   )
 }
 
-/** What a layer's nodes are measured against and can respond to, and the accent color of a sound's */
-function NodeScope(props: { node: ConfigNode; children: JSX.Element }) {
-  const surfaces = useContext(LayerSurfacesContext)!
+/** What's in one of the sidebar's sections */
+function SidebarItem(props: { value: SidebarSection; children: JSX.Element }) {
   return (
-    <Switch fallback={props.children}>
-      <Match when={is(props.node, 'layer')}>
-        {(layer) => (
-          <SurfaceContext.Provider value={() => surfaces(layer().lens.get())}>
-            <TraversalsContext.Provider value={() => traversalNames(layer().lens.get())}>{props.children}</TraversalsContext.Provider>
-          </SurfaceContext.Provider>
+    <Tabs.Content value={props.value} class="scene-sidebar-content">
+      {props.children}
+    </Tabs.Content>
+  )
+}
+
+/** Each of the scene's variables or named values, all of them editable at once */
+function NamedEntries(props: { nodes: ConfigNode[] }) {
+  return (
+    // by position, with each remade once a different one is there, so an edit doesn't tear down the field it was made in
+    <Index each={props.nodes}>
+      {(node) => (
+        <Show when={node().id} keyed>
+          {(id) => (
+            <NodeScope id={id}>
+              <Switch>
+                <Match when={is(node(), 'variable')}>
+                  {(variable) => (
+                    <>
+                      <div class="scene-properties-title">
+                        <NodeIcon node={variable()} />
+                        <h3>{variable().name}</h3>
+                      </div>
+                      <NodeSetting node={variable()} />
+                      <VariableFields name={variable().name} />
+                    </>
+                  )}
+                </Match>
+                <Match when={is(node(), 'value')}>{(value) => <ValueFields name={value().name} />}</Match>
+              </Switch>
+            </NodeScope>
+          )}
+        </Show>
+      )}
+    </Index>
+  )
+}
+
+function NothingSelected() {
+  return (
+    <>
+      <p class="scene-note">Select a layer in the timeline, or click one in the preview, to see its properties here.</p>
+      <LightsNote />
+    </>
+  )
+}
+
+/** The selected node, looked up again as the scene changes so that its fields stay up while they're edited */
+function SelectedProperties(props: { id: string }) {
+  const tree = useContext(ConfigTreeContext)!
+  return (
+    <Show when={tree.find(props.id)}>
+      {(node) => (
+        <NodeScope id={props.id}>
+          <NodeProperties node={node()} />
+        </NodeScope>
+      )}
+    </Show>
+  )
+}
+
+/**
+ * What a node's fields are measured against and can respond to, which comes of the layer it's in, and the accent color
+ * of a sound's. A traversal's own fields don't respond to visits, as visits are what's being set up there.
+ */
+function NodeScope(props: { id: string; children: JSX.Element }) {
+  const tree = useContext(ConfigTreeContext)!
+  const surfaces = useContext(LayerSurfacesContext)!
+  // the same for as long as the node is shown, as it's shown by its id
+  const chain = ancestry(props.id)
+  const layerId = chain.find((id) => /^layers\/\d+$/.test(id))
+  const inTraversal = chain.some((id) => /\/traversals\/\d+$/.test(id))
+  const inSound = chain.some((id) => /^sounds\/\d+$/.test(id))
+  const layer = () => {
+    const node = layerId === undefined ? undefined : tree.find(layerId)
+    return node?.kind === 'layer' ? node.lens.get() : undefined
+  }
+  const color = (): LayerColor => (inSound ? 'sound' : layer() ? layerColor(layer()!) : undefined)
+  return (
+    <SurfaceContext.Provider value={() => (layer() ? surfaces(layer()!) : null)}>
+      <TraversalsContext.Provider value={() => (inTraversal || !layer() ? [] : traversalNames(layer()!))}>
+        <LayerColorContext.Provider value={color()}>
+          <div class={`scene-properties-node ${layerColorClass(color()) ?? ''}`}>{props.children}</div>
+        </LayerColorContext.Provider>
+      </TraversalsContext.Provider>
+    </SurfaceContext.Provider>
+  )
+}
+
+/**
+ * A node's heading, its control and fields, a layer's settings, then the values under it and a button for adding a
+ * modifier. A layer or a mask is one thing with its shape and its fill, which are parts of its properties rather than
+ * nodes of their own.
+ */
+function NodeProperties(props: { node: ConfigNode }) {
+  return (
+    <Show when={props.node.kind === 'layer' || (props.node.kind === 'mask' && props.node.value !== undefined)} fallback={<OwnProperties node={props.node} />}>
+      <PartsProperties node={props.node} />
+    </Show>
+  )
+}
+
+/** A layer's or a mask's settings and values, then its shape and its fill */
+function PartsProperties(props: { node: ConfigNode }) {
+  const children = () => props.node.children ?? []
+  const settings = () => children().filter((child) => SETTING_KINDS.includes(child.kind))
+  const values = () => children().filter((child) => child.kind === 'prop' || child.kind === 'node-ref')
+  const fill = () => children().find((child) => child.kind === 'fill')
+  // a region that's everything, such as an image's, has nothing to set
+  const shape = () => {
+    const found = children().find((child) => child.kind === 'region')
+    const region = found && is(found, 'region')
+    return region && (region.value !== undefined || region.layer?.get().graph) ? region : undefined
+  }
+  return (
+    <>
+      <NodeHeading node={props.node} />
+      <NodeSetting node={props.node} />
+      <Index each={settings()}>{(child) => <NodeSetting node={child()} />}</Index>
+      <Show when={props.node.fields === true}>
+        <NodeFields node={props.node} />
+      </Show>
+      <Index each={values()}>
+        {(child) => (
+          <Show when={child().id} keyed>
+            {(_id) => <ValueNode node={child()} />}
+          </Show>
         )}
+      </Index>
+      <Show when={shape()}>
+        {(region) => <PartSection node={region()} title={region().layer?.get().graph ? 'Graph' : (REGION_LABELS.get(regionKind(region().lens, region().layer)) ?? 'Shape')} />}
+      </Show>
+      <Show when={fill()}>{(node) => <PartSection node={node()} title="Fill" />}</Show>
+    </>
+  )
+}
+
+/**
+ * A layer's shape or fill, as a part of its properties: its fields and values, a gradient's colors and a polygon's
+ * points in place, and no modifiers, which have rows and properties of their own
+ */
+function PartSection(props: { node: ConfigNode; title: string }) {
+  const children = () => props.node.children ?? []
+  const values = () => children().filter((child) => (child.kind === 'prop' && (child.modifier === undefined || child.placement)) || child.kind === 'node-ref')
+  const stops = () => children().find((child) => child.kind === 'stops')
+  const points = () => children().find((child) => child.kind === 'points')
+  const traversals = () => children().find((child) => child.kind === 'traversals')
+  // a fill's modifiers can be added here as well as from the tools, as they're all a layer with no shape can have
+  const modifiers = () => (props.node.kind === 'fill' ? (children().find((child) => child.kind === 'modifiers') as ModifiersNode | undefined) : undefined)
+  const hasFields = () => props.node.fields === true
+  return (
+    <section class="scene-part" aria-label={props.title}>
+      <header class="scene-part-heading">
+        <h4>{props.title}</h4>
+      </header>
+      <Show when={is(props.node, 'fill')}>
+        <FieldRow inline label="Type">
+          <NodeControl node={props.node} />
+        </FieldRow>
+      </Show>
+      <Show when={hasFields()}>
+        <NodeFields node={props.node} />
+      </Show>
+      <Index each={values()}>
+        {(child) => (
+          <Show when={child().id} keyed>
+            {(_id) => <ValueNode node={child()} />}
+          </Show>
+        )}
+      </Index>
+      <Show when={stops()}>
+        {(list) => (
+          <PartList node={list()} label="Colors" />
+        )}
+      </Show>
+      <Show when={points()}>{(list) => <PartList node={list()} label="Points" />}</Show>
+      <Show when={traversals()}>{(list) => <NodeSetting node={list()} />}</Show>
+      <Show when={modifiers()}>{(node) => <AddModifier node={node()} />}</Show>
+    </section>
+  )
+}
+
+/** A gradient's stops or a shape's points, each edited in place, with the button for adding another */
+function PartList(props: { node: ConfigNode; label: string }) {
+  const items = () => (props.node.children ?? []).filter((child) => child.kind === 'prop')
+  return (
+    <div class="scene-part-list">
+      <div class="scene-part-list-heading">
+        <span>{props.label}</span>
+        <NodeControl node={props.node} />
+      </div>
+      <Index each={items()}>
+        {(child) => (
+          <Show when={child().id} keyed>
+            {(_id) => <ValueNode node={child()} />}
+          </Show>
+        )}
+      </Index>
+    </div>
+  )
+}
+
+/** A node's heading, its control and fields, then the values under it and a button for adding a modifier */
+function OwnProperties(props: { node: ConfigNode }) {
+  const children = () => props.node.children ?? []
+  const settings = () => children().filter((child) => SETTING_KINDS.includes(child.kind))
+  const values = () => children().filter((child) => child.kind === 'prop' || child.kind === 'node-ref')
+  const modifiers = () => children().find((child) => child.kind === 'modifiers') as Extract<ConfigNode, { kind: 'modifiers' }> | undefined
+  const hasFields = () => props.node.kind === 'prop' || props.node.fields === true
+
+  return (
+    <>
+      <NodeHeading node={props.node} />
+      {/* a region's own heading already says what shape it is */}
+      <Show when={props.node.kind !== 'region'}>
+        <NodeSetting node={props.node} />
+      </Show>
+      <Index each={settings()}>{(child) => <NodeSetting node={child()} />}</Index>
+      <Show when={hasFields()}>
+        <NodeFields node={props.node} />
+      </Show>
+      {/* by position, with each remade once a different node is there, so an edit doesn't tear down the field it was made in */}
+      <Index each={values()}>
+        {(child) => (
+          <Show when={child().id} keyed>
+            {(_id) => <ValueNode node={child()} />}
+          </Show>
+        )}
+      </Index>
+      <Show when={modifiers()}>{(node) => <AddModifier node={node()} />}</Show>
+    </>
+  )
+}
+
+/** What a node is, the nodes it's under, which can be selected, and its buttons */
+function NodeHeading(props: { node: ConfigNode }) {
+  const tree = useContext(ConfigTreeContext)!
+  // only what has a row, as a layer's shape and fill are parts of it
+  const trail = () =>
+    ancestry(props.node.id)
+      .slice(0, -1)
+      .flatMap((id) => (id === 'scene' ? [] : (tree.find(id) ?? [])))
+      .filter(shownInTree)
+  return (
+    <header class="scene-properties-heading">
+      <Show when={trail().length > 0}>
+        <nav class="scene-properties-trail" aria-label="What this is in">
+          <For each={trail()}>
+            {(node) => (
+              <>
+                <button type="button" title={`Select ${node.label}`} onClick={() => tree.select(node.id)}>
+                  {node.label}
+                </button>
+                <icons.ChevronRight aria-hidden="true" />
+              </>
+            )}
+          </For>
+        </nav>
+      </Show>
+      <div class="scene-properties-title">
+        {/* a prop's icon picks where it takes its value from */}
+        <Show when={is(props.node, 'prop')} fallback={<NodeIcon node={props.node} />}>
+          {(prop) => <PropSource label={prop().label} {...propFieldSpec(prop())} />}
+        </Show>
+        <h3>{props.node.label}</h3>
+        <NodeSummary node={props.node} />
+        <span class="scene-properties-tools">
+          <Show when={is(props.node, 'layer')}>
+            {(layer) => <EyeButton label={layer().label} hidden={layer().lens.get().hidden === true} onChange={(hidden) => field(layer().lens, 'hidden').set(hidden || undefined)} />}
+          </Show>
+          <Show when={!props.node.placement && props.node.place}>{(place) => <RemoveButton node={props.node} place={place()} />}</Show>
+        </span>
+      </div>
+    </header>
+  )
+}
+
+/** The label a node's control has in its properties: `null` for one that needs none, and `undefined` for a node with no control */
+function controlLabel(node: ConfigNode): string | null | undefined {
+  if (node.kind === 'node-ref') return node.label
+  return CONTROL_LABELS[node.kind]
+}
+
+/** A node's control, beside its label when it's small enough to fit there and under it otherwise */
+function NodeSetting(props: { node: ConfigNode }) {
+  const label = () => controlLabel(props.node)
+  return (
+    <Show when={label() !== undefined}>
+      <Show when={label()} fallback={<NodeControl node={props.node} />}>
+        {(text) => (
+          <FieldRow inline={INLINE_KINDS.includes(props.node.kind)} label={text()}>
+            <NodeControl node={props.node} />
+          </FieldRow>
+        )}
+      </Show>
+    </Show>
+  )
+}
+
+/** What a node is, or where it takes its value from, and the buttons for adding to a list */
+function NodeControl(props: { node: ConfigNode }) {
+  return (
+    <Switch>
+      <Match when={is(props.node, 'variable')}>{(variable) => <VariableSource name={variable().name} />}</Match>
+      <Match when={is(props.node, 'lights')}>{(lights) => <LayerLights lens={lights().lens} />}</Match>
+      <Match when={is(props.node, 'z')}>
+        {(z) => <NumberBox class="scene-tree-number" aria-label="Z-index" step="1" value={z().lens.get().z ?? 0} onNumber={(value) => field(z().lens, 'z').set(Math.round(value) || undefined)} />}
       </Match>
-      <Match when={props.node.kind === 'traversal'}>
-        {/* visits are what's being set up here, so its fields don't respond to them */}
-        <TraversalsContext.Provider value={() => []}>{props.children}</TraversalsContext.Provider>
-      </Match>
-      <Match when={props.node.kind === 'sound'}>
-        <LayerColorContext.Provider value="sound">{props.children}</LayerColorContext.Provider>
-      </Match>
+      <Match when={is(props.node, 'region') || is(props.node, 'path')}>{(region) => <ShapeKindPicker node={region()} />}</Match>
+      <Match when={is(props.node, 'fill')}>{(fill) => <FillKindPicker node={fill()} />}</Match>
+      <Match when={is(props.node, 'stops')}>{(stops) => <AddStop node={stops()} />}</Match>
+      <Match when={is(props.node, 'mask')}>{(mask) => <MaskButton node={mask()} />}</Match>
+      <Match when={is(props.node, 'fit')}>{(fit) => <FitPicker node={fit()} />}</Match>
+      <Match when={is(props.node, 'points')}>{(points) => <AddPoint node={points()} />}</Match>
+      <Match when={is(props.node, 'traversals')}>{(traversals) => <AddTraversal node={traversals()} />}</Match>
+      <Match when={is(props.node, 'node-ref')}>{(ref) => <NodeRefKindPicker node={ref()} />}</Match>
+      <Match when={is(props.node, 'prop')}>{(prop) => <PropSource label={prop().label} {...propFieldSpec(prop())} />}</Match>
+    </Switch>
+  )
+}
+
+/** A value under the selected node, edited in place. Its label selects it, to edit what's under it in turn. */
+function ValueNode(props: { node: ConfigNode }) {
+  return (
+    <Switch>
+      <Match when={is(props.node, 'prop')}>{(prop) => <InlineProp node={prop()} />}</Match>
+      <Match when={is(props.node, 'node-ref')}>{(ref) => <InlineNodeRef node={ref()} />}</Match>
     </Switch>
   )
 }
 
 /**
- * A node's icon and label, and the controls that fit beside them. A root or a layer says what it is in words instead of an
- * icon, and only the nodes right under a layer have one, as more than that is too busy.
+ * Where a prop takes its value from, its label, and its field, with the props under it, such as a wave's phase. The label
+ * of a prop with its own row in the timeline, such as a keyframed one, goes to that row.
  */
-function NodeRow(props: { node: ConfigNode; depth: number }) {
-  const scene = useContext(SceneContext)!
-  // the scene's nodes are a level down, under its root
-  const hasIcon = () => props.depth <= 3 && !['section', 'layer', 'sound', 'modifiers'].includes(props.node.kind)
-  const label = <span class={hasIcon() ? 'scene-tree-label' : 'scene-tree-label scene-tree-label-wide'}>{props.node.label}</span>
+function InlineProp(props: { node: Extract<ConfigNode, { kind: 'prop' }> }) {
+  const tree = useContext(ConfigTreeContext)!
+  const under = () => (props.node.children ?? []).filter((child) => child.kind === 'prop')
+  // a switch or a color's swatch fits beside its label
+  const inline = () => {
+    const fallback = propFieldSpec(props.node).fallback
+    return (typeof fallback === 'boolean' || (Array.isArray(fallback) && fallback.length === 4)) && 'Fixed' in props.node.lens.get()
+  }
+  return (
+    <div class="scene-field scene-prop" classList={{ 'scene-field-inline': inline() }}>
+      <div class="scene-prop-header">
+        <span class="scene-prop-name">
+          <PropSource label={props.node.label} {...propFieldSpec(props.node)} />
+          <Show when={shownInTree(props.node)} fallback={<span class="scene-field-label">{props.node.label}</span>}>
+            <button type="button" class="scene-property-link" title="Go to its row in the timeline" onClick={() => tree.select(props.node.id)}>
+              {props.node.label}
+            </button>
+          </Show>
+        </span>
+        <Show when={!props.node.placement && props.node.place}>{(place) => <RemoveButton node={props.node} place={place()} />}</Show>
+      </div>
+      <PropField bare label={props.node.label} {...propFieldSpec(props.node)} />
+      <Show when={props.node.anchorOf}>{(of) => <AnchorPresets lens={props.node.lens as Lens<Prop<Vec2>>} shape={of().shape} index={of().index} />}</Show>
+      <Show when={under().length > 0}>
+        <div class="scene-prop-under">
+          <Index each={under()}>
+            {(child) => (
+              <Show when={child().id} keyed>
+                {(_id) => <ValueNode node={child()} />}
+              </Show>
+            )}
+          </Index>
+        </div>
+      </Show>
+    </div>
+  )
+}
+
+/** One end of a traversal: a light by name, or whichever is nearest a position */
+function InlineNodeRef(props: { node: Extract<ConfigNode, { kind: 'node-ref' }> }) {
+  const under = () => (props.node.children ?? []).filter((child) => child.kind === 'prop')
   return (
     <>
-      <Show when={hasIcon()}>
-        <NodeIcon node={props.node} />
-      </Show>
-      <Switch fallback={label}>
-        <Match when={is(props.node, 'section')}>
-          {(section) => (
-            <>
-              {label}
-              <Count of={section().children} />
-              <Switch>
-                <Match when={section().section === 'scene'}>
-                  <AddLayer node={section()} />
-                </Match>
-                <Match when={section().section === 'values'}>
-                  <AddValue node={section()} />
-                </Match>
-              </Switch>
-            </>
-          )}
-        </Match>
-        <Match when={is(props.node, 'variable')}>
-          {(variable) => (
-            <>
-              {label}
-              <Controls node={props.node} class="scene-tree-end scene-tree-source">
-                <VariableSource name={variable().name} />
-              </Controls>
-            </>
-          )}
-        </Match>
-        <Match when={is(props.node, 'value')}>
-          {(value) => (
-            <>
-              {label}
-              <span class="scene-tree-summary">{NAMED_VALUE_LABELS[namedValueKind(scene.get().values![value().name]!)]}</span>
-              <Controls node={props.node} class="scene-tree-end">
-                <button
-                  type="button"
-                  class="scene-icon-button"
-                  aria-label={`Remove value ${value().name}`}
-                  title="Remove"
-                  onClick={() => scene.set(withoutValue(scene.get(), value().name))}
-                >
-                  <icons.X aria-hidden="true" />
-                </button>
-              </Controls>
-            </>
-          )}
-        </Match>
-        <Match when={is(props.node, 'layer') || is(props.node, 'sound')}>
-          {(layer) => <LayerRow node={layer()} />}
-        </Match>
-        <Match when={is(props.node, 'place')}>
-          {(place) => {
-            const display = () => place().lens.get().display
-            const current = () => display() ?? layerPlane(place().lens.get())!
-            // one on a plane or display the machine doesn't have stays chosen, so it can be seen and changed
-            const options = () => {
-              const names = display() !== undefined ? displayNames(scene.get()) : planeNames()
-              return [...new Set([...names, current()])].map((name) => ({ value: name, label: name }))
-            }
-            const choose = (name: string) => {
-              if (display() !== undefined) field(place().lens, 'display').set(name)
-              else field(place().lens, 'surface').set({ Area: name })
-            }
-            return (
-              <>
-                {label}
-                <Controls node={props.node}>
-                  <Dropdown label="Draws on" options={options()} value={current()} onChange={choose} />
-                </Controls>
-              </>
-            )
-          }}
-        </Match>
-        <Match when={is(props.node, 'lights')}>
-          {(lights) => (
-            <>
-              {label}
-              <Controls node={props.node}>
-                <LayerLights lens={lights().lens} />
-              </Controls>
-            </>
-          )}
-        </Match>
-        <Match when={is(props.node, 'z')}>
-          {(z) => (
-            <>
-              {label}
-              <Controls node={props.node}>
-                <NumberBox class="scene-tree-number" aria-label="Z-index" step="1" value={z().lens.get().z ?? 0} onNumber={(value) => field(z().lens, 'z').set(Math.round(value) || undefined)} />
-              </Controls>
-            </>
-          )}
-        </Match>
-        <Match when={is(props.node, 'region') || is(props.node, 'path')}>
-          {(region) => (
-            <>
-              {label}
-              <ShapeKindPicker node={region()} />
-            </>
-          )}
-        </Match>
-        <Match when={is(props.node, 'fill')}>
-          {(fill) => (
-            <>
-              {label}
-              <FillKindPicker node={fill()} />
-            </>
-          )}
-        </Match>
-        <Match when={is(props.node, 'stops')}>
-          {(stops) => (
-            <>
-              {label}
-              <Count of={stops().children} />
-              <AddStop node={stops()} />
-            </>
-          )}
-        </Match>
-        <Match when={is(props.node, 'mask')}>
-          {(mask) => (
-            <>
-              {label}
-              <MaskButton node={mask()} />
-            </>
-          )}
-        </Match>
-        <Match when={is(props.node, 'modifiers')}>{(modifiers) => <AddModifier node={modifiers()} />}</Match>
-        <Match when={is(props.node, 'fit')}>
-          {(fit) => (
-            <>
-              {label}
-              <FitPicker node={fit()} />
-            </>
-          )}
-        </Match>
-        <Match when={is(props.node, 'points')}>
-          {(points) => (
-            <>
-              {label}
-              <Count of={points().children} />
-              <AddPoint node={points()} />
-            </>
-          )}
-        </Match>
-        <Match when={is(props.node, 'traversals')}>
-          {(traversals) => (
-            <>
-              {label}
-              <Count of={traversals().children} />
-              <AddTraversal node={traversals()} />
-            </>
-          )}
-        </Match>
-        <Match when={is(props.node, 'node-ref')}>
-          {(ref) => (
-            <>
-              {label}
-              <NodeRefKindPicker node={ref()} />
-            </>
-          )}
-        </Match>
-        <Match when={is(props.node, 'prop')}>
-          {(prop) => (
-            <>
-              {label}
-              <PropSummary node={props.node} spec={prop()} />
-              <Controls node={props.node} class="scene-tree-end scene-tree-source">
-                <PropSource label={props.node.label} {...propFieldSpec(prop())} />
-              </Controls>
-              {/* where the remove button would be, so every source lines up */}
-              <Show when={!props.node.place}>
-                <span class="scene-tree-gap" />
+      <FieldRow label={props.node.label}>
+        <NodeRefKindPicker node={props.node} />
+      </FieldRow>
+      <Show
+        when={'Name' in props.node.lens.get()}
+        fallback={
+          <Index each={under()}>
+            {(child) => (
+              <Show when={child().id} keyed>
+                {(_id) => <ValueNode node={child()} />}
               </Show>
-            </>
-          )}
-        </Match>
-      </Switch>
-      <Show when={props.node.kind !== 'layer' && props.node.kind !== 'sound' && props.node.place}>
-        {(place) => <RemoveButton node={props.node} place={place()} />}
+            )}
+          </Index>
+        }
+      >
+        <NodeRefFields label={props.node.label} lens={props.node.lens} />
       </Show>
     </>
   )
 }
 
-function NodeIcon(props: { node: ConfigNode }) {
+/** A node's icon, which says what it is, or for a prop where its value comes from */
+export function NodeIcon(props: { node: ConfigNode }) {
   const icon = (): Icon => {
     const node = props.node
+    if (node.kind === 'layer') return node.lens.get().display !== undefined ? icons.Monitor : icons.Lightbulb
+    if (node.kind === 'sound') return icons.AudioLines
+    if (node.kind === 'section') return node.section === 'values' ? icons.Braces : icons.Variable
     if (node.kind === 'region' || node.kind === 'path') return SHAPE_ICONS[regionKind(node.lens, node.kind === 'region' ? node.layer : undefined)]
     if (node.kind === 'fill') return FILL_ICONS[fillKind(node.lens)]
     if (node.modifier) return MODIFIER_ICONS[node.modifier]
@@ -840,185 +830,88 @@ function NodeIcon(props: { node: ConfigNode }) {
   return <Dynamic component={icon()} class="scene-tree-icon" aria-hidden="true" />
 }
 
+/** All the shapes a region or path can be, for their labels */
+const REGION_LABELS = new Map([...GRAPH_REGION_OPTIONS, ...PATH_OPTIONS].map(({ value, label }) => [value, label]))
+
 /**
- * Controls in a row. A row takes a click or a key from inside it as choosing the node, so they're kept from reaching it,
- * and a press on one selects the node instead.
+ * A glance at a node: what type of layer it is, what shape or fill, how many are in a list, or a fixed prop's value or
+ * the variable or traversal it reads from. A fixed color is a swatch.
  */
-function Controls(props: { node: ConfigNode; class?: string; children: JSX.Element }) {
-  const tree = useContext(ConfigTreeContext)!
-  return (
-    <span
-      class={props.class ? `scene-tree-controls ${props.class}` : 'scene-tree-controls'}
-      onClick={stopPropagation}
-      onKeyDown={stopPropagation}
-      onPointerDown={() => tree.select(props.node.id)}
-    >
-      {props.children}
-    </span>
-  )
-}
-
-function stopPropagation(e: Event) {
-  e.stopPropagation()
-}
-
-/** How many there are in a list, while there are any */
-function Count(props: { of: ConfigNode[] | undefined }) {
-  return (
-    <Show when={(props.of?.length ?? 0) > 0}>
-      <span class="scene-tree-summary">{props.of!.length}</span>
-    </Show>
-  )
-}
-
-/** A layer's or a sound layer's name, which a double click edits, and its buttons */
-function LayerRow(props: { node: Extract<ConfigNode, { kind: 'layer' | 'sound' }> }) {
-  const tree = useContext(ConfigTreeContext)!
-  const layer = () => props.node.lens as Lens<{ name?: string; hidden?: boolean }>
+export function NodeSummary(props: { node: ConfigNode }) {
   const scene = useContext(SceneContext)!
-  const hidden = () => layer().get().hidden === true
-  const type = () => {
-    if (props.node.kind === 'sound') return 'Sound'
-    const layer = props.node.lens.get() as SceneLayer
-    if (layer.display !== undefined) return displayNames(scene.get()).length > 1 ? `Display · ${layer.display}` : 'Display'
-    return layerPlane(layer) === null ? 'Light sequence' : 'Light area'
+  const text = (): string | null => {
+    const node = props.node
+    if (node.kind === 'layer' || node.kind === 'sound') return layerType(node, scene.get())
+    if (node.kind === 'region' || node.kind === 'path') return REGION_LABELS.get(regionKind(node.lens, node.kind === 'region' ? node.layer : undefined)) ?? null
+    if (node.kind === 'fill') return FILL_OPTIONS.find(({ value }) => value === fillKind(node.lens))?.label ?? null
+    if (node.kind === 'value') return NAMED_VALUE_LABELS[namedValueKind(scene.get().values![node.name]!)]
+    if (node.kind === 'fit') return (node.lens.get() as { Fit: string }).Fit || null
+    if (node.kind === 'node-ref') {
+      const ref = node.lens.get()
+      return 'Name' in ref ? ref.Name : 'Nearest'
+    }
+    if (node.kind === 'stops' || node.kind === 'points' || node.kind === 'traversals' || node.kind === 'section') {
+      return node.children?.length ? String(node.children.length) : null
+    }
+    if (node.kind === 'prop') return propSummary(node.lens.get())
+    return null
   }
-  const open = () => {
-    tree.select(props.node.id)
-    tree.toggle(props.node.id)
+  const color = () => {
+    const node = props.node
+    if (node.kind !== 'prop') return null
+    const prop = node.lens.get()
+    if (!('Fixed' in prop) || !Array.isArray(prop.Fixed) || prop.Fixed.length !== 4) return null
+    const [r, g, b, a] = prop.Fixed
+    return `rgb(${r} ${g} ${b} / ${a / 255})`
   }
   return (
-    <Controls node={props.node} class="scene-tree-grow">
-      <LayerName lens={field(layer(), 'name')} placeholder={props.node.unnamed} hidden={hidden()} onClick={open} />
-      <span class="scene-tree-summary scene-layer-type" onClick={open}>
-        {type()}
-      </span>
-      <Show when={props.node.kind === 'layer'}>
-        <EyeButton label={props.node.label} hidden={hidden()} onChange={(next) => field(layer(), 'hidden').set(next || undefined)} />
-      </Show>
-      <RemoveButton node={props.node} place={props.node.place!} bare />
-    </Controls>
+    <>
+      <Show when={color()}>{(background) => <span class="scene-tree-swatch" style={{ background: background() }} />}</Show>
+      <Show when={text()}>{(summary) => <span class="scene-tree-summary">{summary()}</span>}</Show>
+    </>
   )
 }
 
-/**
- * A layer's name in its row. A click does what a click on the row does, and a double click edits it. It's kept apart from
- * the row, as clicks in the box while editing would otherwise open and close the layer.
- */
-function LayerName(props: { lens: Lens<string | undefined>; placeholder: string; hidden: boolean; onClick: () => void }) {
-  // what's being typed, as the name only changes once that's done
-  const [draft, setDraft] = createSignal<string | null>(null)
-
-  return (
-    <Editable.Root
-      class="scene-item-name"
-      classList={{ 'scene-item-hidden': props.hidden }}
-      activationMode="dblclick"
-      placeholder={props.placeholder}
-      value={draft() ?? props.lens.get() ?? ''}
-      onValueChange={(details) => setDraft(details.value)}
-      onValueRevert={() => setDraft(null)}
-      onValueCommit={(details) => {
-        props.lens.set(details.value.trim() || undefined)
-        setDraft(null)
-      }}
-    >
-      <Editable.Area>
-        <Editable.Input aria-label="Layer name" spellcheck={false} />
-        <Editable.Preview title={props.lens.get() ?? props.placeholder} onClick={props.onClick} />
-      </Editable.Area>
-    </Editable.Root>
-  )
+/** What type of layer a layer is, naming the display where the scene draws on more than one */
+function layerType(node: Extract<ConfigNode, { kind: 'layer' | 'sound' }>, scene: Scene) {
+  if (node.kind === 'sound') return 'Sound'
+  const layer = node.lens.get()
+  if (layer.display !== undefined) return displayNames(scene).length > 1 ? `Display · ${layer.display}` : 'Display'
+  return layerPlane(layer) === null ? 'Light sequence' : 'Light area'
 }
 
-/**
- * Dragging a row in a list to elsewhere in it, dropped before or after the row it's let go on. A press in a field or on a
- * button doesn't start a drag, so text can still be selected and buttons pressed.
- */
-function rowDrag(node: ConfigNode, tree: ConfigTree) {
-  const [grabbable, setGrabbable] = createSignal(false)
-  const [drop, setDrop] = createSignal<'before' | 'after' | null>(null)
-  const place = node.place
-  const isDragged = () => {
-    const from = tree.dragging()
-    return !!place && from?.listId === place.listId && from.index === place.index
-  }
-  const accepts = () => {
-    const from = tree.dragging()
-    return !!place && from?.listId === place.listId && from.index !== place.index
-  }
-  return {
-    get draggable() {
-      return grabbable()
-    },
-    get 'data-dragging'() {
-      return isDragged() || undefined
-    },
-    get 'data-drop'() {
-      return drop() ?? undefined
-    },
-    onPointerDown: (e: PointerEvent) => setGrabbable(!!place && !(e.target as HTMLElement).closest('input, textarea, button, [contenteditable]')),
-    onDragStart: (e: DragEvent) => {
-      if (!place) return
-      e.stopPropagation()
-      e.dataTransfer!.effectAllowed = 'move'
-      e.dataTransfer!.setData('text/plain', node.id)
-      tree.setDragging(place)
-    },
-    onDragOver: (e: DragEvent) => {
-      if (!accepts()) return
-      e.preventDefault()
-      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-      setDrop(e.clientY < rect.top + rect.height / 2 ? 'before' : 'after')
-    },
-    onDragLeave: () => setDrop(null),
-    onDrop: (e: DragEvent) => {
-      const from = tree.dragging()
-      const side = drop()
-      setDrop(null)
-      if (!from || !place || !side || !accepts()) return
-      e.preventDefault()
-      // where it goes once it's out of the list, which moves those after it up one
-      const at = place.index + (side === 'after' ? 1 : 0)
-      const to = from.index < at ? at - 1 : at
-      if (to !== from.index) tree.move(from, to - from.index)
-    },
-    onDragEnd: () => {
-      tree.setDragging(null)
-      setGrabbable(false)
-    },
-  }
+/** A fixed prop's value, or the variable or traversal it reads from. One that changes over time has its track instead. */
+function propSummary(prop: Prop<SceneValue>): string | null {
+  if ('Variable' in prop) return prop.Variable
+  if ('Visit' in prop) return prop.Visit.traversal
+  if (!('Fixed' in prop)) return null
+  const value = prop.Fixed
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  if (typeof value === 'number') return formatNumber(value)
+  return value.length === 2 ? value.map(formatNumber).join(', ') : null
 }
 
-/** Takes a node out of its list. Moving it is by dragging its row. */
-function RemoveButton(props: { node: ConfigNode; place: ListPlace; bare?: boolean }) {
+const formatNumber = (value: number) => String(Math.round(value * 100) / 100)
+
+/** Controls beside one another, at the size of a row */
+function Controls(props: { class?: string; children: JSX.Element }) {
+  return <span class={props.class ? `scene-tree-controls ${props.class}` : 'scene-tree-controls'}>{props.children}</span>
+}
+
+/** Takes a node out of its list. Moving it is by dragging its row in the tree. */
+function RemoveButton(props: { node: ConfigNode; place: ListPlace }) {
   const tree = useContext(ConfigTreeContext)!
-  const button = () => (
-    <span class="scene-tree-actions">
-      <button type="button" class="scene-icon-button" aria-label={`Remove ${props.node.label}`} title="Remove" disabled={props.place.canRemove === false} onClick={() => tree.remove(props.place)}>
-        <icons.X aria-hidden="true" />
-      </button>
-    </span>
-  )
   return (
-    <Show when={!props.bare} fallback={button()}>
-      <Controls node={props.node} class="scene-tree-end">{button()}</Controls>
-    </Show>
+    <button type="button" class="scene-icon-button" aria-label={`Remove ${props.node.label}`} title="Remove" disabled={props.place.canRemove === false} onClick={() => tree.remove(props.place)}>
+      <icons.X aria-hidden="true" />
+    </button>
   )
 }
 
-/** The fields a node has of its own, above the nodes under it */
+/** The fields a node has of its own, above the values under it */
 function NodeFields(props: { node: ConfigNode }) {
   return (
     <Switch>
-      <Match when={is(props.node, 'section') && (props.node as { section: string }).section === 'variables'}>
-        <p class="scene-note">Set a prop to Variable to add one.</p>
-      </Match>
-      <Match when={is(props.node, 'section') && (props.node as { section: string }).section === 'values'}>
-        <p class="scene-note">Add a value, then point a variable at it from its default or from the game.</p>
-      </Match>
-      <Match when={is(props.node, 'variable')}>{(variable) => <VariableFields name={variable().name} />}</Match>
-      <Match when={is(props.node, 'value')}>{(value) => <ValueFields name={value().name} />}</Match>
       <Match when={is(props.node, 'sound')}>{(sound) => <SoundFields lens={sound().lens} />}</Match>
       <Match when={is(props.node, 'region')}>
         {(region) => (
@@ -1087,39 +980,6 @@ const propFieldSpec = (spec: PropSpec) => ({
   ranges: spec.ranges,
 })
 
-/**
- * What a fixed prop is, or the variable or traversal a prop reads from, as a glance at it in its row. A prop that changes
- * over time shows nothing, as its source at the end of the row already says so.
- */
-function PropSummary(props: { node: ConfigNode; spec: PropSpec }) {
-  const prop = () => props.spec.lens.get()
-  const text = () => {
-    const current = prop()
-    if ('Variable' in current) return current.Variable
-    if ('Visit' in current) return current.Visit.traversal
-    if ('Fixed' in current) {
-      const value = current.Fixed
-      if (typeof value === 'boolean') return value ? 'Yes' : 'No'
-      if (typeof value === 'number') return formatNumber(value)
-      if (value.length === 2) return value.map(formatNumber).join(', ')
-    }
-    return null
-  }
-  const isColor = () => {
-    const current = prop()
-    return 'Fixed' in current && Array.isArray(current.Fixed) && current.Fixed.length === 4
-  }
-  return (
-    <Show when={isColor()} fallback={<span class="scene-tree-summary">{text()}</span>}>
-      <Controls node={props.node}>
-        <ColorField class="scene-tree-color" label={props.node.label} lens={variant(props.spec.lens, 'Fixed') as Lens<Color>} />
-      </Controls>
-    </Show>
-  )
-}
-
-const formatNumber = (value: number) => String(Math.round(value * 100) / 100)
-
 /** A sound layer's sound. How loud it is goes under it, and when it starts and ends is set on the timeline. */
 function SoundFields(props: { lens: Lens<SoundLayer> }) {
   const scene = useContext(SceneContext)!
@@ -1187,17 +1047,17 @@ function MaskButton(props: { node: Extract<ConfigNode, { kind: 'mask' }> }) {
       tree.expand(props.node.id)
     })
   return (
-    <Controls node={props.node} class="scene-tree-end">
+    <Controls>
       <Show
         when={props.node.lens.get()}
         fallback={
-          <button type="button" class="scene-icon-button" aria-label="Add mask" title="Add mask" onClick={add}>
-            <icons.Plus aria-hidden="true" />
+          <button type="button" class="scene-button" onClick={add}>
+            Add mask
           </button>
         }
       >
-        <button type="button" class="scene-icon-button" aria-label="Remove mask" title="Remove mask" onClick={() => props.node.lens.set(undefined)}>
-          <icons.X aria-hidden="true" />
+        <button type="button" class="scene-button" onClick={() => props.node.lens.set(undefined)}>
+          Remove mask
         </button>
       </Show>
     </Controls>
@@ -1450,7 +1310,7 @@ const LIGHT_NAMES = 'scene-light-names'
  * A traversal from the first light in the graph out to all the others, over the rest of the cycle.
  * Before the graph has been drawn there are no lights to name, so it starts from whichever is nearest the middle.
  */
-function newTraversal(name: string, nodes: string[], surface: Surface): Traversal {
+export function newTraversal(name: string, nodes: string[], surface: Surface): Traversal {
   const [width, height] = surface ?? [1, 0]
   const from: NodeRef = nodes.length > 0 ? { Name: nodes[0] } : { Nearest: { Fixed: [width / 2, height / 2] } }
   return { name, from, algorithm: { BreadthFirst: { wander: { Fixed: 0 } } }, speed: { Duration: null }, start: 0 }
@@ -1466,9 +1326,10 @@ function AddTraversal(props: { node: Extract<ConfigNode, { kind: 'traversals' }>
       scene.set(withTiming(scene.get()))
       const list = props.node.lens.get()
       props.node.lens.set([...list, newTraversal(freshTraversalName(props.node.layer.get(), 'walk'), graphNodes(), surface())])
-      tree.expand(props.node.id, `${props.node.id}/${list.length}`)
+      tree.expand(props.node.id)
+      tree.select(`${props.node.id}/${list.length}`)
     })
-  return <AddButton node={props.node} label="Add traversal" onClick={add} />
+  return <AddButton label="Add traversal" onClick={add} />
 }
 
 /** A traversal's name and how it goes. Where it goes from and to, and the props of how it goes, are under it. */
@@ -1580,7 +1441,7 @@ function NodeRefKindPicker(props: { node: Extract<ConfigNode, { kind: 'node-ref'
     })
   }
   return (
-    <Controls node={props.node}>
+    <Controls>
       <Dropdown label={`${props.node.label} node`} options={NODE_OPTIONS} value={kind()} onChange={setKind} />
     </Controls>
   )
@@ -1674,7 +1535,7 @@ function FillKindPicker(props: { node: Extract<ConfigNode, { kind: 'fill' }> }) 
   }
 
   return (
-    <Controls node={props.node}>
+    <Controls>
       <Dropdown label="Fill" options={FILL_OPTIONS} value={kind()} onChange={setKind} />
     </Controls>
   )
@@ -1806,12 +1667,7 @@ function AddStop(props: { node: Extract<ConfigNode, { kind: 'stops' }> }) {
       tree.expand(props.node.id)
     })
   }
-  return <AddButton node={props.node} label="Add stop" onClick={add} />
-}
-
-/** Spaces stops evenly in their order, from 0 to 1 */
-function spreadStops(stops: Stop[]): Stop[] {
-  return stops.map((stop, i) => ({ ...stop, at: stops.length > 1 ? i / (stops.length - 1) : 0 }))
+  return <AddButton label="Add stop" onClick={add} />
 }
 
 /** What a region or a path is. A graph is only for a layer's region, and only on a plane. */
@@ -1867,7 +1723,7 @@ function ShapeKindPicker(props: { node: Extract<ConfigNode, { kind: 'region' | '
   }
 
   return (
-    <Controls node={props.node}>
+    <Controls>
       <Dropdown<RegionKind | TemplateKind>
         label={props.node.label}
         options={options()}
@@ -1889,12 +1745,84 @@ function ShapeKindPicker(props: { node: Extract<ConfigNode, { kind: 'region' | '
 }
 
 /** A new shape, placed so that it can be seen, at a size that fits. A template's transforms come before the one that places it. */
-function newShape(kind: Exclude<ShapeKind, 'None'> | TemplateKind, surface: Surface): Shape {
+export function newShape(kind: Exclude<ShapeKind, 'None'> | TemplateKind, surface: Surface): Shape {
   // a sequence runs from 0 to 1, with its points along the middle
   const [width, height] = surface ?? [1, 0]
   const across = newShapeSize(surface)
   const { base, transform } = isTemplate(kind) ? templateShape(kind, across) : { base: sizedShape(kind, [across, across]), transform: [] }
   return { base, transform: [...transform, { Translate: { Fixed: [width / 2, height / 2] } }] }
+}
+
+/**
+ * The width over the height of a shape that's drawn at only one, which is `null` for one that can be drawn at any. A
+ * circle, a star, and the templates that revolve can't be stretched.
+ */
+export function drawnAspect(kind: Exclude<ShapeKind, 'None'> | TemplateKind): number | null {
+  if (kind === 'Circle' || kind === 'Pinwheel' || kind === 'Propeller') return 1
+  if (kind !== 'Star') return null
+  const [[left, top], [right, bottom]] = starBounds(LEGS.rest!, LEG_WIDTH.rest!)
+  return (right - left) / (bottom - top)
+}
+
+/** A shape drawn to fill a box, given by its middle and size. One that can't be stretched is as big as fits in it. */
+export function drawnShape(kind: Exclude<ShapeKind, 'None'> | TemplateKind, center: Vec2, size: Vec2): Shape {
+  // a box with no width or height leaves nothing to divide by
+  const [width, height] = size.map((side) => Math.max(side, 1e-3))
+  const across = Math.min(width, height)
+  let base: ShapeNode
+  let transform: Transform[] = []
+  // the middle of the shape's box, in its own space
+  let middle: Vec2 = [0, 0]
+  if (kind === 'Triangle') {
+    // a star of one leg, as wide as its base and as tall as the leg is long, pointing up from the origin
+    base = { Star: { radius: { Fixed: height }, legs: { Fixed: 1 }, leg_width: { Fixed: width / height } } }
+    middle = [0, -height / 2]
+  } else if (kind === 'Star') {
+    const [[left, top], [right, bottom]] = starBounds(LEGS.rest!, LEG_WIDTH.rest!)
+    const radius = Math.min(width / (right - left), height / (bottom - top))
+    base = sizedShape('Star', [radius * 2, radius * 2])
+    middle = [((left + right) / 2) * radius, ((top + bottom) / 2) * radius]
+  } else if (kind === 'Pinwheel' || kind === 'Propeller') {
+    ;({ base, transform } = templateShape(kind, across))
+    // a pinwheel's blades turn around their tips, which are half of it up from the origin
+    if (kind === 'Pinwheel') middle = [0, -across / 2]
+  } else {
+    base = sizedShape(kind, kind === 'Circle' ? [across, across] : [width, height])
+  }
+  return { base, transform: [...transform, { Translate: { Fixed: [center[0] - middle[0], center[1] - middle[1]] } }] }
+}
+
+/** A polygon through `points`, which are on what it's drawn on, placed at the middle of their box so that it moves from there */
+export function drawnPolygon(points: Vec2[]): Shape {
+  const [xs, ys] = [points.map(([x]) => x), points.map(([, y]) => y)]
+  const middle: Vec2 = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2]
+  return {
+    base: { Polygon: { points: points.map(([x, y]) => ({ Fixed: [x - middle[0], y - middle[1]] as Vec2 })) } },
+    transform: [{ Translate: { Fixed: middle } }],
+  }
+}
+
+/**
+ * The corners of the box around a star of radius 1, as its top left and bottom right. Its first leg points up, and each
+ * leg is `legWidth` across at the origin.
+ */
+function starBounds(legs: number, legWidth: number): [Vec2, Vec2] {
+  const points = Array.from({ length: legs }, (_, leg) => {
+    const angle = (leg / legs) * Math.PI * 2 - Math.PI / 2
+    const [x, y] = [Math.cos(angle), Math.sin(angle)]
+    const half = legWidth / 2
+    return [
+      [x, y],
+      [-y * half, x * half],
+      [y * half, -x * half],
+    ] as Vec2[]
+  }).flat()
+  const xs = points.map(([x]) => x)
+  const ys = points.map(([, y]) => y)
+  return [
+    [Math.min(...xs), Math.min(...ys)],
+    [Math.max(...xs), Math.max(...ys)],
+  ]
 }
 
 /** A template `across` wide, around the origin */
@@ -1997,7 +1925,7 @@ function AddPoint(props: { node: Extract<ConfigNode, { kind: 'points' }> }) {
       ;(props.node.lens as Lens<unknown[]>).set([...list, added(props.node.shape)])
       tree.expand(props.node.id, `${props.node.id}/${list.length}`)
     })
-  return <AddButton node={props.node} label="Add point" onClick={add} />
+  return <AddButton label="Add point" onClick={add} />
 }
 
 /** Half as far again along a line's last stretch */
@@ -2024,50 +1952,78 @@ function newTransform(kind: TransformKind, traversals: string[], size: Vec2): Tr
   return { Fit: traversals[0] ?? '' }
 }
 
+/** The row for adding modifiers to a shape or a fill */
+export type ModifiersNode = Extract<ConfigNode, { kind: 'modifiers' }>
+
+/** A modifier that can be added: a transform, an adjust, or a stroke */
+export type ModifierKind = TransformKind | AdjustKind | 'Stroke'
+
+type ModifierOption = { value: ModifierKind; label: string }
+
 /**
- * Adds a transform, an adjust, or a stroke, listed together, after those already there. A transform only for shapes
- * goes before a shape's first translate instead, so that it works in the shape's own space and moves with the shape.
+ * The modifiers a row offers, with `traversals` the layer's: transforms, with those only for a drawn shape and a fit
+ * only for a layer with traversals to fit to, then adjusts on a fill, then a stroke on a drawn shape.
  */
-function AddModifier(props: { node: Extract<ConfigNode, { kind: 'modifiers' }> }) {
-  const tree = useContext(ConfigTreeContext)!
-  const scene = useContext(SceneContext)!
-  const surface = useContext(SurfaceContext)!
-  const traversals = useContext(TraversalsContext)
-  // a fit is only for a layer with traversals to fit to
-  const transforms = () => [...TRANSFORM_OPTIONS, ...(props.node.shape ? SHAPE_TRANSFORM_OPTIONS : []), ...(traversals().length > 0 ? [FIT_OPTION] : [])]
-  const groups = () => [transforms(), ...(props.node.adjusts ? [ADJUST_OPTIONS] : []), ...(props.node.shape ? [[STROKE_OPTION]] : [])]
-  const owner = () => props.node.id.slice(0, props.node.id.lastIndexOf('/'))
+export function modifierOptions(node: ModifiersNode, traversals: string[]): { transforms: ModifierOption[]; adjusts: ModifierOption[]; strokes: ModifierOption[] } {
+  return {
+    transforms: [...TRANSFORM_OPTIONS, ...(node.shape ? SHAPE_TRANSFORM_OPTIONS : []), ...(traversals.length > 0 ? [FIT_OPTION] : [])],
+    adjusts: node.adjusts ? ADJUST_OPTIONS : [],
+    strokes: node.shape ? [STROKE_OPTION] : [],
+  }
+}
+
+export const modifierIcon = (kind: ModifierKind): Icon => (kind === 'Stroke' ? KIND_ICONS.stroke! : MODIFIER_ICONS[kind])
+
+/**
+ * Adds a transform, an adjust, or a stroke to a row's, after those already there, and selects it. A transform only for
+ * shapes goes before a shape's first translate instead, so that it works in the shape's own space and moves with the
+ * shape. `surface` and `traversals` are the layer's.
+ */
+export function addModifier(tree: ConfigTree, scene: Scene, node: ModifiersNode, kind: ModifierKind, surface: Surface, traversals: string[]) {
+  const owner = node.id.slice(0, node.id.lastIndexOf('/'))
   // a new modifier is selected and expanded, so its props show
   const show = (id: string) => {
     tree.select(id)
     tree.expand(id)
   }
-  const add = (kind: TransformKind | AdjustKind | 'Stroke') =>
-    batch(() => {
-      if (kind === 'Stroke') {
-        const strokes = orEmpty(field(props.node.shape!, 'adjust'))
-        const list = strokes.get()
-        strokes.set([...list, newStroke(surface())])
-        show(`${owner()}/adjust/${list.length}`)
-      } else if (kind in ADJUSTS) {
-        const list = props.node.adjusts!.get()
-        props.node.adjusts!.set([...list, newAdjust(kind as AdjustKind)])
-        show(`${owner()}/adjust/${list.length}`)
-      } else {
-        const list = props.node.transforms.get()
-        const shape = props.node.shape?.get()
-        const size = shape ? shapeSize(shape.base, scene.get()) : ([0, 0] as Vec2)
-        const placed = list.findIndex((transform) => 'Translate' in transform)
-        // in the shape's own space, so it moves with the shape
-        const inOwnSpace = COPY_KINDS.includes(kind as CopyKind) || RESHAPE_KINDS.includes(kind as ReshapeKind)
-        const index = inOwnSpace && placed >= 0 ? placed : list.length
-        props.node.transforms.set([...list.slice(0, index), newTransform(kind as TransformKind, traversals(), size), ...list.slice(index)])
-        tree.insert(`${owner()}/transform`, index)
-        show(`${owner()}/transform/${index}`)
-      }
-    })
+  batch(() => {
+    if (kind === 'Stroke') {
+      const strokes = orEmpty(field(node.shape!, 'adjust'))
+      const list = strokes.get()
+      strokes.set([...list, newStroke(surface)])
+      show(`${owner}/adjust/${list.length}`)
+    } else if (kind in ADJUSTS) {
+      const list = node.adjusts!.get()
+      node.adjusts!.set([...list, newAdjust(kind as AdjustKind)])
+      show(`${owner}/adjust/${list.length}`)
+    } else {
+      const list = node.transforms.get()
+      const shape = node.shape?.get()
+      const size = shape ? shapeSize(shape.base, scene) : ([0, 0] as Vec2)
+      const placed = list.findIndex((transform) => 'Translate' in transform)
+      // in the shape's own space, so it moves with the shape
+      const inOwnSpace = COPY_KINDS.includes(kind as CopyKind) || RESHAPE_KINDS.includes(kind as ReshapeKind)
+      const index = inOwnSpace && placed >= 0 ? placed : list.length
+      node.transforms.set([...list.slice(0, index), newTransform(kind as TransformKind, traversals, size), ...list.slice(index)])
+      tree.insert(`${owner}/transform`, index)
+      show(`${owner}/transform/${index}`)
+    }
+  })
+}
+
+/** Adds a transform, an adjust, or a stroke, listed together */
+function AddModifier(props: { node: ModifiersNode }) {
+  const tree = useContext(ConfigTreeContext)!
+  const scene = useContext(SceneContext)!
+  const surface = useContext(SurfaceContext)!
+  const traversals = useContext(TraversalsContext)
+  const groups = () => {
+    const { transforms, adjusts, strokes } = modifierOptions(props.node, traversals())
+    return [transforms, adjusts, strokes].filter((group) => group.length > 0)
+  }
+  const add = (kind: ModifierKind) => addModifier(tree, scene.get(), props.node, kind, surface(), traversals())
   return (
-    <Controls node={props.node}>
+    <Controls>
       <AddMenu label="Add a transform or an adjust" class="scene-add-modifier" groups={groups()} onPick={add}>
         <icons.Plus aria-hidden="true" />
         Modifier
@@ -2084,7 +2040,7 @@ function FitPicker(props: { node: Extract<ConfigNode, { kind: 'fit' }> }) {
   const options = () => [...new Set([...traversals(), fitted()])].filter((name) => name !== '').map((name) => ({ value: name, label: name }))
   const missing = () => fitted() !== '' && !traversals().includes(fitted())
   return (
-    <Controls node={props.node}>
+    <Controls>
       <Show when={options().length > 0} fallback={<span class="scene-tree-summary scene-note-warn">No traversals to fit to</span>}>
         <Dropdown label="Traversal to fit to" options={options()} value={fitted()} onChange={(name) => props.node.lens.set({ Fit: name })} />
       </Show>
@@ -2097,8 +2053,8 @@ function FitPicker(props: { node: Extract<ConfigNode, { kind: 'fit' }> }) {
   )
 }
 
-/** An add button for a list of several kinds of thing, which asks which kind. Groups are set apart by a line. */
-function AddMenu<T extends string>(props: { label: string; class: string; groups: { value: T; label: string }[][]; onPick: (kind: T) => void; children: JSX.Element }) {
+/** A button with a menu of things to add, which asks which one. Groups are set apart by a line. */
+export function AddMenu<T extends string>(props: { label: string; class: string; groups: { value: T; label: string }[][]; onPick: (kind: T) => void; children: JSX.Element }) {
   return (
     <Menu.Root positioning={{ placement: 'bottom-start' }} onSelect={(details) => props.onPick(details.value as T)}>
       <Menu.Trigger class={props.class} aria-label={props.label} title={props.label}>
@@ -2130,48 +2086,24 @@ function AddMenu<T extends string>(props: { label: string; class: string; groups
   )
 }
 
-/** An add button in a list's row */
-/** A layer added to the end of the scene, of a kind it can have */
-function AddLayer(props: { node: ConfigNode }) {
-  const tree = useContext(ConfigTreeContext)!
-  return (
-    <Controls node={props.node} class="scene-tree-end">
-      <AddMenu label="Add layer" class="scene-icon-button" groups={[tree.layerOptions()]} onPick={tree.addLayer}>
-        <icons.Plus aria-hidden="true" />
-      </AddMenu>
-    </Controls>
-  )
-}
-
 /** A named value added to the scene, of the type picked */
-function AddValue(props: { node: ConfigNode }) {
-  const tree = useContext(ConfigTreeContext)!
+function AddValue() {
   const scene = useContext(SceneContext)!
-  const add = (kind: NamedValueKind) => {
-    const before = new Set(Object.keys(scene.get().values ?? {}))
-    const next = withNewValue(scene.get(), kind)
-    const name = Object.keys(next.values ?? {}).find((value) => !before.has(value))!
-    batch(() => {
-      scene.set(next)
-      tree.select(`values/${name}`)
-      tree.expand('values', `values/${name}`)
-    })
-  }
+  const add = (kind: NamedValueKind) => scene.set(withNewValue(scene.get(), kind))
   return (
-    <Controls node={props.node} class="scene-tree-end">
-      <AddMenu label="Add value" class="scene-icon-button" groups={[NAMED_VALUE_KINDS.map((kind) => ({ value: kind, label: NAMED_VALUE_LABELS[kind] }))]} onPick={add}>
-        <icons.Plus aria-hidden="true" />
-      </AddMenu>
-    </Controls>
+    <AddMenu label="Add value" class="scene-add-modifier" groups={[NAMED_VALUE_KINDS.map((kind) => ({ value: kind, label: NAMED_VALUE_LABELS[kind] }))]} onPick={add}>
+      <icons.Plus aria-hidden="true" />
+      Value
+    </AddMenu>
   )
 }
 
-function AddButton(props: { node: ConfigNode; label: string; onClick: () => void }) {
+/** Adds to a list, saying what it adds */
+function AddButton(props: { label: string; onClick: () => void }) {
   return (
-    <Controls node={props.node} class="scene-tree-end">
-      <button type="button" class="scene-icon-button" aria-label={props.label} title={props.label} onClick={props.onClick}>
-        <icons.Plus aria-hidden="true" />
-      </button>
-    </Controls>
+    <button type="button" class="scene-add-modifier" onClick={props.onClick}>
+      <icons.Plus aria-hidden="true" />
+      {props.label}
+    </button>
   )
 }

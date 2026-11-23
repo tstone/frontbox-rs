@@ -30,33 +30,34 @@
 
 ### Scenes/Editor
 
+- Rotate transform gets an adjustable center point (X/Y prop)
+- Modulators become global then assigned
 - Line-based fills (polyline, spiral, logarithmic spiral, etc. snake patterns) 
 - Line based fill patterns usable for Sweep
+- Change sweep to, instead of having a nested line/shape, you choose to use an existing one.
 - Graph algorithms have a "Reverse" option to perform the algo in reverse (ie. calculate then play backwards)
 - Noise and noise masks: `FillNode::Noise`, plus a threshold `ColorAdjust` for noise masks
-- Need to probably move pixel font rendering into gfx with real TTF rendering
 - New curves for flame/flicker, stutter, glitch
-- Ability to compose curves in editor
+- Ability to compose curves in editor (sorta wondering about a "Curves" custom curves area where these can be built up)
 - Ability to compose LightQ in editor (are Reverse, Take, etc. still needed?)
-- Plane stitching for playback (or should this just be real 3d rendering?)
 - SVG import for layer shapes
 - Animations should be able to be specified as relative to the frame rate
 - Proper BPM sync between music+scenes: a playback clock that follows music
 - Keyframes show more like Ableton automation, visually displaying the curve between points, and allowing the dots to be movable as today
 - Outline/stroke shouldn't take over fill
-- Grid is awkward, and only shows up on polygons
 - Graph region: a "cellular" mode that highlights all segments of a cell
 - Plug in custom shapes or graphics with their own settings (e.g. a kinematics/skeleton extension)
 - Idea: reflect is bisect + mirror (e.g. a leaf shape from a circle)
 - Events and callouts fired when the clock passes them, tracked like sounds (`SoundLayer::started`). An event would be
   one untyped `SceneMilestoneReached { playback, name }`. Wait until a game needs them.
-- Scene transitions (cut, cross-fade, wipe, push) between two playbacks. First version drives opacity or a mask on
-  both; with nested scenes, a transition is a scene with two slots.
+- Scene transitions (cut, cross-fade, wipe, push) between two playbacks. First version drives opacity or a mask on both; with nested scenes, a transition is a scene with two slots.
 - Live reload of scenes and fonts, as `Content` already does for images.
 - Golden-image tests: render a scene at a time to PNG and compare with a stored one.
+- Probably need groups, and mask becomes something applied to a group
 
 ### gfx
 
+- Outer glow/drop shadow on regions (Adjust?)
 - Non-affine transforms: apply the transform list as point mappings, then add `Repeat(size)` (wrap), `Mirror`, and
   polar. `Translate` + `Repeat` replaces the `lap` plumbing; `Rotate` on a `Sequence` becomes sugar for it. This is a
   format change that rewrites every file.
@@ -76,8 +77,8 @@
   `stops` (sort on load); `Prop::Sweep` on a non-position type built in code.
 - Replace `DefaultHasher` in `scene/random.rs` with a fixed integer hash (stable across Rust releases, cheaper).
 - Images on hard-edged displays are point-sampled and alias when shrunk: give images their own footprint.
-- Outer glow/drop shadow on regions
-
+- Plane stitching for playback (or should this just be real 3d rendering?)
+- 
 ### Lighting
 
 - Alternate resolver doesn't work with animated inputs: key its state on declaration ids, not colors

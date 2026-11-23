@@ -125,13 +125,17 @@
   height: auto;
 }
 
-.scene-file {
+/* the open scene's file controls, in the app's header */
+.scene-file-header {
   display: flex;
-  flex: none;
+  flex: 1;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+
+.scene-file-header .scene-note {
+  white-space: nowrap;
 }
 
 .scene-file-name {
@@ -150,54 +154,31 @@
   border-left: 1px solid var(--border);
 }
 
-.scene-file-view {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 0.5rem;
-  margin-left: auto;
-}
-
-.scene-lights {
-  display: flex;
-  flex: none;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--border);
-}
-
-/* nothing to say while a layer has no lights, as its lights row says so */
-.scene-lights:empty {
-  display: none;
-}
-
+/* the sidebar, with the selected node's properties or the scene as RON */
 .scene-source {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  border-left: 1px solid var(--border);
 }
 
-/* the tree's buttons, and the one for showing the scene as RON instead */
 .scene-source-header {
   display: flex;
   flex: none;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 0.25rem;
-  padding: 0.375rem 0.5rem;
+  padding: 0.375rem 0.5rem 0.375rem 1rem;
   border-bottom: 1px solid var(--border);
 }
 
-.scene-tabs-end {
-  display: flex;
-  align-items: center;
-}
-
-.scene-tabs-end[hidden] {
-  display: none;
+.scene-source-title {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .scene-source-header .scene-icon-button.active {
@@ -210,18 +191,17 @@
   position: relative;
   flex: 1;
   min-height: 0;
-  padding: 1rem;
+  padding: 0;
   overflow-y: auto;
 }
 
-.scene-source textarea {
+.scene-source-body > textarea {
   display: block;
   box-sizing: border-box;
   width: 100%;
   height: 100%;
-  padding: 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem;
+  border: none;
   background: var(--bg);
   color: var(--text);
   font-family: ui-monospace, monospace;
@@ -229,19 +209,248 @@
   resize: none;
 }
 
-.scene-source textarea:focus-visible {
-  border-color: var(--accent);
+.scene-source-body > textarea:focus-visible {
   outline: none;
+}
+
+.scene-source-body > .scene-note {
+  margin: 1rem;
+}
+
+/* the sidebar's tabs: the selected node's properties, the variables, and the named values. They stay up as it scrolls. */
+.scene-sidebar-tab-list {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  display: flex;
+  padding: 0 0.5rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.scene-sidebar-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-bottom: -1px;
+  padding: 0.625rem 0.625rem 0.5rem;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.scene-sidebar-tab:hover {
+  color: var(--text);
+}
+
+.scene-sidebar-tab[data-selected] {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+.scene-sidebar-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.scene-sidebar-count {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.scene-sidebar-content:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 0.75rem 1rem 1rem;
+}
+
+/* each variable or value in a list, set apart from the next */
+.scene-sidebar-content > .scene-properties-node + .scene-properties-node,
+.scene-sidebar-group > .scene-properties-node + .scene-properties-node {
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+}
+
+.scene-sidebar-content > .scene-add-modifier,
+.scene-sidebar-group > .scene-add-modifier {
+  align-self: flex-start;
+}
+
+/* the variables and the values, in one tab under a heading each */
+.scene-sidebar-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.scene-sidebar-group + .scene-sidebar-group {
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.scene-sidebar-group > h4 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .scene-output {
   display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  padding: 1rem;
 }
 
-.scene-file input {
+.scene-output-main {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+/*
+ * the tools down the side of the preview, each of which adds a layer, then the modifiers for what's selected. They go
+ * on in a second column when there are more than fit, on rows small enough for a divider to take two
+ */
+.scene-tools {
+  display: grid;
+  flex: none;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(auto-fill, 0.25rem);
+  justify-items: center;
+  column-gap: 0.25rem;
+  padding: 0.5rem 0.375rem;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.scene-tools > .scene-tool,
+.scene-modifier-tools > .scene-tool {
+  grid-row: span 10;
+}
+
+.scene-tool {
+  position: relative;
+  display: grid;
+  flex: none;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  place-items: center;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.scene-tool:hover:not(:disabled),
+.scene-tool[data-state='open'] {
+  background: var(--surface-selected);
+}
+
+/* the tool whose shape is being drawn on the preview */
+.scene-tool.active {
+  background: var(--accent);
+  color: var(--surface);
+}
+
+.scene-tool:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.scene-tool:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.scene-tool svg {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+/* a tool with more under it, marked in its corner as drawing programs do */
+.scene-tool-menu::after {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  border: 3px solid transparent;
+  border-right-color: currentColor;
+  border-bottom-color: currentColor;
+  content: '';
+}
+
+/* the modifiers for what's selected, laid out in the column with the tools */
+.scene-modifier-tools {
+  display: contents;
+}
+
+.scene-tools-divider {
+  grid-row: span 2;
+  align-self: center;
+  width: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.scene-dropdown-list.scene-tool-list [data-part='item'] {
+  justify-content: flex-start;
+}
+
+/* a layer's right-click menu, with each item's shortcut at its end */
+.scene-dropdown-list.scene-layer-menu {
+  min-width: 10rem;
+}
+
+.scene-layer-menu kbd {
+  margin-left: auto;
+  padding-left: 1.5rem;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+/* above the preview: snapping, the preview's size, and which view it's in */
+/* over the top of the preview, rather than taking a strip of its own */
+/* over the preview's top right corner, in a see-through panel that sets it apart from what's under it */
+.scene-preview-bar {
+  position: absolute;
+  z-index: 6;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem 0.75rem;
+  max-width: calc(100% - 1rem);
+  box-sizing: border-box;
+  padding: 0.375rem 0.375rem 0.375rem 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 25%);
+  backdrop-filter: blur(6px);
+  font-size: 0.875rem;
+}
+
+.scene-preview-bar > * {
+  pointer-events: auto;
+}
+
+.scene-preview-bar input {
+  width: 6rem;
   padding: 0.375rem 0.625rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -251,21 +460,152 @@
   font-size: 0.9375rem;
 }
 
-.scene-file input {
-  width: 6rem;
-}
-
-.scene-file .scene-dropdown {
-  width: 14rem;
-}
-
-.scene-file .scene-note {
+.scene-preview-bar .scene-note {
   white-space: nowrap;
 }
 
-/* above the size of the toggles in the editor, as this one switches the whole preview */
-.scene-view {
+/* beside the choice of what's on show, the same height as it */
+.scene-preview-bar .scene-reset-view {
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.scene-preview-bar .scene-reset-view:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.scene-reset-view svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* larger than the dropdowns in the editor, as this one switches the whole preview, in the color of the layers it shows */
+.scene-view .scene-dropdown-compact [data-part='trigger'] {
+  padding: 0.25rem 0.375rem 0.25rem 0.625rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  color: var(--accent);
   font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+/* a shape being drawn on the preview, which takes presses there from the camera and the handles */
+.scene-drawing {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.scene-drawing svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* over the outline a display draws its open layer with */
+.scene-drawing svg polygon {
+  fill: color-mix(in srgb, var(--accent) 15%, transparent);
+  stroke: var(--accent);
+  stroke-dasharray: 5 3;
+  stroke-width: 1.5;
+}
+
+/* a polygon being drawn: the corners down so far, and the line out to where the next goes */
+.scene-drawing svg .scene-drawing-placed {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
+.scene-drawing svg .scene-drawing-next {
+  stroke: var(--accent);
+  stroke-dasharray: 5 3;
+  stroke-width: 1.5;
+}
+
+.scene-drawing svg circle {
+  fill: var(--surface);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
+/* the first corner, where a click closes the polygon, which it says once the pointer is on it */
+.scene-drawing-closing {
+  cursor: pointer;
+}
+
+.scene-drawing-closing svg .scene-drawing-first {
+  fill: var(--accent);
+}
+
+/* the layer under the pointer, which a click selects */
+.scene-hover-outline {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+svg.scene-hover-outline polygon {
+  fill: color-mix(in srgb, var(--accent) 12%, transparent);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: none;
+}
+
+/* the selected layer that covers everything, which has no handles, dashed like a selected shape's box */
+svg.scene-hover-outline.scene-selected-outline polygon {
+  fill: none;
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+}
+
+.scene-dmd-screen.scene-pointing canvas {
+  cursor: pointer;
+}
+
+/* typing a text layer's words over its box in the preview */
+.scene-text-editor {
+  position: absolute;
+  z-index: 5;
+  box-sizing: border-box;
+  padding: 0.25rem 0.5rem;
+  transform: translate(-50%, -50%);
+  border: 1.5px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.3);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9375rem;
+  text-align: center;
+  resize: none;
+  outline: none;
+  pointer-events: auto;
+}
+
+/* the planes or displays a layer can be copied to */
+.scene-dialog.scene-duplicate-dialog {
+  width: min(22rem, calc(100vw - 2rem));
+}
+
+.scene-surface-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.scene-surface-list .scene-button {
+  justify-content: flex-start;
+  text-align: left;
 }
 
 .scene-machine {
@@ -283,6 +623,8 @@
   flex: 1;
   place-items: center;
   min-height: 0;
+  /* the machine's view goes to the edges, where a screen keeps some room around it */
+  padding: 0.5rem 1rem 1rem;
   container-type: size;
 }
 
@@ -366,6 +708,31 @@
     0 0 2px #000,
     inset 0 0 0 2px #fff,
     inset 0 0 0 3px #000;
+}
+
+/* out past the top right corner of a shape's box, with a mark for what dragging it does, which a click changes */
+.scene-handle-corner {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  translate: 12px -12px;
+  border-radius: 50%;
+  color: #000;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  user-select: none;
+}
+
+/* how round a shape's corners are, in from its top right corner by the radius */
+.scene-handle-radius {
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: var(--scene-line);
 }
 
 .scene-handle-size {
@@ -524,12 +891,6 @@
   stroke-width: 1;
 }
 
-.scene-reference {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-}
-
 .scene-snap {
   display: flex;
   align-items: center;
@@ -555,6 +916,7 @@
 
 .scene-error {
   margin: 0;
+  padding: 0.5rem 1rem 0;
   color: var(--warn);
   font-size: 0.875rem;
   white-space: pre-wrap;
@@ -586,8 +948,49 @@
 .scene-field {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: 0.125rem;
   min-width: 0;
+}
+
+/* a small control, such as a switch or a number, beside its label at the end of the line */
+.scene-field.scene-field-inline {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 1.75rem;
+}
+
+.scene-field-inline > .scene-field-label {
+  flex: none;
+}
+
+/* a prop's label at the start of the line, its control at the end, and its remove button after that */
+.scene-field-inline > .scene-prop-header {
+  display: contents;
+}
+
+.scene-field-inline > .scene-prop-header > .scene-prop-name {
+  margin-right: auto;
+}
+
+.scene-field-inline > .scene-prop-header > :not(.scene-prop-name) {
+  order: 2;
+}
+
+/* a dropdown beside its label takes the rest of the line, up to a point */
+.scene-field-inline > .scene-dropdown,
+.scene-field-inline > .scene-tree-controls {
+  flex: 0 1 12rem;
+  min-width: 0;
+}
+
+.scene-field-inline > .scene-tree-controls {
+  justify-content: flex-end;
+}
+
+.scene-field-inline .scene-tree-number {
+  text-align: right;
 }
 
 /* a field's control with a button beside it */
@@ -609,29 +1012,6 @@
   font-size: 0.875rem;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.scene-ping {
-  border-radius: var(--radius-sm);
-  animation: scene-ping 1.6s ease-out;
-}
-
-/* around the field and not on it, in the room its item leaves, as a line on the field would run into its label */
-@keyframes scene-ping {
-  0%,
-  35% {
-    background: color-mix(in srgb, var(--accent) 22%, transparent);
-    box-shadow:
-      0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent),
-      0 0 0 6px var(--accent);
-  }
-
-  100% {
-    background: transparent;
-    box-shadow:
-      0 0 0 5px transparent,
-      0 0 0 6px transparent;
-  }
 }
 
 .scene-prop-header {
@@ -1176,97 +1556,13 @@ label.scene-button:hover {
   color: var(--text);
 }
 
-/* ---- the config tree ---- */
-
-/* rows step in by less than in the scene list, as fields deep in the tree need the room */
-.scene-config-tree {
-  --tree-step: 0.75rem;
-  /* values start halfway across. A label is as wide as what's left of its half past the indent and icon before it. */
-  --tree-label-width: calc(50cqw - 3.125rem);
-  container-type: inline-size;
-  margin-inline: -0.25rem;
-}
-
-.scene-config-tree [data-part='tree'] {
-  font-size: 0.9375rem;
-}
-
-.scene-config-tree [data-part='branch-control'],
-.scene-config-tree [data-part='item'] {
-  min-height: 1.875rem;
-  box-sizing: border-box;
-  padding: 0.125rem 0.25rem 0.125rem calc(0.25rem + (var(--depth, 1) - 1) * var(--tree-step));
-}
-
-/* a row that can't open lines up with one that has an indicator */
-.scene-config-tree [data-part='item'] {
-  padding-left: calc(1.375rem + (var(--depth, 1) - 1) * var(--tree-step));
-}
-
-.scene-config-tree [data-part='branch-indent-guide'] {
-  left: calc(0.625rem + (var(--depth, 1) - 1) * var(--tree-step));
-}
-
-.scene-config-tree [data-part='branch-indicator'] svg {
-  width: 0.75rem;
-  height: 0.75rem;
-}
-
-/* only the row that has focus is outlined, rather than the last one while a field in the tree has it */
-.scene-config-tree [data-part='tree']:focus-within [data-part='branch-control'][data-focus],
-.scene-config-tree [data-part='tree']:focus-within [data-part='item'][data-focus] {
-  outline: none;
-}
-
-.scene-config-tree [data-part='branch-control']:focus-visible,
-.scene-config-tree [data-part='item']:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-
-/* what a hovered row applies to, which is the row it's under */
-.scene-config-tree
-  [data-part='branch']:has(> [data-part='branch-content'] > [data-part='item']:hover, > [data-part='branch-content'] > [data-part='branch'] > [data-part='branch-control']:hover)
-  > [data-part='branch-control']:not([data-selected]) {
-  background: color-mix(in srgb, var(--surface-hover) 50%, transparent);
-}
-
-/* a row being dragged, and where it'll go if it's dropped on this one */
-.scene-config-tree [data-dragging] {
-  opacity: 0.5;
-}
-
-.scene-config-tree [data-drop='before'] {
-  box-shadow: inset 0 2px 0 var(--accent);
-}
-
-.scene-config-tree [data-drop='after'] {
-  box-shadow: inset 0 -2px 0 var(--accent);
-}
+/* ---- icons, summaries and controls of the nodes ---- */
 
 .scene-tree-icon {
   flex: none;
   width: 1rem;
   height: 1rem;
   color: var(--muted);
-}
-
-.scene-config-tree [data-selected] > .scene-tree-icon {
-  color: var(--accent);
-}
-
-.scene-tree-label {
-  flex: none;
-  width: max(3rem, calc(var(--tree-label-width) - (var(--depth, 1) - 1) * var(--tree-step)));
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* one with no icon before it takes the icon's room, so values still start in the same place */
-.scene-tree-label-wide {
-  width: max(3rem, calc(var(--tree-label-width) + 1.375rem - (var(--depth, 1) - 1) * var(--tree-step)));
 }
 
 /* a glance at a node's value, or how many are under it */
@@ -1281,66 +1577,24 @@ label.scene-button:hover {
   white-space: nowrap;
 }
 
-/* a fixed color's swatch, which opens its picker */
-.scene-tree-color [data-part='control'] {
-  display: flex;
-  align-items: center;
-}
-
-.scene-tree-color [data-part='trigger'] {
+/* a fixed color, beside its node's name */
+.scene-tree-swatch {
+  flex: none;
   box-sizing: border-box;
-  width: 1.75rem;
-  height: 1.125rem;
-  padding: 0;
-  overflow: hidden;
+  width: 1.25rem;
+  height: 0.75rem;
+  margin-left: 0.375rem;
   border: 1px solid var(--border);
-  border-radius: 3px;
-  background: none;
-  cursor: pointer;
+  border-radius: 2px;
 }
 
-.scene-tree-color [data-part='trigger']:hover {
-  border-color: var(--muted);
-}
-
-.scene-tree-color [data-part='swatch'] {
-  width: 100%;
-  height: 100%;
-}
-
-/* a row's value, in the column after the labels */
+/* controls beside one another, at the size of a row */
 .scene-tree-controls {
   display: flex;
   flex: 1;
   align-items: center;
-  gap: 0.125rem;
+  gap: 0.25rem;
   min-width: 0;
-  cursor: default;
-}
-
-/* buttons for adding and removing, at the far end of the row */
-.scene-tree-end {
-  flex: none;
-  margin-left: auto;
-}
-
-/* a prop's source, all the same width so they line up down the tree. Wide enough for the longest, "Modulated". */
-.scene-tree-source {
-  width: 7rem;
-}
-
-/* a remove button after a source sits right beside it. With an auto margin too, the two would split the room before them. */
-.scene-tree-source + .scene-tree-end {
-  margin-left: 0;
-}
-
-.scene-tree-source .scene-dropdown-compact [data-part='trigger'] {
-  width: 100%;
-}
-
-.scene-tree-gap {
-  flex: none;
-  width: 1.5rem;
 }
 
 .scene-tree-controls > .scene-dropdown,
@@ -1349,59 +1603,28 @@ label.scene-button:hover {
   min-width: 0;
 }
 
-/* a layer's name only as wide as it is, with what type of layer it is just after it */
-.scene-tree-grow > .scene-item-name {
-  flex: 0 1 auto;
-}
-
-.scene-layer-type {
-  flex: 1;
-  font-size: 0.875rem;
-  cursor: pointer;
-}
-
 .scene-tree-controls .scene-layer-lights {
   flex: 1;
-  flex-wrap: nowrap;
   gap: 0.25rem;
   min-width: 0;
 }
 
-.scene-tree-controls .scene-layer-lights .scene-note {
-  overflow: hidden;
-  padding-left: 0.375rem;
-  font-size: inherit;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.scene-tree-controls .scene-button {
-  padding: 0.0625rem 0.5rem;
-  font-size: 0.875rem;
-}
-
-/* a value in a row reads as a field, all the same height and lined up */
-.scene-config .scene-tree-number,
-.scene-tree-controls .scene-dropdown [data-part='trigger'] {
+/* a number that reads as a value until it's hovered or typed in */
+.scene-config .scene-tree-number {
   box-sizing: border-box;
+  width: auto;
   height: 1.625rem;
   padding: 0 0.25rem 0 0.375rem;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: none;
   color: var(--text);
-  font-size: inherit;
-}
-
-.scene-config .scene-tree-number {
-  width: auto;
   font-family: inherit;
+  font-size: inherit;
   font-variant-numeric: tabular-nums;
 }
 
-.scene-config .scene-tree-number:hover,
-.scene-tree-controls .scene-dropdown [data-part='trigger']:hover,
-.scene-tree-controls .scene-dropdown [data-part='trigger'][data-state='open'] {
+.scene-config .scene-tree-number:hover {
   border-color: var(--border);
   background: var(--surface-hover);
 }
@@ -1409,18 +1632,6 @@ label.scene-button:hover {
 .scene-config .scene-tree-number:focus {
   border-color: var(--accent);
   outline: none;
-}
-
-/* a row's buttons for moving it and taking it out, shown while it's hovered or has focus */
-.scene-config-tree [data-part='branch-control']:hover .scene-tree-actions,
-.scene-config-tree [data-part='branch-control']:focus-within .scene-tree-actions,
-.scene-config-tree [data-part='item']:hover .scene-tree-actions,
-.scene-config-tree [data-part='item']:focus-within .scene-tree-actions {
-  opacity: 1;
-}
-
-.scene-config-tree .scene-tree-actions {
-  gap: 0;
 }
 
 .scene-icon-button {
@@ -1458,23 +1669,197 @@ label.scene-button:hover {
   height: 0.875rem;
 }
 
-.scene-config-tree .scene-eye {
-  width: 1.5rem;
-  height: 1.5rem;
+/* ---- the selected node's properties ---- */
+
+.scene-properties-node {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
 }
 
-.scene-config-tree .scene-eye svg {
-  width: 0.875rem;
-  height: 0.875rem;
+/* a layer's shape or fill, as a part of its properties */
+.scene-part {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
 }
 
-/* a node's own fields, under its row and lined up with its icon */
-.scene-tree-fields {
+.scene-part-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.scene-part-heading h4 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* a gradient's colors or a shape's points, one under another */
+.scene-part-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.scene-part-list-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.scene-layers-context {
+  color: var(--muted);
+}
+
+.scene-properties-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+/* the nodes it's in, each of which can be selected */
+.scene-properties-trail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.125rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.scene-properties-trail button {
+  padding: 0 0.125rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.scene-properties-trail button:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.scene-properties-trail svg {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+.scene-properties-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.scene-properties-title .scene-tree-icon {
+  color: var(--accent);
+}
+
+.scene-properties-title h3 {
+  overflow: hidden;
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-properties-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.125rem;
+  margin-left: auto;
+}
+
+/* a value's label, which selects it to edit what's under it */
+.scene-property-link {
+  overflow: hidden;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.scene-property-link:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+/* a prop's source button, then its label */
+.scene-prop-name {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+/* where a prop takes its value from, which opens a menu of the others */
+.scene-icon-button.scene-prop-source {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-left: -0.125rem;
+  color: var(--accent);
+}
+
+/* a fixed value is the usual, so only the others stand out */
+.scene-icon-button.scene-prop-source[data-kind='Fixed'] {
+  color: var(--muted);
+}
+
+.scene-icon-button.scene-prop-source[data-state='open'] {
+  background: var(--surface-hover);
+}
+
+.scene-dropdown-list.scene-source-menu [data-part='item'] {
+  justify-content: flex-start;
+  align-items: flex-start;
+}
+
+.scene-source-menu [data-part='item'] > svg {
+  flex: none;
+  margin-top: 0.125rem;
+}
+
+.scene-source-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.0625rem;
+}
+
+.scene-source-hint {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+/* the props under a prop, such as a wave's phase, set in from it */
+.scene-prop-under {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  padding: 0.375rem 0.375rem 0.75rem calc(1.375rem + (var(--depth, 1) - 1) * var(--tree-step));
-  cursor: default;
+  padding: 0.25rem 0 0 0.75rem;
+  border-left: 2px solid var(--border);
 }
 
 .scene-fields-button {
@@ -1505,6 +1890,11 @@ label.scene-button:hover {
 .scene-add-modifier svg {
   width: 0.875rem;
   height: 0.875rem;
+}
+
+/* as wide as what it says, under the fields it adds to */
+.scene-properties-node .scene-add-modifier {
+  align-self: flex-start;
 }
 
 .scene-dropdown-list [data-part='separator'] {
@@ -1581,6 +1971,7 @@ label.scene-button:hover {
 .scene-number input[type='number'] {
   flex: none;
   width: 5.5rem;
+  padding-block: 0.25rem;
 }
 
 .scene-number [data-part='control'] {
@@ -1720,6 +2111,9 @@ label.scene-button:hover {
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.3);
   font-size: 0.9375rem;
   outline: none;
+  /* a long list, such as every scene, scrolls in the room Ark measures beside its trigger */
+  max-height: min(24rem, var(--available-height, 24rem));
+  overflow-y: auto;
 }
 
 .scene-dropdown-list[data-state='open'] {
@@ -1838,6 +2232,29 @@ label.scene-button:hover {
   height: 100%;
 }
 
+/* the color as hex, and the eyedropper beside it */
+.scene-color-hex {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.scene-color-hex [data-part='channel-input'] {
+  flex: 1;
+  min-width: 0;
+}
+
+.scene-icon-button.scene-eyedropper {
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--border);
+}
+
+.scene-icon-button.scene-eyedropper svg {
+  width: 1rem;
+  height: 1rem;
+}
+
 .scene-color-picker [data-part='channel-input'] {
   box-sizing: border-box;
   width: 100%;
@@ -1937,7 +2354,13 @@ label.scene-button:hover {
 /* ---- the timeline ---- */
 
 .scene-timeline {
-  --label-width: 13rem;
+  /*
+   * the tree beside the lanes, which can be dragged wider or narrower. Its share is of the timeline itself, so it's
+   * the same in the rows and in the handle that resizes it, which is placed across the whole timeline.
+   */
+  --label-width: clamp(13rem, 18cqw, 22rem);
+  container-type: inline-size;
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -1946,16 +2369,32 @@ label.scene-button:hover {
   padding: 0.5rem 1rem;
 }
 
+/* lined up with the tree and the lanes under it */
 .scene-timeline > header {
-  display: flex;
+  display: grid;
   flex: none;
+  grid-template-columns: var(--label-width) 1fr;
   align-items: center;
-  gap: 0.5rem;
   min-height: 2.25rem;
   font-size: 0.875rem;
 }
 
-.scene-timeline > header button {
+.scene-timeline > header .scene-layers-header {
+  align-self: stretch;
+  border-bottom: none;
+}
+
+/* starts where the lanes do */
+.scene-timeline-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding-left: 1rem;
+}
+
+.scene-timeline-controls button {
   display: grid;
   width: 2rem;
   height: 2rem;
@@ -1968,23 +2407,23 @@ label.scene-button:hover {
   cursor: pointer;
 }
 
-.scene-timeline > header button:hover:enabled {
+.scene-timeline-controls button:hover:enabled {
   background: var(--surface-hover);
 }
 
-.scene-timeline > header button:disabled {
+.scene-timeline-controls button:disabled {
   color: var(--muted);
   cursor: default;
   opacity: 0.5;
 }
 
-.scene-timeline > header svg {
+.scene-timeline-controls svg {
   width: 1rem;
   height: 1rem;
   fill: currentColor;
 }
 
-.scene-timeline > header label {
+.scene-timeline-controls label {
   display: flex;
   align-items: center;
   gap: 0.375rem;
@@ -2074,6 +2513,11 @@ label.scene-button:hover {
   overflow: hidden auto;
 }
 
+.scenes-tab * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
 /* what the playhead and the shade measure against, which is every track and not only those scrolled into view */
 .scene-timeline-lanes {
   position: relative;
@@ -2082,6 +2526,11 @@ label.scene-button:hover {
 .scene-timeline-row {
   display: grid;
   grid-template-columns: var(--label-width) 1fr;
+}
+
+/* beside the times, over the tree */
+.scene-timeline-times-gap {
+  border-bottom: 1px solid var(--border);
 }
 
 /* the times stay up as the tracks scroll under them */
@@ -2098,40 +2547,15 @@ label.scene-button:hover {
   min-width: 0;
 }
 
-.scene-timeline-hidden .scene-timeline-label,
+.scene-timeline-hidden .scene-layers-label,
 .scene-timeline-hidden .scene-timeline-lane {
   opacity: 0.45;
-}
-
-.scene-timeline-label {
-  flex: 1;
-  overflow: hidden;
-  min-width: 0;
-  padding: 0 0.75rem 0 0;
-  border: none;
-  background: none;
-  color: var(--muted);
-  font-size: 0.8125rem;
-  line-height: 1.75rem;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.scene-timeline-label:hover {
-  color: var(--text);
-}
-
-.scene-timeline-label:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
 }
 
 .scene-timeline-ruler {
   position: relative;
   height: 1.25rem;
-  margin: 0 0.75rem 0 0.5rem;
+  margin: 0 0.75rem 0 1rem;
   border-bottom: 1px solid var(--border);
   color: var(--muted);
   font-size: 0.6875rem;
@@ -2159,18 +2583,34 @@ label.scene-button:hover {
 .scene-timeline-lane {
   position: relative;
   height: 1.75rem;
-  margin: 0 0.75rem 0 0.5rem;
-  border-bottom: 1px solid var(--border);
+  margin: 0 0.75rem 0 1rem;
 }
 
 /* the track itself, thin behind its dots */
-.scene-timeline-lane::before {
+.scene-timeline-lane-track::before {
   position: absolute;
   top: 50%;
   right: 0;
   left: 0;
   border-top: 2px dotted var(--border);
   content: '';
+}
+
+/* a track made taller to show its value over time. Its name stays at the top, by its keys. */
+.scene-timeline-expanded .scene-timeline-lane {
+  height: 5.25rem;
+}
+
+.scene-timeline-expanded .scene-timeline-name {
+  align-self: start;
+  height: 1.75rem;
+}
+
+/* a keyframed track keeps its line and keys along the top, over the preview of its value */
+.scene-timeline-expanded-keys .scene-timeline-lane-track::before,
+.scene-timeline-expanded-keys .scene-key,
+.scene-timeline-expanded-keys .scene-key-add {
+  top: 0.875rem;
 }
 
 /* over the part of the view past the scene's end, where a key is cut off. It lines up with the lanes' margins. */
@@ -2180,7 +2620,7 @@ label.scene-button:hover {
   top: 0;
   right: 0.75rem;
   bottom: 0;
-  left: calc(var(--label-width) + 0.5rem + (100% - var(--label-width) - 1.25rem) * var(--end-fraction, 1));
+  left: calc(var(--label-width) + 1rem + (100% - var(--label-width) - 1.75rem) * var(--end-fraction, 1));
   background: color-mix(in srgb, var(--bg) 65%, transparent);
   pointer-events: none;
   content: '';
@@ -2200,9 +2640,255 @@ label.scene-button:hover {
   z-index: 4;
   top: 0;
   bottom: 0;
-  left: calc(var(--label-width) + 0.5rem + (100% - var(--label-width) - 1.25rem) * var(--played-fraction));
+  left: calc(var(--label-width) + 1rem + (100% - var(--label-width) - 1.75rem) * var(--played-fraction));
   width: 1px;
   background: var(--accent);
+  pointer-events: none;
+}
+
+/* the playhead's head on the ruler, a tab that says it can be dragged */
+.scene-timeline-playhead-head {
+  position: absolute;
+  z-index: 1;
+  bottom: -1px;
+  left: calc(100% * var(--played-fraction));
+  width: 11px;
+  height: 14px;
+  transform: translateX(-50%);
+  background: var(--accent);
+  clip-path: polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%);
+  pointer-events: none;
+}
+
+/* ---- the tree beside the lanes ---- */
+
+.scene-layers-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  min-width: 0;
+  padding-right: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.scene-layers-title {
+  flex: 1;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* the tree's right edge, which is dragged to make it wider or narrower */
+/* the full height of the timeline, between the tree and its heading on one side and the lanes on the other */
+.scene-layers-resize {
+  position: absolute;
+  z-index: 4;
+  top: 0;
+  bottom: 0;
+  left: calc(1rem + var(--label-width) - 3px);
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.scene-layers-resize:hover,
+.scene-layers-resize:active {
+  background: linear-gradient(to right, transparent 2px, var(--accent) 2px 4px, transparent 4px);
+}
+
+.scene-layers-empty {
+  padding: 0.5rem 0;
+}
+
+.scene-layers-row {
+  scroll-margin-top: 1.5rem;
+  border-radius: var(--radius-sm);
+  cursor: default;
+}
+
+.scene-layers-row:hover {
+  background: color-mix(in srgb, var(--surface-hover) 50%, transparent);
+}
+
+/* at half the strength the color has elsewhere, as the timeline is full of rows */
+.scene-layers-row.scene-layers-selected {
+  background: color-mix(in srgb, var(--surface-selected) 50%, transparent);
+}
+
+.scene-layers-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* a row being dragged, and where it'll go if it's dropped on this one */
+.scene-layers-row[data-dragging] {
+  opacity: 0.5;
+}
+
+.scene-layers-row[data-drop='before'] {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.scene-layers-row[data-drop='after'] {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.scene-layers-name {
+  gap: 0.25rem;
+  height: 1.75rem;
+  padding: 0 0.25rem 0 calc(var(--depth, 0) * 0.875rem);
+  font-size: 0.8125rem;
+}
+
+.scene-layers-selected .scene-tree-icon {
+  color: var(--accent);
+}
+
+/* the arrow that opens a row, and the room for one in a row with nothing under it */
+.scene-layers-indicator {
+  display: grid;
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  place-items: center;
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.scene-layers-indicator svg {
+  width: 0.75rem;
+  height: 0.75rem;
+  transition: rotate 0.12s;
+}
+
+.scene-layers-open svg {
+  rotate: 90deg;
+}
+
+.scene-layers-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* a layer's name being edited in its row */
+.scene-layers-rename {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 1.4rem;
+  padding: 0 0.3rem;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+}
+
+.scene-layers-name .scene-tree-summary {
+  flex: 1;
+  font-size: 0.75rem;
+}
+
+.scene-layers-name .scene-eye {
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-left: auto;
+}
+
+.scene-layers-name .scene-eye svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+/* the heading of the layers on one thing: the lights, a display, or the sounds */
+.scene-layers-group .scene-layers-label {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.scene-layers-group .scene-tree-summary {
+  flex: 1;
+  font-size: 0.75rem;
+}
+
+/* each row marked down its edge in the color of its group */
+.scene-layers-row[class*='scene-color-'] .scene-layers-name {
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+.scene-layers-group .scene-tree-icon {
+  color: var(--accent);
+}
+
+/* set apart from the group above it */
+.scene-layers-row:not(:first-child).scene-layers-group {
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+}
+
+/* another scene drawn with this one, which can't be edited */
+.scene-layers-preview .scene-tree-icon,
+.scene-layers-preview .scene-layers-label,
+.scene-layers-preview .scene-timeline-lane {
+  opacity: 0.55;
+}
+
+.scene-layers-preview:hover {
+  background: none;
+}
+
+.scene-layers-preview .scene-layers-label {
+  font-style: italic;
+}
+
+.scene-layers-preview .scene-timeline-lane {
+  background: repeating-linear-gradient(-45deg, transparent 0 6px, color-mix(in srgb, var(--border) 60%, transparent) 6px 7px);
+}
+
+.scene-layers-preview-error {
+  flex: none;
+  width: 0.875rem;
+  height: 0.875rem;
+  color: var(--danger);
+}
+
+.scene-layers-preview .scene-layers-preview-remove {
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-left: auto;
+}
+
+.scene-layers-preview .scene-layers-preview-remove svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+/* a track's keys and its button for adding one, over the whole of its lane */
+.scene-track {
+  position: absolute;
+  inset: 0;
+}
+
+/* when the props under a closed row change, which can't be moved from there */
+.scene-key-summary {
+  position: absolute;
+  top: 50%;
+  width: 0.4375rem;
+  height: 0.4375rem;
+  translate: -50% -50%;
+  rotate: 45deg;
+  background: color-mix(in srgb, var(--accent) 75%, var(--muted));
   pointer-events: none;
 }
 
@@ -2255,6 +2941,31 @@ label.scene-button:hover {
   stroke-width: 1.5;
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
+}
+
+/* a keyframed value over the view, under its keys */
+.scene-keyed {
+  position: absolute;
+  top: 1.875rem;
+  left: 0;
+  width: 100%;
+  height: calc(100% - 2.375rem);
+  overflow: visible;
+  pointer-events: none;
+}
+
+.scene-keyed polyline {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* a point's y, beside its x */
+.scene-keyed polyline.scene-keyed-second {
+  stroke: var(--muted);
+  stroke-dasharray: 4 3;
 }
 
 /* a line and not dots, as what it follows is the path and not values at moments */
@@ -2320,15 +3031,21 @@ label.scene-button:hover {
   outline-offset: 1px;
 }
 
-/* what's for a sound layer, in Config, on the timeline and in their popups, is in its own color, to tell it from the
-   drawn layers */
+/* what's for a layer, in its properties, on the timeline, in the toolbar and in their popups, is in the color of what it's
+   on: the lights, a display, or the speakers */
+.scene-color-lights {
+  --accent: var(--lights);
+  --surface-selected: color-mix(in srgb, var(--lights) 18%, var(--surface));
+}
+
+.scene-color-display {
+  --accent: var(--display);
+  --surface-selected: color-mix(in srgb, var(--display) 18%, var(--surface));
+}
+
 .scene-color-sound {
   --accent: var(--sound);
   --surface-selected: color-mix(in srgb, var(--sound) 18%, var(--surface));
-}
-
-.scene-color-sound .scene-timeline-mark {
-  color: var(--accent);
 }
 
 /* when a sound plays, which can be dragged by its edges to change its start and end, or by the rest to move it */
@@ -2409,19 +3126,6 @@ label.scene-button:hover {
   bottom: 0;
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   background: repeating-linear-gradient(-45deg, var(--warn) 0 3px, transparent 3px 6px) var(--bg);
-}
-
-/* where a row without an eye button says what's wrong with it */
-.scene-timeline-mark {
-  flex: none;
-  width: 1.75rem;
-  color: var(--warn);
-  font-weight: 700;
-  text-align: center;
-}
-
-.scene-timeline-over {
-  cursor: help;
 }
 
 .scene-key:hover,
@@ -2506,10 +3210,18 @@ label.scene-button:hover {
   text-align: center;
 }
 
+/* the search, and the button for choosing lights by clicking them in the preview */
+.scene-light-search {
+  display: flex;
+  gap: 0.375rem;
+}
+
 .scene-light-picker input[type='search'] {
   box-sizing: border-box;
+  flex: 1;
+  min-width: 0;
   width: 100%;
-  padding: 0.375rem 0.5rem;
+  padding: 0.25rem 0.5rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg);
@@ -2521,6 +3233,29 @@ label.scene-button:hover {
 .scene-light-picker input[type='search']:focus-visible {
   border-color: var(--accent);
   outline: none;
+}
+
+.scene-light-click {
+  flex: none;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.scene-light-click:hover {
+  background: var(--surface-hover);
+}
+
+.scene-light-click[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, var(--bg));
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .scene-light-list {
@@ -2833,4 +3568,119 @@ label.scene-button:hover {
 .scene-anchor-glyph[data-spot='bottom-right']::after {
   left: 100%;
   top: 100%;
+}
+
+/* the angles the camera can look at a plane from, which come up from resting on the reset view button */
+.scene-view-angles {
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
+}
+
+.scene-view-angles button {
+  padding: 0.3125rem 0.625rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.scene-view-angles button:hover {
+  background: var(--surface-hover);
+}
+
+.scene-view-angles button[aria-pressed='true'] {
+  background: var(--surface-selected);
+  font-weight: 600;
+}
+
+/* at the end of the header, a list of the editor's shortcuts */
+.scene-shortcuts-button {
+  margin-left: auto;
+}
+
+.scene-shortcuts-button svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.scene-dialog.scene-shortcuts-dialog {
+  width: min(48rem, calc(100vw - 2rem));
+}
+
+.scene-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: 1.25rem 2rem;
+  overflow-y: auto;
+}
+
+.scene-shortcuts h4 {
+  margin: 0 0 0.5rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.scene-shortcuts dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.375rem 0.75rem;
+  align-items: baseline;
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.scene-shortcuts dt {
+  display: flex;
+  gap: 0.25rem;
+  white-space: nowrap;
+}
+
+.scene-shortcut-mouse {
+  color: var(--text);
+  font-size: 0.8125rem;
+}
+
+.scene-shortcuts dd {
+  margin: 0;
+  color: var(--muted);
+}
+
+.scene-shortcuts kbd {
+  padding: 0.0625rem 0.375rem;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+}
+
+/* beside a track's eye, showing only on the row under the mouse while its track is expanded, as it is to begin with */
+.scene-layers-name .scene-track-expand + .scene-eye {
+  margin-left: 0;
+}
+
+.scene-track-expand[aria-pressed='true'] {
+  opacity: 0;
+}
+
+.scene-layers-row:hover .scene-track-expand,
+.scene-track-expand:focus-visible {
+  opacity: 1;
 }

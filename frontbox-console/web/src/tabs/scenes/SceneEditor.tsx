@@ -1,12 +1,16 @@
 import { Checkbox } from '@ark-ui/solid/checkbox'
-import { SegmentGroup } from '@ark-ui/solid/segment-group'
 import { Splitter } from '@ark-ui/solid/splitter'
 import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from 'solid-js'
 import * as icons from '../../components/icons'
+import { HeaderTakeover } from '../../components/HeaderTakeover'
+import ShortcutsButton, { MOD } from './ShortcutsButton'
+import { createHistory } from './history'
+import { LightClickingContext } from './LightPicker'
+import ViewAngleMenu from './ViewAngleMenu'
 import { typingIn } from '../../lib/keys'
 import { cssColor } from '../../lib/leds'
 import { machine } from '../../state/console'
-import { addContentScene, contentScenes, deleteContentScene, saveContentScene } from '../../state/contentScenes'
+import { addContentScene, contentScenes, saveContentScene } from '../../state/contentScenes'
 import { playContentSound } from '../../state/contentSounds'
 import {
   forgetSceneRender,
@@ -21,31 +25,40 @@ import {
   type SceneClip,
 } from '../../state/sceneRender'
 import type { ClipSound } from '../../types/generated/ClipSound'
-import type { Prop } from '../../types/generated/Prop'
 import type { ReferenceScene } from '../../types/generated/ReferenceScene'
 import type { RenderedScene } from '../../types/generated/RenderedScene'
 import type { SceneSource } from '../../types/generated/SceneSource'
-import PlayfieldView, { type PreviewSpace } from '../machine/PlayfieldView'
-import ConfigPanel from './ConfigPanel'
+import PlayfieldView, { countOnPlane, type PreviewSpace, type ViewAngle } from '../machine/PlayfieldView'
+import PropertiesPanel, { drawnAspect } from './PropertiesPanel'
 import ConfirmDialog from './ConfirmDialog'
-import { LightsNote } from './LayerPlace'
 import { createPlayback } from './playback'
-import { Dropdown, NumberBox, LayerSurfacesContext, NodePickingContext, RegionVisibilityContext, RevealContext, SceneContext, ShapePosesContext, type NodePicking, type RegionVisibility, type ShapePoses } from './SceneFields'
-import { openTransform } from './configNodes'
-import { changesEachCycle, cycleCount, editedScene, layerPlace, layerPlane, placeDisplay, sceneSource, selectedShape, withoutDroppedVariables, withoutDroppedTiming, type Lens, type Scene, type SceneLayer, type SceneTrack, type SceneValue, type Selection, type Vec2 } from './sceneModel'
+import { Dropdown, NumberBox, LayerSurfacesContext, NodePickingContext, RegionVisibilityContext, SceneContext, ShapePosesContext, type NodePicking, type RegionVisibility, type ShapePoses } from './SceneFields'
+import { configNodes, is, openTransform, selectionNode } from './configNodes'
+import { ConfigTreeContext, createConfigTree } from './configTree'
+import { changesEachCycle, cycleCount, editedScene, layerPlace, layerPlane, placeDisplay, sceneSource, selectedShape, snap as snapTime, withKey, withPick, withoutDroppedVariables, withoutDroppedTiming, type Lens, type LayerPlace, type Scene, type SceneLayer, type Selection, type Vec2 } from './sceneModel'
+import LayerTools, { drawnLayer, type DrawnTool } from './LayerTools'
+import { LayerColorContext, layerColor, layerColorClass, type LayerColor } from './ScenePortal'
+import { createLayerMenu, LayerMenuContext } from './LayerMenu'
+import TextEditor, { editableText, withText } from './TextEditing'
+import ShapeDrawing, { PolygonDrawing, type DrawnBox, type DrawnPoints } from './ShapeDrawing'
 import { SceneNameButton } from './SceneNameDialog'
 import GraphOverlay from './GraphOverlay'
-import ShapeHandles, { layerUnder } from './ShapeHandles'
+import ShapeHandles, { fullOutline, HoverOutline, layerUnder } from './ShapeHandles'
 import Timeline from './Timeline'
 
 /**
- * What the preview shows: the machine, with the lights and the displays that have a place on it, the strip of the
- * `Sequence` layers, which is where their handles are, or one display on its own
+ * What the preview shows: the machine, with the camera on one of its planes, the strip of the `Sequence` layers, which
+ * is where their handles are, or one display on its own. It's also where the tools add a layer. `Machine` is the
+ * machine with no plane, for one that has none.
  */
-type View = 'Machine' | 'Strip' | `Display:${string}`
+type View = 'Machine' | `Plane:${string}` | 'Strip' | `Display:${string}`
 
 /** The display a view is of, which is `null` for the machine and the strip */
 const viewDisplay = (view: View) => (view.startsWith('Display:') ? view.slice('Display:'.length) : null)
+/** The plane a view is of, which is `null` for the others */
+const viewPlane = (view: View) => (view.startsWith('Plane:') ? view.slice('Plane:'.length) : null)
+/** The color of the layers a view shows */
+const viewColor = (view: View): LayerColor => (viewDisplay(view) === null ? 'lights' : 'display')
 
 /** The fewest pixels tall a line is drawn, as one row of points would otherwise be a sliver */
 const MIN_DRAWN_HEIGHT = 32
@@ -70,12 +83,6 @@ function writeSnap(snap: Snap) {
     // storage can be unavailable (private windows); snapping still works for this session
   }
 }
-
-/** Where a reference scene is drawn, over the scene being edited or under it */
-const REFERENCE_PLACES = ['Above', 'Below'] as const
-
-/** The option for drawing the scene alone */
-const NO_REFERENCE = ''
 
 /** The scene each scene is shown with, by the name of the one being edited */
 const REFERENCE_KEY = 'frontbox-console.scene-references'
@@ -137,15 +144,17 @@ export default function SceneEditor(props: {
   const [name, setName] = createSignal(props.name)
   // the file as it's last known to be on the machine
   const [saved, setSaved] = createSignal(props.source)
-  const [fileWork, setFileWork] = createSignal<'saving' | 'deleting' | null>(null)
+  const [fileWork, setFileWork] = createSignal<'saving' | null>(null)
   const [fileError, setFileError] = createSignal<string | null>(null)
-  const [confirming, setConfirming] = createSignal<'close' | 'reset' | 'delete' | null>(null)
+  const [confirming, setConfirming] = createSignal<'close' | 'reset' | null>(null)
   const [lights, setLights] = createSignal(32)
   const [width, setWidth] = createSignal(128)
   const [height, setHeight] = createSignal(32)
   const [chosenView, setView] = createSignal<View>('Machine')
-  // another scene drawn with this one, to see how the two look together. Only this one's layers can be selected.
-  const [reference, setReferenceState] = createSignal<ReferenceScene | null>(readReferences()[props.name] ?? null)
+  // another scene drawn with this one, to see how the two look together. Only this one's layers can be selected. One
+  // stored before z stacked them can have more than its name.
+  const stored = readReferences()[props.name]
+  const [reference, setReferenceState] = createSignal<ReferenceScene | null>(stored ? { name: stored.name } : null)
   const setReference = (next: ReferenceScene | null) => {
     setReferenceState(next)
     writeReference(name(), next)
@@ -156,13 +165,8 @@ export default function SceneEditor(props: {
     writeSnap(snap())
   }
   const selection = createSignal<Selection | null>({ layer: 0, mask: false })
-  // the node selected in the config tree, by id, which says what the handles are for
-  const [treeNode, setTreeNode] = createSignal<string | null>(null)
-  // the source panel shows the scene as a tree, or as RON
+  // the sidebar shows the selected node's properties, or the scene as RON
   const [showingCode, setShowingCode] = createSignal(false)
-  // where the config tree puts its own buttons, at the end of its section's header
-  const [treeTools, setTreeTools] = createSignal<HTMLElement>()
-  const revealing = createSignal<Prop<SceneValue> | null>(null)
   // what's on show, which stays put while the source doesn't parse
   const [drawn, setDrawn] = createSignal<RenderedScene | null>(null)
 
@@ -283,18 +287,46 @@ export default function SceneEditor(props: {
     heard = { cycle, position }
   })
 
+  // what the scene was before each edit, to undo
+  const history = createHistory<Scene>()
+
+  /** Shows a scene and has the machine draw it, without it being an edit to undo */
+  const apply = (next: Scene) => {
+    setScene(next)
+    send(sceneSource(next))
+  }
+
   const editing: Lens<Scene> = {
     get: () => scene()!,
     set: (next) => {
-      const edited = withoutDroppedTiming(scene()!, withoutDroppedVariables(scene()!, next))
-      setScene(edited)
-      send(sceneSource(edited))
+      const current = scene()!
+      history.record(current)
+      apply(withoutDroppedTiming(current, withoutDroppedVariables(current, next)))
     },
   }
 
+  const undo = () => {
+    const current = scene()
+    const before = current && history.undo(current)
+    if (before) apply(before)
+  }
+  const redo = () => {
+    const current = scene()
+    const after = current && history.redo(current)
+    if (after) apply(after)
+  }
+
+  // a light layer from before layers started on every light has none, which the game can't play, so it's given every
+  // light. That's how the file is read rather than an edit, so it isn't one to undo.
+  createEffect(() => {
+    const current = scene()
+    if (current === null || current.layers.every((layer) => layer.display !== undefined || layer.lights !== undefined)) return
+    apply({ ...current, layers: current.layers.map((layer) => (layer.display === undefined && layer.lights === undefined ? { ...layer, lights: 'Every' } : layer)) })
+  })
+
   const unsaved = () => ron() !== saved()
 
-  const workOnFile = async (work: 'saving' | 'deleting', action: () => Promise<void>) => {
+  const workOnFile = async (work: 'saving', action: () => Promise<void>) => {
     if (fileWork()) return
     setFileWork(work)
     setFileError(null)
@@ -327,20 +359,13 @@ export default function SceneEditor(props: {
 
   /** Goes back to the file. What's selected may not be there anymore. */
   const reset = () => {
+    history.clear()
     batch(() => {
       setConfirming(null)
       selection[1]({ layer: 0, mask: false })
       setRon(saved())
     })
     send({ Ron: saved() })
-  }
-
-  const remove = () => {
-    setConfirming(null)
-    workOnFile('deleting', async () => {
-      await deleteContentScene(name())
-      leave()
-    })
   }
 
   /** Leaves at once, unsaved changes or not */
@@ -362,12 +387,27 @@ export default function SceneEditor(props: {
       if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault()
         save()
+      } else if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key.toLowerCase() === 'z' || e.key.toLowerCase() === 'y') && !typingIn(e.target)) {
+        // a field being typed in undoes its own typing
+        e.preventDefault()
+        if (e.key.toLowerCase() === 'y' || e.shiftKey) redo()
+        else undo()
       } else if (e.key === ' ' && !e.ctrlKey && !e.metaKey && !e.altKey && !typingIn(e.target)) {
         // taken from a focused button too, which would otherwise be pressed
         e.preventDefault()
         if (e.repeat) return
         if (playback.playing()) playback.stop()
         else if (scene()?.timing) playback.play()
+      } else if (e.key === 'Delete' && !typingIn(e.target) && !(e.target instanceof Element && e.target.closest('[role="dialog"]'))) {
+        if (removeSelected()) e.preventDefault()
+      } else if (e.key.toLowerCase() === 'k' && !e.ctrlKey && !e.metaKey && !e.altKey && !typingIn(e.target)) {
+        if (keyAtPlayhead()) e.preventDefault()
+      } else if (e.key === 'Escape' && !typingIn(e.target) && drawing() === null && !(e.target instanceof Element && e.target.closest('[role="dialog"], [role="menu"]'))) {
+        // a click where there's no shape can select a layer under it that covers everything, so this is how to select nothing
+        if (tree.selected() !== null) {
+          e.preventDefault()
+          tree.select(null)
+        }
       }
     }
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -401,16 +441,45 @@ export default function SceneEditor(props: {
     return [...new Set([...machine.displays.map((display) => display.name), ...named, ...drawnOn])]
   }
   const hasStrip = () => scene()?.layers.some((layer) => layer.display === undefined && layer.surface === 'Sequence') ?? false
-  const views = (): { value: View; label: string }[] => [
-    { value: 'Machine', label: 'Machine' },
-    ...(hasStrip() ? [{ value: 'Strip' as const, label: 'Strip' }] : []),
-    ...displays().map((display) => ({ value: `Display:${display}` as const, label: display })),
-  ]
-  /** What's on show, which is the machine once what was chosen isn't there to show */
-  const view = (): View => (views().some(({ value }) => value === chosenView()) ? chosenView() : 'Machine')
-  const onMachine = () => view() === 'Machine'
 
-  // the view goes to where the open layer draws. A sequence is on the machine too, so it stays on the strip if it's there.
+  // a plane with no extent has no size to give a layer
+  const planes = () => machine.planes.filter((plane) => plane.extent[0] > 0 && plane.extent[1] > 0)
+  const planeOf = (layer: SceneLayer | undefined) => planes().find(({ name }) => layer !== undefined && name === layerPlane(layer)) ?? null
+
+  /** How many of the machine's lights are on each plane, by its name */
+  const lightsOnPlanes = createMemo(() => {
+    const positions = Object.values(machine.hardware?.lights.by_name ?? {}).flatMap(({ location }) => (location ? [location] : []))
+    return new Map(planes().map((plane) => [plane.name, countOnPlane(plane, positions)]))
+  })
+
+  /**
+   * The plane to show when none is chosen: that of the scene's last layer on one the machine has, or else the one with
+   * the most lights, which is where a scene most likely goes. The largest wins a tie, such as a machine with no lights placed.
+   */
+  const defaultPlane = () => {
+    const names = planes().map(({ name }) => name)
+    const last = scene()?.layers.map(layerPlane).findLast((name) => name !== null && names.includes(name))
+    if (last) return last
+    const lights = (name: string) => lightsOnPlanes().get(name) ?? 0
+    const area = ({ extent }: { extent: [number, number] }) => extent[0] * extent[1]
+    const [likeliest] = [...planes()].sort((a, b) => lights(b.name) - lights(a.name) || area(b) - area(a))
+    return likeliest?.name ?? null
+  }
+  const defaultView = (): View => (defaultPlane() === null ? 'Machine' : `Plane:${defaultPlane()}`)
+
+  /** What the preview can show, grouped by planes, displays, and the strip */
+  const views = (): { value: View; label: string; group?: string; color?: LayerColor }[] =>
+    [
+      ...(planes().length === 0 ? [{ value: 'Machine' as const, label: 'Machine', group: 'Planes' }] : planes().map(({ name }) => ({ value: `Plane:${name}` as const, label: name, group: 'Planes' }))),
+      ...displays().map((display) => ({ value: `Display:${display}` as const, label: display, group: 'Displays' })),
+      ...(hasStrip() ? [{ value: 'Strip' as const, label: 'Sequence strip', group: 'Sequences' }] : []),
+    ].map((option) => ({ ...option, color: viewColor(option.value) }))
+  /** What's on show, which is the default plane once what was chosen isn't there to show */
+  const view = (): View => (views().some(({ value }) => value === chosenView()) ? chosenView() : defaultView())
+  const onMachine = () => view() === 'Machine' || viewPlane(view()) !== null
+
+  // the view goes to where the open layer draws. A sequence is on every plane, so it leaves the view alone unless it's
+  // on a display.
   createEffect(
     on(
       () => shownLayer() && layerPlace(shownLayer()!),
@@ -418,15 +487,65 @@ export default function SceneEditor(props: {
         if (place === undefined) return
         const display = placeDisplay(place)
         if (display !== null) setView(`Display:${display}`)
-        else if (place !== 'Sequence' || untrack(view) !== 'Strip') setView('Machine')
+        else if (place !== 'Sequence') setView(`Plane:${place.slice('Area:'.length)}`)
+        else if (viewDisplay(untrack(view)) !== null) setView(defaultView())
       },
     ),
   )
 
-  // a plane with no extent has no size to give a layer
-  const planes = () => machine.planes.filter((plane) => plane.extent[0] > 0 && plane.extent[1] > 0)
-  const planeOf = (layer: SceneLayer | undefined) => planes().find(({ name }) => layer !== undefined && name === layerPlane(layer)) ?? null
-  const plane = () => planeOf(shownLayer())
+  // a press of Reset view, which puts the camera back to how it first looks at the plane on show
+  const [refocus, setRefocus] = createSignal(0)
+  // the angle the camera looks at a plane from, which stays for the planes after it
+  const [viewAngle, setViewAngle] = createSignal<ViewAngle>({ tilt: 30, turn: 0 })
+
+  /** The plane on show, if it's one the machine has */
+  const plane = () => planes().find(({ name }) => name === viewPlane(view())) ?? null
+
+  /**
+   * Where a layer from the tools goes: on the plane or display on show. With neither, `reason` says why there's
+   * nowhere.
+   */
+  const newLayerAt = (): { place: LayerPlace | null; reason: string | null } => {
+    const shown = view()
+    const display = viewDisplay(shown)
+    if (display !== null) return { place: `Display:${display}`, reason: null }
+    const on = viewPlane(shown)
+    if (on !== null) return { place: `Area:${on}`, reason: null }
+    if (shown === 'Strip') return { place: null, reason: 'Choose a plane or a display to add a layer there' }
+    return { place: null, reason: 'The machine has no planes to draw on. Choose a display to add a layer there.' }
+  }
+
+  // a shape or text being drawn on the preview, which goes once it's drawn or there's nowhere to draw it
+  const [drawing, setDrawing] = createSignal<DrawnTool | null>(null)
+  createEffect(() => {
+    if (newLayerAt().place === null || playback.playing()) setDrawing(null)
+  })
+  const finishDrawing = (drawn: DrawnBox | DrawnPoints) => {
+    const tool = drawing()
+    const place = newLayerAt().place
+    setDrawing(null)
+    if (!tool || !place) return
+    tree.addLayer(drawnLayer(tool, editing.get(), place, layerSurface, drawn))
+    // new text is typed straight away, over the box it was drawn as
+    if (tool === 'Text') editText(editing.get().layers.length - 1)
+  }
+
+  // a text layer whose words are being typed over in the preview, and what they were, to put back
+  const [editingText, setEditingText] = createSignal<{ index: number; was: string } | null>(null)
+  const editText = (index: number) => {
+    const was = editableText(editing.get(), editing.get().layers[index])
+    if (was === null) return
+    selection[1]({ layer: index, mask: false })
+    setEditingText({ index, was })
+  }
+  const finishText = (keep: boolean) => {
+    const edit = editingText()
+    setEditingText(null)
+    if (edit && !keep) editing.set(withText(editing.get(), edit.index, edit.was))
+  }
+  createEffect(() => {
+    if (playback.playing()) setEditingText(null)
+  })
 
   /** The size the editor previews a display at when the machine doesn't have it, and an area on a plane it doesn't have */
   const ownSize = (): Vec2 => [Math.max(width(), 1), Math.max(height(), 1)]
@@ -443,11 +562,69 @@ export default function SceneEditor(props: {
     return planeOf(layer)?.extent ?? ownSize()
   }
 
+  // the tree on the timeline and the properties panel share what's selected, which also says what the handles are for
+  const nodes = createMemo(() => (scene() === null ? [] : configNodes(editing, layerSurface)))
+  const tree = createConfigTree(editing, nodes, selection)
+
+  // right-clicking a layer, in the preview or on the timeline
+  const layerMenu = createLayerMenu(tree, {
+    scene: () => editing.get(),
+    editing,
+    color: (id) => {
+      if (id.startsWith('sounds/')) return 'sound'
+      const layer = scene()?.layers[Number(id.split('/')[1])]
+      return layer && layerColor(layer)
+    },
+    canEditText: (index) => editableText(editing.get(), editing.get().layers[index]) !== null,
+    editText: (index) => editText(index),
+  })
+
+  /**
+   * Takes out what's selected, as its Remove button would: a layer, a sound, or anything else in a list, or a mask.
+   * Returns whether there was something to take out.
+   */
+  const removeSelected = () => {
+    const id = tree.selected()
+    const node = id === null ? undefined : tree.find(id)
+    if (!node) return false
+    const mask = is(node, 'mask')
+    if (mask) {
+      if (mask.lens.get() === undefined) return false
+      // what's selected moves to the layer the mask was on
+      batch(() => {
+        mask.lens.set(undefined)
+        tree.select(node.id.slice(0, node.id.lastIndexOf('/')))
+      })
+      return true
+    }
+    if (!node.place || node.place.canRemove === false) return false
+    tree.remove(node.place)
+    return true
+  }
+
+  /**
+   * Adds a key at the playhead to the selected prop, if it's keyframed, or a pick there if it's random, as the button in
+   * its lane would. Returns whether there was one to add to.
+   */
+  const keyAtPlayhead = () => {
+    const id = tree.selected()
+    const node = id === null ? undefined : tree.find(id)
+    const prop = node && is(node, 'prop')
+    if (!prop || !scene()?.timing) return false
+    const at = snapTime(playback.position())
+    const current = prop.lens.get()
+    if ('Keyframes' in current) prop.lens.set({ Keyframes: withKey(current.Keyframes, at) })
+    else if ('Random' in current) prop.lens.set({ Random: withPick(current.Random, at) })
+    else return false
+    return true
+  }
+
   /** Whether a layer is on what's on show, as those are the ones a click there can reach and have handles there */
   const onView = (layer: SceneLayer) => {
     const shown = view()
     if (shown === 'Strip') return layer.display === undefined && layer.surface === 'Sequence'
-    if (shown === 'Machine') return layer.display === undefined && layer.surface !== 'Sequence' && JSON.stringify(layer.surface) === JSON.stringify(shownLayer()?.surface)
+    if (shown === 'Machine') return false
+    if (viewPlane(shown) !== null) return layer.display === undefined && layerPlane(layer) === viewPlane(shown)
     return layer.display === viewDisplay(shown)
   }
 
@@ -526,10 +703,10 @@ export default function SceneEditor(props: {
     if (open === null || !rendered || !openShown()) return null
     return (open.mask ? rendered.mask_shapes : rendered.shapes)[open.layer] ?? null
   }
-  /** Which of the selected shape's transforms is being edited in the config tree, if any */
+  /** Which of the selected shape's transforms is selected in the tree, if any */
   const editedTransform = () => {
     const open = selected()
-    return open && openTransform(treeNode(), open)
+    return open && openTransform(tree.selected(), open)
   }
   const hasShape = (open: Selection | null) => open !== null && selectedShape(scene(), open) !== undefined
 
@@ -548,27 +725,53 @@ export default function SceneEditor(props: {
       nodePicking.choosing[1](null)
       return
     }
-    const under = point && layerUnder(scene()!, drawn()!.outlines, point, onView)
+    const under = point && layerUnder(scene()!, drawn()!.outlines, point, onView, layerSurface)
     if (under !== null) setOpen({ layer: under, mask: false })
     else if (hasShape(open())) setOpen(null)
   }
 
-  /** Brings a track's field up in the config, from wherever that's been left */
-  const reveal = ({ prop, layer, mask }: SceneTrack) => {
-    batch(() => {
-      setShowingCode(false)
-      // a sound layer is always open
-      if (layer !== null) selection[1]({ layer, mask })
-      revealing[1](prop.get())
-    })
+  /** Opens the menu of the layer at a point in the preview, at the pointer, if there's one there */
+  const openMenuAt = (point: Vec2 | null, x: number, y: number) => {
+    if (playback.playing() || error() !== null || !drawn() || !point) return
+    const under = layerUnder(scene()!, drawn()!.outlines, point, onView, layerSurface)
+    if (under !== null) layerMenu.open(selectionNode({ layer: under, mask: false }), x, y)
   }
 
-  /** Brings a layer up in the config, as for a traversal, which is under its graph */
-  const openLayer = (layer: number) => {
-    batch(() => {
-      setShowingCode(false)
-      selection[1]({ layer, mask: false })
-    })
+  /** Opens the open layer's menu for a right-click on one of its handles, which are over the preview. Returns whether it was on one. */
+  const handleMenu = (e: MouseEvent) => {
+    const open = selected()
+    if (!(e.target instanceof Element && e.target.closest('.scene-handles')) || open === null) return false
+    e.preventDefault()
+    if (!playback.playing()) layerMenu.open(selectionNode({ layer: open.layer, mask: false }), e.clientX, e.clientY)
+    return true
+  }
+
+  // the layer a click in the preview would select, which is outlined while the pointer is over it
+  const [hovered, setHovered] = createSignal<number | null>(null)
+  /** Notes the layer under a point in the preview, other than the open one. Returns whether there is one, to click on. */
+  const hoverAt = (point: Vec2 | null) => {
+    const ready = point !== null && !playback.playing() && error() === null && drawn() && drawing() === null && nodePicking.choosing[0]() === null
+    const under = ready ? layerUnder(scene()!, drawn()!.outlines, point, onView, layerSurface) : null
+    const open = selected()
+    setHovered(under !== null && !(open?.layer === under && !open.mask) ? under : null)
+    return hovered() !== null
+  }
+  /** A layer's outline in the preview: its shape's, or the edge of what it's on for one that covers all of it */
+  const outlineOf = (index: number) => {
+    const layer = scene()?.layers[index]
+    if (!layer) return null
+    const full = fullOutline(layer, layerSurface(layer))
+    return { outlines: full ? [full] : (drawn()?.outlines[index] ?? []), color: layerColor(layer) }
+  }
+  const hoveredLayer = () => {
+    const index = hovered()
+    return index === null ? null : outlineOf(index)
+  }
+  // a layer that covers all of what it's on has no handles, so it's outlined to show it's the one selected
+  const selectedFull = () => {
+    const open = selected()
+    const layer = open && !open.mask ? scene()?.layers[open.layer] : undefined
+    return layer && fullOutline(layer, layerSurface(layer)) ? outlineOf(open!.layer) : null
   }
 
   /** The open layer's graph. Left out while playing, as its outline is. */
@@ -576,6 +779,9 @@ export default function SceneEditor(props: {
     const open = selected()
     return open === null ? null : (drawn()?.graphs[open.layer] ?? null)
   }
+
+  // what a click on a light in the preview does while lights are being chosen by clicking them
+  const lightClicking = createSignal<((name: string) => void) | null>(null)
 
   const nodePicking: NodePicking = {
     nodes: () => selectedGraph()?.names ?? [],
@@ -586,7 +792,8 @@ export default function SceneEditor(props: {
   // a choice is for the layer it started in
   createEffect(on(() => selection[0]()?.layer, () => nodePicking.choosing[1](null), { defer: true }))
 
-  const handles = (space: PreviewSpace) => (
+  /** What goes over the preview: the open layer's handles, or what draws a shape while one's being drawn there */
+  const handles = (space: PreviewSpace, shown: () => boolean) => (
     <>
       <GraphOverlay
         space={space}
@@ -596,7 +803,34 @@ export default function SceneEditor(props: {
         highlighted={nodePicking.highlighted[0]()}
         choosing={nodePicking.choosing[0]() !== null}
       />
+      <Show when={shown() && hoveredLayer()}>{(layer) => <HoverOutline space={space} outlines={layer().outlines} color={layer().color} />}</Show>
+      <Show when={shown() && selectedFull()}>{(layer) => <HoverOutline selected space={space} outlines={layer().outlines} color={layer().color} />}</Show>
+      {/* up once the text's box has been drawn, and kept up as it's redrawn with each word typed */}
+      <Show when={shown() ? editingText() : null} keyed>
+        {(edit) => (
+          <Show when={(drawn()?.outlines[edit.index]?.length ?? 0) > 0}>
+            <TextEditor
+              space={space}
+              outlines={drawn()?.outlines[edit.index] ?? []}
+              color={viewColor(view())}
+              text={edit.was}
+              onInput={(words) => editing.set(withText(editing.get(), edit.index, words))}
+              onDone={finishText}
+            />
+          </Show>
+        )}
+      </Show>
       <ShapeHandles space={space} selection={selected()} pose={selectedPose()} outlines={outline()} time={playback.position()} grid={snap().on ? snap().size : null} openTransform={editedTransform()} />
+      <Show when={shown() && drawing()}>
+        {(tool) => (
+          <Show
+            when={tool() === 'Polygon'}
+            fallback={<ShapeDrawing space={space} aspect={drawnAspect(tool())} color={viewColor(view())} onDrawn={finishDrawing} onCancel={() => setDrawing(null)} />}
+          >
+            <PolygonDrawing space={space} color={viewColor(view())} onDrawn={finishDrawing} onCancel={() => setDrawing(null)} />
+          </Show>
+        )}
+      </Show>
     </>
   )
 
@@ -613,15 +847,25 @@ export default function SceneEditor(props: {
     return Math.max(width, 1) / Math.max(height, 1)
   }
 
-  /** The canvas is the part of the scene the machine rendered, stretched over it */
+  /** The part of the scene the canvas shows: what the machine rendered, or all of a display nothing draws on yet */
+  const shownArea = () => {
+    const area = shownCanvas()?.area
+    if (area) return area
+    const display = viewDisplay(view())
+    if (display === null) return null
+    const [width, height] = displaySize(display)
+    return { x: 0, y: 0, width, height }
+  }
+
+  /** The canvas is the part of the scene it shows, stretched over it */
   const screenSpace: PreviewSpace = {
     project([x, y]) {
-      const area = shownCanvas()?.area
+      const area = shownArea()
       const [width, height] = screenSize()
       return area ? [((x - area.x) / area.width) * width, ((y - area.y) / area.height) * height] : null
     },
     unproject(clientX, clientY) {
-      const area = shownCanvas()?.area
+      const area = shownArea()
       const { left, top, width, height } = canvas.getBoundingClientRect()
       return area ? [area.x + ((clientX - left) / width) * area.width, area.y + ((clientY - top) / height) * area.height] : null
     },
@@ -643,156 +887,181 @@ export default function SceneEditor(props: {
 
   return (
     <SceneContext.Provider value={editing}>
+      <LightClickingContext.Provider value={lightClicking}>
       <NodePickingContext.Provider value={nodePicking}>
       <LayerSurfacesContext.Provider value={layerSurface}>
-        <RevealContext.Provider value={revealing}>
+        <ConfigTreeContext.Provider value={tree}>
+        <LayerMenuContext.Provider value={layerMenu}>
         <RegionVisibilityContext.Provider value={regionVisibility}>
         <ShapePosesContext.Provider value={shapePoses}>
         <div class="scene-editor" ref={root}>
-        <header class="scene-file">
-          <button type="button" class="scene-button" onClick={close}>
-            ← Scenes
-          </button>
-          <span class="scene-file-name" title={name()}>
-            {name()}
-          </span>
-          <div class="scene-file-actions">
-            <button type="button" class="scene-button" disabled={!unsaved() || fileWork() !== null} onClick={save}>
-              {fileWork() === 'saving' ? 'Saving…' : 'Save'}
+        <HeaderTakeover tab="scenes">
+          <div class="scene-file-header">
+            <button type="button" class="scene-button" onClick={close}>
+              ← Scenes
             </button>
-            <SceneNameButton label="Save as" title="Save scene as" action="Save" acting="Saving…" name={name()} disabled={fileWork() !== null} onName={saveAs} />
-            <button type="button" class="scene-button" disabled={!unsaved() || fileWork() !== null} onClick={() => setConfirming('reset')}>
-              Reset
-            </button>
-            <button type="button" class="scene-button" disabled={fileWork() !== null} onClick={() => setConfirming('delete')}>
-              {fileWork() === 'deleting' ? 'Deleting…' : 'Delete'}
-            </button>
-          </div>
-          <Show when={unsaved()}>
-            <span class="scene-note">Unsaved changes</span>
-          </Show>
-          <Show when={fileError()}>{(text) => <span class="scene-note scene-note-warn">{text()}</span>}</Show>
-          <Show when={drawn()?.reference_error}>{(text) => <span class="scene-note scene-note-warn">{text()}</span>}</Show>
-          <div class="scene-file-view">
-            <div class="scene-reference" title="Another scene drawn with this one, to see how the two look together. Only this scene's layers can be selected.">
-              <span>Show with</span>
-              <Dropdown
-                compact
-                label="Scene to show with this one"
-                options={[{ value: NO_REFERENCE, label: 'Nothing' }, ...contentScenes().filter((scene) => scene !== name()).map((scene) => ({ value: scene, label: scene }))]}
-                value={reference()?.name ?? NO_REFERENCE}
-                onChange={(chosen) => setReference(chosen === NO_REFERENCE ? null : { name: chosen, above: reference()?.above ?? true })}
-              />
-              <Show when={reference()}>
-                {(shown) => (
-                  <SegmentGroup.Root
-                    class="scene-prop-kind scene-view"
-                    aria-label="Where the other scene is drawn"
-                    value={shown().above ? 'Above' : 'Below'}
-                    onValueChange={(details) => setReference({ ...shown(), above: details.value === 'Above' })}
-                  >
-                    <SegmentGroup.Indicator />
-                    <For each={REFERENCE_PLACES}>
-                      {(option) => (
-                        <SegmentGroup.Item value={option}>
-                          <SegmentGroup.ItemText>{option}</SegmentGroup.ItemText>
-                          <SegmentGroup.ItemControl />
-                          <SegmentGroup.ItemHiddenInput />
-                        </SegmentGroup.Item>
-                      )}
-                    </For>
-                  </SegmentGroup.Root>
-                )}
-              </Show>
+            <span class="scene-file-name" title={name()}>
+              {name()}
+            </span>
+            <div class="scene-file-actions">
+              <button type="button" class="scene-icon-button scene-history-button" aria-label="Undo" title={`Undo (${MOD}+Z)`} disabled={!history.canUndo()} onClick={undo}>
+                <icons.Undo2 aria-hidden="true" />
+              </button>
+              <button type="button" class="scene-icon-button scene-history-button" aria-label="Redo" title={`Redo (${MOD}+Shift+Z)`} disabled={!history.canRedo()} onClick={redo}>
+                <icons.Redo2 aria-hidden="true" />
+              </button>
+              <button type="button" class="scene-button" disabled={!unsaved() || fileWork() !== null} onClick={save}>
+                {fileWork() === 'saving' ? 'Saving…' : 'Save'}
+              </button>
+              <SceneNameButton label="Save as" title="Save scene as" action="Save" acting="Saving…" name={name()} disabled={fileWork() !== null} onName={saveAs} />
+              <button type="button" class="scene-button" disabled={!unsaved() || fileWork() !== null} onClick={() => setConfirming('reset')}>
+                Reset
+              </button>
             </div>
-            <div class="scene-snap" title="Snaps the points of a polygon, route or bezier, and how far a shape is moved, to a grid in the shape's own units as they're dragged">
-              <Checkbox.Root checked={snap().on} onCheckedChange={(details) => setSnap({ on: details.checked === true })}>
-                <Checkbox.Control>
-                  <Checkbox.Indicator>✓</Checkbox.Indicator>
-                </Checkbox.Control>
-                <Checkbox.Label>Snap to grid</Checkbox.Label>
-                <Checkbox.HiddenInput />
-              </Checkbox.Root>
-              <NumberBox
-                min="0.001"
-                step="any"
-                aria-label="Grid size"
-                disabled={!snap().on}
-                value={snap().size}
-                onNumber={(size) => size > 0 && setSnap({ size })}
-              />
-            </div>
-            <Show when={onMachine() && !isSequence() && shownLayer()?.display === undefined && planes().length === 0}>
-              <span class="scene-note">The machine has no planes</span>
+            <Show when={unsaved()}>
+              <span class="scene-note">Unsaved changes</span>
             </Show>
-            <Show when={onMachine() && isSequence() && hasShape(selection[0]())}>
-              <span class="scene-note">A sequence has no place on the machine, so its handles are on the strip</span>
-            </Show>
-            <Show when={view() === 'Strip'}>
-              <NumberBox min="1" aria-label="Number of lights" value={lights()} onNumber={setLights} />
-            </Show>
-            <Show when={viewDisplay(view()) !== null && !machineHasDisplay(viewDisplay(view())!)}>
-              <span class="scene-note" title="The machine has no display by this name, so it's previewed at this size">
-                Not on the machine
-              </span>
-              <NumberBox min="1" aria-label="Width" value={width()} onNumber={setWidth} />
-              <span>×</span>
-              <NumberBox min="1" aria-label="Height" value={height()} onNumber={setHeight} />
-            </Show>
-            <Show when={views().length > 1}>
-              <SegmentGroup.Root class="scene-prop-kind scene-view" aria-label="Preview" value={view()} onValueChange={(details) => setView(details.value as View)}>
-                <SegmentGroup.Indicator />
-                <For each={views()}>
-                  {(option) => (
-                    <SegmentGroup.Item value={option.value}>
-                      <SegmentGroup.ItemText>{option.label}</SegmentGroup.ItemText>
-                      <SegmentGroup.ItemControl />
-                      <SegmentGroup.ItemHiddenInput />
-                    </SegmentGroup.Item>
-                  )}
-                </For>
-              </SegmentGroup.Root>
-            </Show>
+            <Show when={fileError()}>{(text) => <span class="scene-note scene-note-warn">{text()}</span>}</Show>
+            <ShortcutsButton />
           </div>
-        </header>
+        </HeaderTakeover>
         <Splitter.Root
           class="scenes-tab"
           orientation="vertical"
           panels={[
-            { id: 'workspace', minSize: 30 },
-            { id: 'timeline', minSize: 10 },
+            { id: 'top', minSize: 15 },
+            { id: 'timeline', minSize: 15 },
           ]}
-          defaultSize={[82, 18]}
+          defaultSize={[74, 26]}
         >
-          <Splitter.Panel id="workspace">
+          <Splitter.Panel id="top">
             <Splitter.Root
               panels={[
-                { id: 'source', minSize: 15 },
-                { id: 'output', minSize: 15 },
+                { id: 'preview', minSize: 40 },
+                { id: 'properties', minSize: 14 },
               ]}
-              defaultSize={[29, 71]}
+              defaultSize={[79, 21]}
             >
-              <Splitter.Panel id="source">
-                <div class="scene-source">
-                  <Show when={scene() !== null}>
-                    <div class="scene-lights">
-                      <LightsNote />
+              <Splitter.Panel id="preview" class="scene-output">
+                <Show when={scene() !== null}>
+                  <LayerTools place={newLayerAt().place} reason={newLayerAt().reason} drawing={drawing()} onDraw={setDrawing} />
+                </Show>
+                <div class="scene-output-main">
+                  {/* how the preview is shown, and how dragging its handles works */}
+                  <div class="scene-preview-bar">
+                    <div class="scene-snap" title="Snaps the points of a polygon, route or bezier, and how far a shape is moved, to a grid in the shape's own units as they're dragged">
+                      <Checkbox.Root checked={snap().on} onCheckedChange={(details) => setSnap({ on: details.checked === true })}>
+                        <Checkbox.Control>
+                          <Checkbox.Indicator>✓</Checkbox.Indicator>
+                        </Checkbox.Control>
+                        <Checkbox.Label>Snap to grid</Checkbox.Label>
+                        <Checkbox.HiddenInput />
+                      </Checkbox.Root>
+                      <NumberBox
+                        min="0.001"
+                        step="any"
+                        aria-label="Grid size"
+                        disabled={!snap().on}
+                        value={snap().size}
+                        onNumber={(size) => size > 0 && setSnap({ size })}
+                      />
                     </div>
-                  </Show>
+                    <Show when={onMachine() && !isSequence() && shownLayer()?.display === undefined && planes().length === 0}>
+                      <span class="scene-note">The machine has no planes</span>
+                    </Show>
+                    <Show when={onMachine() && isSequence() && hasShape(selection[0]())}>
+                      <span class="scene-note">A sequence has no place on the machine, so its handles are on the strip</span>
+                    </Show>
+                    <Show when={view() === 'Strip'}>
+                      <NumberBox min="1" aria-label="Number of lights" value={lights()} onNumber={setLights} />
+                    </Show>
+                    <Show when={viewDisplay(view()) !== null && !machineHasDisplay(viewDisplay(view())!)}>
+                      <span class="scene-note" title="The machine has no display by this name, so it's previewed at this size">
+                        Not on the machine
+                      </span>
+                      <NumberBox min="1" aria-label="Width" value={width()} onNumber={setWidth} />
+                      <span>×</span>
+                      <NumberBox min="1" aria-label="Height" value={height()} onNumber={setHeight} />
+                    </Show>
+                    {/* what's on show, which is also where the tools add a layer */}
+                    <div class={`scene-view ${layerColorClass(viewColor(view()))}`}>
+                      <LayerColorContext.Provider value={viewColor(view())}>
+                        <Dropdown<View> label="Show and add layers to" options={views()} value={view()} onChange={setView} compact />
+                      </LayerColorContext.Provider>
+                    </div>
+                    <Show when={plane()}>
+                      <ViewAngleMenu
+                        angle={viewAngle()}
+                        onPick={(angle) => {
+                          setViewAngle(angle)
+                          setRefocus((count) => count + 1)
+                        }}
+                      />
+                    </Show>
+                  </div>
+                  <Show when={error()}>{(text) => <pre class="scene-error">{text()}</pre>}</Show>
+                  {/* both stay up, so the camera and the last render are still there on the way back */}
+                  <div class="scene-machine" classList={{ stale: error() !== null, 'scene-choosing-node': nodePicking.choosing[0]() !== null }} hidden={!onMachine()} onContextMenu={handleMenu}>
+                    <PlayfieldView
+                      ledColor={lightColor}
+                      displayFrame={previewDisplayFrame}
+                      plane={plane}
+                      focus={plane}
+                      refocus={refocus}
+                      focusAngle={viewAngle}
+                      outline={outline}
+                      onClickPlane={(point) => plane() && pick(point)}
+                      onContextPlane={(point, x, y) => plane() && openMenuAt(point, x, y)}
+                      onHoverPlane={(point) => plane() !== null && hoverAt(point)}
+                      choosingLights={() => lightClicking[0]() !== null}
+                      onClickLight={(name) => lightClicking[0]()?.(name)}
+                      overlay={(space) => <Show when={plane()}>{handles(space, onMachine)}</Show>}
+                    />
+                  </div>
+                  <div class="scene-dmd" classList={{ stale: error() !== null, 'scene-choosing-node': nodePicking.choosing[0]() !== null }} hidden={onMachine()}>
+                    <div
+                      class="scene-dmd-screen"
+                      classList={{ 'scene-pointing': !onMachine() && hovered() !== null }}
+                      onPointerMove={(e) => hoverAt(screenSpace.unproject(e.clientX, e.clientY))}
+                      onPointerLeave={() => setHovered(null)}
+                      onContextMenu={(e) => {
+                        e.preventDefault()
+                        if (!handleMenu(e)) openMenuAt(screenSpace.unproject(e.clientX, e.clientY), e.clientX, e.clientY)
+                      }}
+                      style={{ '--aspect': screenAspect(), 'min-height': `${view() === 'Strip' ? MIN_DRAWN_HEIGHT : 0}px` }}>
+                      <canvas ref={canvas} onClick={(e) => pick(screenSpace.unproject(e.clientX, e.clientY))} />
+                      <Show when={shownCanvas()?.area}>
+                        {(area) => (
+                          <svg viewBox={`${area().x} ${area().y} ${area().width} ${area().height}`} preserveAspectRatio="none" aria-hidden="true">
+                            <For each={outline()}>{(loop) => <polygon points={loop.join(' ')} />}</For>
+                          </svg>
+                        )}
+                      </Show>
+                      {handles(screenSpace, () => !onMachine())}
+                    </div>
+                  </div>
+                </div>
+              </Splitter.Panel>
+              <Splitter.ResizeTrigger id="preview:properties" aria-label="Resize properties" />
+              <Splitter.Panel id="properties">
+                <aside class="scene-source" aria-label={showingCode() ? 'Scene as RON' : 'Properties'}>
+                  {/* the RON is only shown for a file that can't be read, to fix it there, until it's back in the editor */}
+                  <Show when={showingCode()}>
                   <div class="scene-source-header">
-                    <span class="scene-tabs-end" ref={setTreeTools} hidden={showingCode()} />
+                    <span class="scene-source-title">RON</span>
                     <button
                       type="button"
                       class="scene-icon-button"
                       classList={{ active: showingCode() }}
-                      aria-label={showingCode() ? 'Show the tree' : 'Show the code'}
+                      aria-label={showingCode() ? 'Show the properties' : 'Show the code'}
                       aria-pressed={showingCode()}
-                      title={showingCode() ? 'Show the tree' : 'Show the scene as RON'}
+                      title={showingCode() ? 'Show the properties' : 'Show the scene as RON'}
                       onClick={() => setShowingCode(!showingCode())}
                     >
                       <icons.Code aria-hidden="true" />
                     </button>
                   </div>
+                  </Show>
                   <div class="scene-source-body">
                     <Show
                       when={!showingCode()}
@@ -816,48 +1085,37 @@ export default function SceneEditor(props: {
                       <Show when={scene() !== null}>
                         {/* an edit here would replace the RON with the last scene that could be read */}
                         <div class="scene-editing" inert={error() !== null}>
-                          <ConfigPanel selection={selection} toolbar={treeTools()} onSelect={setTreeNode} />
+                          <PropertiesPanel />
                         </div>
                       </Show>
                     </Show>
                   </div>
-                </div>
-              </Splitter.Panel>
-              <Splitter.ResizeTrigger id="source:output" aria-label="Resize scene source" />
-              <Splitter.Panel id="output" class="scene-output">
-                <Show when={error()}>{(text) => <pre class="scene-error">{text()}</pre>}</Show>
-                {/* both stay up, so the camera and the last render are still there on the way back */}
-                <div class="scene-machine" classList={{ stale: error() !== null, 'scene-choosing-node': nodePicking.choosing[0]() !== null }} hidden={!onMachine()}>
-                  <PlayfieldView
-                    ledColor={lightColor}
-                    displayFrame={previewDisplayFrame}
-                    plane={() => (isSequence() ? null : plane())}
-                    outline={outline}
-                    onClickPlane={(point) => !isSequence() && plane() && pick(point)}
-                    overlay={(space) => <Show when={!isSequence() && plane()}>{handles(space)}</Show>}
-                  />
-                </div>
-                <div class="scene-dmd" classList={{ stale: error() !== null, 'scene-choosing-node': nodePicking.choosing[0]() !== null }} hidden={onMachine()}>
-                  <div class="scene-dmd-screen" style={{ '--aspect': screenAspect(), 'min-height': `${view() === 'Strip' ? MIN_DRAWN_HEIGHT : 0}px` }}>
-                    <canvas ref={canvas} onClick={(e) => pick(screenSpace.unproject(e.clientX, e.clientY))} />
-                    <Show when={shownCanvas()?.area}>
-                      {(area) => (
-                        <svg viewBox={`${area().x} ${area().y} ${area().width} ${area().height}`} preserveAspectRatio="none" aria-hidden="true">
-                          <For each={outline()}>{(loop) => <polygon points={loop.join(' ')} />}</For>
-                        </svg>
-                      )}
-                    </Show>
-                    {handles(screenSpace)}
-                  </div>
-                </div>
+                </aside>
               </Splitter.Panel>
             </Splitter.Root>
           </Splitter.Panel>
-          <Splitter.ResizeTrigger id="workspace:timeline" aria-label="Resize timeline" />
+          <Splitter.ResizeTrigger id="top:timeline" aria-label="Resize timeline" />
           <Splitter.Panel id="timeline">
             <Show when={scene() !== null}>
               <div class="scene-editing" inert={error() !== null}>
-                <Timeline playback={playback} rendering={playback.playing() && sceneClipRendering()} error={sceneClipError()} graphs={drawn()?.graphs ?? []} reveal={reveal} openLayer={openLayer} />
+                <Timeline
+                  playback={playback}
+                  rendering={playback.playing() && sceneClipRendering()}
+                  error={sceneClipError()}
+                  graphs={drawn()?.graphs ?? []}
+                  preview={{
+                    get name() {
+                      return reference()?.name ?? null
+                    },
+                    get error() {
+                      return drawn()?.reference_error ?? null
+                    },
+                    get choices() {
+                      return contentScenes().filter((scene) => scene !== name())
+                    },
+                    set: (chosen) => setReference(chosen === null ? null : { name: chosen }),
+                  }}
+                />
               </div>
             </Show>
           </Splitter.Panel>
@@ -880,21 +1138,15 @@ export default function SceneEditor(props: {
           onCancel={() => setConfirming(null)}
           onConfirm={reset}
         />
-        <ConfirmDialog
-          open={confirming() === 'delete'}
-          title="Delete this scene?"
-          description={`${name()} will be removed from the machine's content folder. This can't be undone.`}
-          cancel="Keep editing"
-          action="Delete"
-          onCancel={() => setConfirming(null)}
-          onConfirm={remove}
-        />
         </div>
         </ShapePosesContext.Provider>
         </RegionVisibilityContext.Provider>
-        </RevealContext.Provider>
+        <layerMenu.View />
+        </LayerMenuContext.Provider>
+        </ConfigTreeContext.Provider>
       </LayerSurfacesContext.Provider>
       </NodePickingContext.Provider>
+      </LightClickingContext.Provider>
     </SceneContext.Provider>
   )
 }

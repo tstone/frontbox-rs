@@ -10,7 +10,10 @@
   --ok: #1a7f37;
   --warn: #b35900;
   --danger: #c62828;
-  --sound: #0b8ca6;
+  /* what a scene layer is for */
+  --lights: #2a8f84;
+  --display: #2f6fd6;
+  --sound: #b4359c;
 
   /* log categories */
   --cat-event: #8b3bff;
@@ -52,7 +55,9 @@
     --ok: #4ac26b;
     --warn: #e0a040;
     --danger: #ff6b6b;
-    --sound: #3cc6de;
+    --lights: #5fb3a8;
+    --display: #6b9fff;
+    --sound: #e47ad4;
 
     --cat-event: #b27bff;
     --cat-switch: #58a6ff;

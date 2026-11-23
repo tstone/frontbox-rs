@@ -3,7 +3,7 @@ import { machine } from '../../state/console'
 import type { LightQ } from '../../types/generated/LightQ'
 import LightPicker, { canPick, lightPick, lightsLabel, pickedQuery, type LightPick } from './LightPicker'
 import { SceneContext } from './SceneFields'
-import { layerPlace, lightsCase, type LayerPlace, type Lens, type Scene } from './sceneModel'
+import { lightsCase, type Lens, type Scene } from './sceneModel'
 
 // a layer with no lights yet says so in its own row
 const LIGHTS_NOTES = {
@@ -25,24 +25,6 @@ export function displayNames(scene: Scene) {
   const named = scene.layers.flatMap((layer) => (layer.display === undefined ? [] : [layer.display]))
   const names = [...new Set([...machine.displays.map((display) => display.name), ...named])]
   return names.length > 0 ? names : [DEFAULT_DISPLAY]
-}
-
-/** The kinds of place a new layer can go on, which pick a plane or display for it that "Draws on" can change */
-export type NewLayerPlace = 'Sequence' | 'Area' | 'Display'
-
-export const NEW_LAYER_OPTIONS: { value: NewLayerPlace; label: string }[] = [
-  { value: 'Sequence', label: 'Light sequence' },
-  { value: 'Area', label: 'Light area' },
-  { value: 'Display', label: 'Display' },
-]
-
-/** Where a new layer of a kind goes: the plane or display of the scene's last layer on one, or else the first there is */
-export function newPlace(scene: Scene, kind: NewLayerPlace): LayerPlace {
-  if (kind === 'Sequence') return 'Sequence'
-  const places = scene.layers.map(layerPlace)
-  const prefix = kind === 'Area' ? 'Area:' : 'Display:'
-  const first = kind === 'Area' ? `Area:${planeNames()[0]}` : `Display:${displayNames(scene)[0]}`
-  return places.findLast((place) => place.startsWith(prefix)) ?? (first as LayerPlace)
 }
 
 /** What code can do with a scene's lights, which comes of the lights its layers are on */

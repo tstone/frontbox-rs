@@ -136,8 +136,7 @@ const sameTarget = (a: ClipTarget, b: ClipTarget | null) =>
   a.size.lights === b.size.lights &&
   a.size.width === b.size.width &&
   a.size.height === b.size.height &&
-  a.reference?.name === b.reference?.name &&
-  a.reference?.above === b.reference?.above
+  a.reference?.name === b.reference?.name
 
 /**
  * Has the machine render these cycles of a scene, in order, and lets go of any others. Runs as `renderScene` does, one

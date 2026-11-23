@@ -1,8 +1,9 @@
 import { Match, Show, Switch, useContext } from 'solid-js'
+import * as icons from '../../components/icons'
 import type { NamedValue } from '../../types/generated/NamedValue'
 import type { Prop } from '../../types/generated/Prop'
 import { NumberBox, PropField, PropSource, SceneContext } from './SceneFields'
-import { both, field, UNREFERENCED, variant, withValueRenamed, type Lens, type NamedValueKind, type SceneValue } from './sceneModel'
+import { both, field, UNREFERENCED, variant, withoutValue, withValueRenamed, type Lens, type NamedValueKind, type SceneValue } from './sceneModel'
 
 /** What a prop of each kind of named value starts at with nothing to go on */
 const FALLBACKS: Record<DrawnKind, SceneValue> = { Color: [0, 0, 0, 0], Float: 0, Vec2: [0, 0], Bool: true }
@@ -34,6 +35,7 @@ export function ValueFields(props: { name: string }) {
   return (
     <>
       <div class="scene-prop-header scene-value-header">
+        <Show when={drawn()}>{(of) => <PropSource {...spec(of())} />}</Show>
         <input
           class="scene-variable-name"
           aria-label="Value name"
@@ -45,7 +47,9 @@ export function ValueFields(props: { name: string }) {
           }}
         />
         <span class="scene-field-label">{NAMED_VALUE_LABELS[kind()]}</span>
-        <Show when={drawn()}>{(of) => <PropSource {...spec(of())} />}</Show>
+        <button type="button" class="scene-icon-button" aria-label={`Remove value ${props.name}`} title="Remove" onClick={() => scene.set(withoutValue(scene.get(), props.name))}>
+          <icons.X aria-hidden="true" />
+        </button>
       </div>
       <Switch>
         <Match when={kind() === 'Int'}>

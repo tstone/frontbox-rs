@@ -1,7 +1,7 @@
 import { Checkbox } from '@ark-ui/solid/checkbox'
 import { Popover } from '@ark-ui/solid/popover'
 import { SegmentGroup } from '@ark-ui/solid/segment-group'
-import { createMemo, createSignal, For, Index, Show } from 'solid-js'
+import { createContext, createEffect, createMemo, createSignal, For, Index, onCleanup, Show, useContext, type Signal } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import { ledIndex, ledName, ledStrip } from '../../lib/format'
 import { machine } from '../../state/console'
@@ -11,6 +11,9 @@ import { byName } from '../machine/hardware'
 import { moved, removed } from './sceneModel'
 
 const PICK_KINDS = ['Every', 'By name', 'By tag'] as const
+
+/** What a click on one of the preview's lights does while lights are being chosen by clicking them, `null` otherwise */
+export const LightClickingContext = createContext<Signal<((name: string) => void) | null>>()
 
 /** What's been picked each way is held while another way is in use, to come back to */
 export type LightPick = { kind: (typeof PICK_KINDS)[number]; names: string[]; tags: string[] }
@@ -66,6 +69,9 @@ export function lightsLabel(query: LightQ): string {
  */
 export default function LightPicker(props: { pick: LightPick; onChange: (pick: LightPick) => void }) {
   const [filter, setFilter] = createSignal('')
+  // while on, a click on a light in the preview ticks it, or unticks it, at the end of the order
+  const [clicking, setClicking] = createSignal(false)
+  const preview = useContext(LightClickingContext)
   const search = () => filter().trim().toLowerCase()
   const matches = (name: string) => ledName(name).toLowerCase().includes(search())
 
@@ -85,6 +91,13 @@ export default function LightPicker(props: { pick: LightPick; onChange: (pick: L
     change({ names: [...next] })
   }
 
+  const clickLight = (name: string) => choose([name], !props.pick.names.includes(name))
+  createEffect(() => {
+    const on = clicking() && props.pick.kind === 'By name'
+    preview?.[1](() => (on ? clickLight : null))
+  })
+  onCleanup(() => preview?.[1](null))
+
   const query = () => pickedQuery(props.pick)
   const byTag = () => props.pick.kind === 'By tag'
   const order = createMemo(() => (byTag() ? props.pick.tags.map((tag) => ({ label: tag, names: [tag] })) : lightRuns(props.pick.names, rows())))
@@ -95,7 +108,14 @@ export default function LightPicker(props: { pick: LightPick; onChange: (pick: L
   const noMatch = (none: string) => <p class="scene-note">{search() === '' ? none : `Nothing matches "${filter().trim()}"`}</p>
 
   return (
-    <Popover.Root lazyMount unmountOnExit positioning={{ placement: 'bottom-start' }}>
+    <Popover.Root
+      lazyMount
+      unmountOnExit
+      positioning={{ placement: 'bottom-start' }}
+      // a click in the preview chooses a light rather than closing this, while lights are being clicked
+      closeOnInteractOutside={!clicking()}
+      onOpenChange={(details) => !details.open && setClicking(false)}
+    >
       <Popover.Trigger class="scene-light-button" classList={{ chosen: query() !== 'Every' }} aria-label="Choose lights" title="Choose lights">
         <svg viewBox="0 0 16 16" aria-hidden="true">
           <path d="M2 3h12L9.5 8.5v5l-3-1.5V8.5z" />
@@ -125,15 +145,28 @@ export default function LightPicker(props: { pick: LightPick; onChange: (pick: L
               </For>
             </SegmentGroup.Root>
             <Show when={props.pick.kind !== 'Every'}>
-              <input
-                type="search"
-                placeholder={byTag() ? 'Search by tag' : 'Search by name'}
-                aria-label={byTag() ? 'Search light tags' : 'Search lights by name'}
-                autocomplete="off"
-                spellcheck={false}
-                value={filter()}
-                onInput={(e) => setFilter(e.currentTarget.value)}
-              />
+              <div class="scene-light-search">
+                <input
+                  type="search"
+                  placeholder={byTag() ? 'Search by tag' : 'Search by name'}
+                  aria-label={byTag() ? 'Search light tags' : 'Search lights by name'}
+                  autocomplete="off"
+                  spellcheck={false}
+                  value={filter()}
+                  onInput={(e) => setFilter(e.currentTarget.value)}
+                />
+                <Show when={!byTag() && preview}>
+                  <button
+                    type="button"
+                    class="scene-light-click"
+                    aria-pressed={clicking()}
+                    title="Click lights in the preview to tick them, in the order they're clicked. A click on a ticked one unticks it."
+                    onClick={() => setClicking(!clicking())}
+                  >
+                    Pick
+                  </button>
+                </Show>
+              </div>
               <div class="scene-light-list">
                 <Show
                   when={byTag()}

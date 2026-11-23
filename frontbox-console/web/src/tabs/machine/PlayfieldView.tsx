@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createRoot, createSignal, For, onCleanup, onMount, Show, untrack, type JSX } from 'solid-js'
+import { createEffect, createMemo, createRoot, createSignal, For, on, onCleanup, onMount, Show, untrack, type JSX } from 'solid-js'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { ledName } from '../../lib/format'
@@ -58,6 +58,18 @@ const OUTLINE_DASH = 0.6
 const OUTLINE_GAP = 0.4
 /** How far the pointer can move between press and release and still count as a click, in pixels */
 const CLICK_SLOP = 4
+
+/**
+ * Where a camera looking at a plane is, in degrees: `tilt` from straight on toward the player, and `turn` around the
+ * plane from the player's side, for a view from a corner
+ */
+export type ViewAngle = { tilt: number; turn: number }
+/** How the camera looking at a plane is angled, unless it's told otherwise */
+const FOCUS_ANGLE: ViewAngle = { tilt: 30, turn: 0 }
+/** How much room is left around a plane the camera looks at, as a share of the view */
+const FOCUS_MARGIN = 1.1
+/** How long the camera takes to move to a plane, in milliseconds */
+const FOCUS_TIME = 350
 
 function sceneData(state: ConsoleState): SceneData {
   const hw = state.hardware
@@ -209,6 +221,27 @@ function relativeTo(plane: PlaneView, position: Position): Position {
   return [local.x, local.y, local.z]
 }
 
+/** How far off a plane, in inches, a light can be and still count as on it */
+const ON_PLANE = 1
+
+/** How many of `positions` are on a plane: inside its edge, and no further off it than `ON_PLANE` */
+export function countOnPlane(plane: PlaneView, positions: Position[]): number {
+  return positions.filter((position) => {
+    const [x, y, z] = relativeTo(plane, position)
+    return Math.abs(z) <= ON_PLANE && insidePolygon(plane.corners, x, y)
+  }).length
+}
+
+/** Whether a point is inside a polygon, by counting the edges a line from it to the right crosses */
+function insidePolygon(corners: [number, number][], x: number, y: number): boolean {
+  let inside = false
+  for (let i = 0, j = corners.length - 1; i < corners.length; j = i++) {
+    const [[xi, yi], [xj, yj]] = [corners[i], corners[j]]
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside
+  }
+  return inside
+}
+
 /**
  * A position on a plane as code for the machine: `Vec3::new(..).relative_to(&planes::PLAYFIELD)` when the plane was
  * added with `app_plane!` (which knows its path), otherwise just the `Vec3::new(..)`.
@@ -228,6 +261,9 @@ const HELD_SCALE = 1.4
 const switchId = (point: Point): number | null => (point.kind === 'Switch' ? Number(point.key.slice('switch:'.length)) : null)
 
 const named = (point: Point) => `${point.name} (${point.kind})`
+
+/** The name of the LED a dot is, or `null` for other hardware */
+const ledOf = (point: Point): string | null => (point.key.startsWith('led:') ? point.key.slice('led:'.length) : null)
 
 /** A dot's hover label, including what a left click does to it */
 function describe(point: Point): string {
@@ -251,12 +287,26 @@ export default function PlayfieldView(props: {
   displayFrame?: (display: string) => Uint8ClampedArray | null
   /** The plane a preview works on */
   plane?: () => PlaneView | null
+  /** The plane a preview's camera looks at, straight on and tilted toward the player. It moves there each time this turns to a plane, coming back to one included. */
+  focus?: () => PlaneView | null
+  /** Counts the times the camera's been asked back to how it first looks at `focus`, which it goes back to as this changes */
+  refocus?: () => number
+  /** How the camera looking at `focus` is angled. `FOCUS_ANGLE` without it. */
+  focusAngle?: () => ViewAngle
   /** Closed loops of points to outline on the plane, in the plane's units, such as a ring's edge and its hole */
   outline?: () => [number, number][][]
   /** Drawn over a preview, with the plane as the space to work in */
   overlay?: (space: PreviewSpace) => JSX.Element
   /** A click on a preview that didn't move the camera, with the point it landed on, if any, on the plane */
   onClickPlane?: (point: [number, number] | null) => void
+  /** A preview's right-click on its plane, with the point on it and where the pointer is in the window */
+  onContextPlane?: (point: [number, number] | null, x: number, y: number) => void
+  /** Where the pointer is on a preview plane as it moves, `null` once it leaves. Returns whether a click there would do something, which the cursor shows. */
+  onHoverPlane?: (point: [number, number] | null) => boolean
+  /** A click on one of a preview's LEDs, by name, while choosing lights by clicking them. It's then not a click on the plane. */
+  onClickLight?: (name: string) => void
+  /** Whether a preview's LEDs are being chosen by clicking them */
+  choosingLights?: () => boolean
 }) {
   let container!: HTMLDivElement
   // bumped whenever points on the plane move on screen
@@ -590,7 +640,9 @@ export default function PlayfieldView(props: {
       scene.add(content)
       // frame the machine the first time there's something to show, then leave the camera to the user
       if (!fitted && (planes.length > 0 || points.length > 0)) {
-        fitCamera()
+        const focus = untrack(() => props.focus?.())
+        if (focus) focusOn(focus, false)
+        else fitCamera()
         fitted = true
       }
       applyTheme()
@@ -613,6 +665,79 @@ export default function PlayfieldView(props: {
       // from the front-left, a little above, like standing at the machine
       camera.position.copy(center).add(new THREE.Vector3(0.35, 1.1, 0.75).normalize().multiplyScalar(size * 1.3))
       controls.update()
+    }
+
+    // a plane to look at once the view has a size, as it has none while hidden
+    let pendingFocus: PlaneView | null = null
+    let stopFocusing: (() => void) | undefined
+
+    /**
+     * Points the camera at a plane straight on, then tilts it by `focusAngle` toward the player (to the front and up),
+     * turned around the plane to one side as it says, with
+     * all of the plane in view. `animate` moves it there over `FOCUS_TIME` rather than at once.
+     */
+    function focusOn(plane: PlaneView, animate: boolean) {
+      const { width, height } = container.getBoundingClientRect()
+      if (width === 0 || height === 0) {
+        pendingFocus = plane
+        return
+      }
+      resize()
+      stopFocusing?.()
+      // cabinet coordinates to the scene's, which mirror x
+      const toScene = (v: THREE.Vector3) => v.set(-v.x, v.y, v.z)
+      const rotation = new THREE.Quaternion(...plane.rotation)
+      const corners = plane.corners.map(([x, y]) => toScene(new THREE.Vector3(x, y, 0).applyQuaternion(rotation).add(new THREE.Vector3(...plane.origin))))
+      const center = new THREE.Box3().setFromPoints(corners).getCenter(new THREE.Vector3())
+      const player = new THREE.Vector3(0, 1, 1).normalize()
+      const normal = toScene(new THREE.Vector3(0, 0, 1).applyQuaternion(rotation))
+      if (normal.dot(player) < 0) normal.negate()
+      const toward = player.clone().addScaledVector(normal, -player.dot(normal))
+      const angle = untrack(() => props.focusAngle?.()) ?? FOCUS_ANGLE
+      const tilt = THREE.MathUtils.degToRad(angle.tilt)
+      if (toward.lengthSq() > 1e-6) toward.normalize().applyAxisAngle(normal, THREE.MathUtils.degToRad(angle.turn))
+      const direction = toward.lengthSq() < 1e-6 ? normal : normal.clone().multiplyScalar(Math.cos(tilt)).addScaledVector(toward, Math.sin(tilt))
+      // far enough back that each corner is inside the view, with a margin
+      const forward = direction.clone().negate()
+      const right = forward.clone().cross(camera.up)
+      if (right.lengthSq() < 1e-6) right.set(1, 0, 0)
+      right.normalize()
+      const up = right.clone().cross(forward)
+      const tall = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) / FOCUS_MARGIN
+      const wide = tall * camera.aspect
+      const distance = Math.max(
+        ...corners.map((corner) => {
+          const offset = corner.clone().sub(center)
+          return Math.max(Math.abs(offset.dot(right)) / wide, Math.abs(offset.dot(up)) / tall) - offset.dot(forward)
+        }),
+      )
+      const position = center.clone().addScaledVector(direction, distance)
+      if (!animate) {
+        controls.target.copy(center)
+        camera.position.copy(position)
+        controls.update()
+        return
+      }
+      const [fromTarget, fromPosition] = [controls.target.clone(), camera.position.clone()]
+      const started = performance.now()
+      let frame = 0
+      const step = () => {
+        const t = Math.min((performance.now() - started) / FOCUS_TIME, 1)
+        const eased = 1 - (1 - t) ** 3
+        controls.target.lerpVectors(fromTarget, center, eased)
+        camera.position.lerpVectors(fromPosition, position, eased)
+        controls.update()
+        frame = t < 1 ? requestAnimationFrame(step) : 0
+      }
+      // the user taking the camera ends the move where it is
+      const stop = () => {
+        cancelAnimationFrame(frame)
+        controls.removeEventListener('start', stop)
+        stopFocusing = undefined
+      }
+      controls.addEventListener('start', stop)
+      stopFocusing = stop
+      frame = requestAnimationFrame(step)
     }
 
     function clearOutline() {
@@ -671,6 +796,11 @@ export default function PlayfieldView(props: {
       camera.updateProjectionMatrix()
       setViewMoved((moves) => moves + 1)
       render()
+      if (pendingFocus) {
+        const plane = pendingFocus
+        pendingFocus = null
+        focusOn(plane, false)
+      }
     }
     const resizeObserver = new ResizeObserver(resize)
     resizeObserver.observe(container)
@@ -689,6 +819,7 @@ export default function PlayfieldView(props: {
       return raycaster.intersectObjects(shown).map((hit) => hit.object as THREE.Mesh)
     }
     const dotUnder = (e: MouseEvent) => dotsUnder(e)[0]
+    const choosingLights = () => untrack(() => props.choosingLights?.() === true)
     /** The switches under the pointer: the only dots a left click acts on */
     const switchesUnder = (e: MouseEvent) =>
       dotsUnder(e)
@@ -727,7 +858,10 @@ export default function PlayfieldView(props: {
       setHoveredDot(hits[0] ?? null)
       const label = hits.map((dot) => (preview ? named : describe)(dots.get(dot)!)).join(' · ')
       setHovered(hits.length > 0 ? { name: label, x: e.clientX, y: e.clientY } : null)
-      canvas.style.cursor = !preview && hits.some((dot) => switchId(dots.get(dot)!) !== null) ? 'pointer' : ''
+      const clickable = preview
+        ? (choosingLights() && hits.some((dot) => ledOf(dots.get(dot)!) !== null)) || props.onHoverPlane?.(fromScreen(e.clientX, e.clientY)) === true
+        : hits.some((dot) => switchId(dots.get(dot)!) !== null)
+      canvas.style.cursor = clickable ? 'pointer' : ''
     }
 
     /**
@@ -754,6 +888,7 @@ export default function PlayfieldView(props: {
     function onPointerLeave() {
       setHoveredDot(null)
       setHovered(null)
+      props.onHoverPlane?.(null)
     }
 
     // a press that barely moves is a click; anything more is the camera being dragged
@@ -769,13 +904,21 @@ export default function PlayfieldView(props: {
       if (key && e.button === 0 && isClick(e) && ghostPosition) {
         place(key, ghostPosition)
       }
-      if (preview && e.button === 0 && isClick(e)) props.onClickPlane?.(fromScreen(e.clientX, e.clientY))
+      if (!preview || e.button !== 0 || !isClick(e)) return
+      // while lights are being chosen, a click is only for them, so one that misses doesn't select something else
+      if (!choosingLights()) return props.onClickPlane?.(fromScreen(e.clientX, e.clientY))
+      const light = dotsUnder(e).map((dot) => ledOf(dots.get(dot)!)).find((name) => name !== null)
+      if (light) props.onClickLight?.(light)
     }
 
     function onContextMenu(e: MouseEvent) {
       e.preventDefault()
       // releasing a right-drag (panning) also fires this
       if (!isClick(e) || placing()) return
+      if (preview) {
+        props.onContextPlane?.(fromScreen(e.clientX, e.clientY), e.clientX, e.clientY)
+        return
+      }
       const hit = dotUnder(e)
       const point = hit && dots.get(hit)
       if (!point) return
@@ -839,6 +982,16 @@ export default function PlayfieldView(props: {
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
 
     createEffect(() => build(data()))
+    // by name, as the machine sends its planes again when it restarts
+    const focusName = createMemo(() => props.focus?.()?.name ?? null)
+    createEffect(on(focusName, (name) => {
+      const plane = untrack(() => props.focus?.())
+      if (name !== null && plane && fitted) focusOn(plane, true)
+    }, { defer: true }))
+    createEffect(on(() => props.refocus?.(), () => {
+      const plane = untrack(() => props.focus?.())
+      if (plane && fitted) focusOn(plane, true)
+    }, { defer: true }))
     createEffect(applyOutline)
     createEffect(() => {
       if (!preview) writeLayers(layers())
@@ -867,6 +1020,7 @@ export default function PlayfieldView(props: {
       resizeObserver.disconnect()
       themeObserver.disconnect()
       darkQuery.removeEventListener('change', applyTheme)
+      stopFocusing?.()
       controls.dispose()
       textures.forEach((t) => t.dispose())
       shapeGeometries.forEach((geometry) => geometry.dispose())
@@ -917,7 +1071,8 @@ export default function PlayfieldView(props: {
           </p>
         )}
       </Show>
-      <Show when={data().unlocated > 0 && data().points.length > 0}>
+      {/* a scene preview has no use for where hardware is */}
+      <Show when={!preview && data().unlocated > 0 && data().points.length > 0}>
         <p class="unlocated">{data().unlocated} items have no location</p>
       </Show>
       <Show when={hovered()}>

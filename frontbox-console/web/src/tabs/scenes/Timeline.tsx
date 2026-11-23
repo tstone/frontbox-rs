@@ -1,5 +1,7 @@
 import { Popover } from '@ark-ui/solid/popover'
-import { batch, createMemo, createSignal, For, Index, onCleanup, Show, useContext } from 'solid-js'
+import { batch, createEffect, createMemo, createSignal, For, Index, Match, on, onCleanup, onMount, Show, Switch, untrack, useContext } from 'solid-js'
+import { Dynamic } from 'solid-js/web'
+import * as icons from '../../components/icons'
 import ScenePortal, { LayerColorContext, layerColorClass, type LayerColor } from './ScenePortal'
 import type { Cycle } from '../../types/generated/Cycle'
 import type { Key } from '../../types/generated/Key'
@@ -10,16 +12,26 @@ import type { RenderedGraph } from '../../types/generated/RenderedGraph'
 import type { Timing } from '../../types/generated/Timing'
 import type { Traversal } from '../../types/generated/Traversal'
 import type { Playback } from './playback'
+import { is, type ConfigNode, type ListPlace } from './configNodes'
+import { ConfigTreeContext, hasTrack, shownInTree, treeChildren, type ConfigTree, type TreeChild } from './configTree'
+import { AddMenu, NodeIcon, NodeSummary } from './PropertiesPanel'
+import { LayerMenuContext } from './LayerMenu'
 import { CurveField, Dropdown, EyeButton, FieldRow, LayerSurfacesContext, NumberBox, NumberField, SceneContext, ValueField } from './SceneFields'
 import { contentSoundLength } from '../../state/contentSounds'
 import type { SoundLayer } from '../../types/generated/SoundLayer'
-import { curveHeight, field, isHidden, item, moveMoment, removed, repeats, sceneTracks, soundEnd, soundLabel, soundNaturalEnd, sceneTraversals, snap, startingValue, TIME_STEP, trackTimes, traversalLength, UNIT, variant, envelopeHeight, wavePosition, withKey, withKeyCopy, withPick, withHidden, withTimesInLength, withTimesScaled, type Lens, type Scene, type SceneTrack, type SceneTraversal, type SceneValue } from './sceneModel'
+import { curveHeight, field, isHidden, item, moveMoment, removed, repeats, sceneTracks, soundEnd, soundNaturalEnd, sceneTraversals, snap, startingValue, TIME_STEP, trackTimes, traversalLength, UNIT, variant, envelopeHeight, wavePosition, withKey, withKeyCopy, withPick, withHidden, withTimesInLength, withTimesScaled, type Lens, type Ranges, type Scene, type SceneLayer, type SceneValue } from './sceneModel'
 
 /** How close in pixels a click can be to a key before it's taken to mean that key */
 const KEY_REACH = 12
 
 /** How far in pixels a press on a dot has to move before it's a drag and not a click */
 const DRAG_START = 3
+
+/** How many pixels either side of the playhead a press in the lanes can take hold of it */
+const PLAYHEAD_REACH = 5
+
+/** What in the lanes has a drag of its own, which a press on keeps from the playhead */
+const OWN_DRAGS = '.scene-key, .scene-wave, .scene-sweep, .scene-sound-bar, .scene-timeline-ruler, .scene-layers-name, input, textarea'
 
 /** How far along the view a copy of a key goes from it, given the room */
 const COPY_DISTANCE = 0.05
@@ -29,6 +41,10 @@ const SCALE_MENU_OPEN_DELAY = 400
 
 /** How many milliseconds the time scale menu stays open once the pointer has left it */
 const SCALE_MENU_CLOSE_DELAY = 1000
+
+/** The narrowest the tree beside the lanes can be dragged to, in pixels, and the most of the timeline's width it can take */
+const TREE_MIN_WIDTH = 140
+const TREE_MAX_SHARE = 0.6
 
 type TimeScale = { label: string; by: number }
 
@@ -55,37 +71,62 @@ function along(e: PointerEvent, element: HTMLElement) {
   return clamp((e.clientX - left) / width, 0, 1)
 }
 
+/** How wide the tree is, in pixels, as it was last dragged to */
+const TREE_WIDTH_KEY = 'frontbox-console.scene-tree-width'
+function readTreeWidth(): number | null {
+  try {
+    const width = Number(localStorage.getItem(TREE_WIDTH_KEY))
+    return width > 0 ? width : null
+  } catch {
+    return null
+  }
+}
+function writeTreeWidth(width: number) {
+  try {
+    localStorage.setItem(TREE_WIDTH_KEY, String(Math.round(width)))
+  } catch {
+    // storage can be unavailable (private windows); the width still holds for this session
+  }
+}
+
 /**
- * A scene's timing, with a track for each keyframed prop and a bar for each traversal, along the bottom of the editor.
- * `graphs` are the layers' graphs as last drawn, which measure how long a traversal with a rate takes.
+ * The scene's layers as a tree, each node on one row with its time along the rest of it: a keyframed prop's keys, a
+ * sound's bar, or a traversal's. A closed node shows when the props under it change. Selecting a row selects the node
+ * for the properties panel. `graphs` are the layers' graphs as last drawn, which measure how long a traversal with a
+ * rate takes. A preview scene has a row of its own at the top, which can't be opened or selected.
  */
-export default function Timeline(props: {
-  playback: Playback
-  rendering: boolean
-  error: string | null
-  graphs: (RenderedGraph | null)[]
-  reveal: (track: SceneTrack) => void
-  openLayer: (layer: number) => void
-}) {
+export default function Timeline(props: { playback: Playback; rendering: boolean; error: string | null; graphs: (RenderedGraph | null)[]; preview: PreviewLayer }) {
   const scene = useContext(SceneContext)!
   const surfaces = useContext(LayerSurfacesContext)!
+  const tree = useContext(ConfigTreeContext)!
   const timing = () => scene.get().timing
   const tracks = createMemo(() => sceneTracks(scene, surfaces))
   const traversals = createMemo(() => sceneTraversals(scene))
+  const groups = createMemo(() => layerGroups(tree))
+  const rows = createMemo(() => treeRows(tree, groups()))
+  const nodeRows = () => rows().filter((row): row is TreeRowData => 'node' in row)
+  const [treeWidth, setTreeWidth] = createSignal(readTreeWidth())
+  /** The tracks whose lanes are kept short, by node. The rest that can be are made taller to show their values over time. */
+  const [collapsed, setCollapsed] = createSignal<ReadonlySet<string>>(new Set())
+  let lanes!: HTMLDivElement
 
-  const length = ({ traversal, layer, index }: SceneTraversal) =>
-    traversalLength(traversal.get(), scene.get(), props.graphs[layer]?.lengths[index] ?? null)
+  const measured = (traversal: Traversal, layer: number, index: number) => traversalLength(traversal, scene.get(), props.graphs[layer]?.lengths[index] ?? null)
+
+  /** How long a traversal's node takes, which its id says the layer and place of */
+  const lengthOf = (node: Extract<ConfigNode, { kind: 'traversal' }>) => {
+    const [, layer, index] = node.id.match(/^layers\/(\d+)\/.*\/(\d+)$/) ?? []
+    return layer === undefined ? null : measured(node.lens.get(), Number(layer), Number(index))
+  }
 
   /** How much time the view shows. A key, a traversal or a sound past the end is still there to be found and moved. */
   const span = createMemo(() =>
     Math.max(
       timing()?.duration ?? 1,
       ...tracks().map(({ prop }) => trackTimes(prop.get()).at(-1) ?? 0),
-      ...traversals().map((run) => run.traversal.get().start + (length(run) ?? 0)),
+      ...traversals().map(({ traversal, layer, index }) => traversal.get().start + (measured(traversal.get(), layer, index) ?? 0)),
       ...scene.get().sounds.map((layer) => soundEnd(layer, contentSoundLength(layer.sound)) ?? layer.start),
     ),
   )
-  const sounds = field(scene, 'sounds')
 
   const percent = (seconds: number) => `${(seconds / span()) * 100}%`
 
@@ -94,94 +135,639 @@ export default function Timeline(props: {
     return Array.from({ length: Math.floor(span() / spacing) + 1 }, (_, index) => index * spacing)
   }
 
-  const scrubTo = (e: PointerEvent & { currentTarget: HTMLElement }) => {
-    props.playback.scrub(Math.min(snap(along(e, e.currentTarget) * span()), timing()!.duration))
+  let ruler: HTMLDivElement | undefined
+  /** Moves the playhead to the time under the pointer, measured along the ruler */
+  const scrubTo = (e: PointerEvent) => {
+    if (ruler) props.playback.scrub(Math.min(snap(along(e, ruler) * span()), timing()!.duration))
+  }
+  /** A press on the ruler drags the playhead */
+  const scrubbing = {
+    onPointerDown(e: PointerEvent & { currentTarget: HTMLElement }) {
+      e.currentTarget.setPointerCapture(e.pointerId)
+      scrubTo(e)
+    },
+    onPointerMove(e: PointerEvent & { currentTarget: HTMLElement }) {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) scrubTo(e)
+    },
+  }
+
+  /**
+   * A press along the playhead's length, in the lanes, that might become a drag of it. It's left to go on to what's under
+   * it, so one let go without moving is still a click there, such as adding a key, and one that moves drags the playhead.
+   */
+  let playheadPress: { x: number; pointer: number; dragging: boolean } | null = null
+  const nearPlayhead = (e: PointerEvent) => {
+    if (!ruler || !timing()) return false
+    const { left, width } = ruler.getBoundingClientRect()
+    return Math.abs(e.clientX - (left + (props.playback.position() / span()) * width)) <= PLAYHEAD_REACH
+  }
+  onMount(() => {
+    const press = (e: PointerEvent) => {
+      if (e.button !== 0 || !nearPlayhead(e) || (e.target as Element).closest(OWN_DRAGS)) return
+      playheadPress = { x: e.clientX, pointer: e.pointerId, dragging: false }
+    }
+    const move = (e: PointerEvent) => {
+      if (playheadPress?.pointer !== e.pointerId) return
+      if (!playheadPress.dragging) {
+        if (Math.abs(e.clientX - playheadPress.x) < DRAG_START) return
+        // from here on the lanes have the pointer, so its release isn't a click on what it was pressed on
+        playheadPress.dragging = true
+        lanes.setPointerCapture(e.pointerId)
+      }
+      e.stopPropagation()
+      scrubTo(e)
+    }
+    const release = (e: PointerEvent) => {
+      if (playheadPress?.pointer !== e.pointerId) return
+      if (playheadPress.dragging) e.stopPropagation()
+      playheadPress = null
+    }
+    lanes.addEventListener('pointerdown', press, { capture: true })
+    lanes.addEventListener('pointermove', move, { capture: true })
+    lanes.addEventListener('pointerup', release, { capture: true })
+    lanes.addEventListener('pointercancel', release, { capture: true })
+    onCleanup(() => {
+      lanes.removeEventListener('pointerdown', press, { capture: true })
+      lanes.removeEventListener('pointermove', move, { capture: true })
+      lanes.removeEventListener('pointerup', release, { capture: true })
+      lanes.removeEventListener('pointercancel', release, { capture: true })
+    })
+  })
+
+  const rowElement = (id: string) => lanes.querySelector<HTMLElement>(`[data-id="${CSS.escape(id)}"]`)
+
+  // what's selected, here or by a click in the preview, is scrolled to once its row is up, opening its group if it's closed
+  createEffect(
+    on(tree.selected, (id) => {
+      if (id === null) return
+      const group = untrack(groups).find(({ nodes }) => nodes.some((node) => id === node.id || id.startsWith(`${node.id}/`)))
+      if (group) tree.setGroupOpen(group.id, true)
+      requestAnimationFrame(() => rowElement(id)?.scrollIntoView({ block: 'nearest' }))
+    }),
+  )
+
+  /** Up and down go between rows, right opens a node or goes into it, and left closes it or goes to what it's in */
+  const navigate = (e: KeyboardEvent) => {
+    if ((e.target as HTMLElement).getAttribute('role') !== 'treeitem') return
+    const list = nodeRows()
+    const index = list.findIndex(({ node }) => node.id === tree.selected())
+    const row = list[index]
+    if (!row) return
+    let next: string | undefined
+    if (e.key === 'ArrowDown') next = list[index + 1]?.node.id
+    else if (e.key === 'ArrowUp') next = list[index - 1]?.node.id
+    else if (e.key === 'Home') next = list[0]?.node.id
+    else if (e.key === 'End') next = list.at(-1)?.node.id
+    else if (e.key === 'ArrowRight') {
+      if (row.branch && !row.open) tree.toggle(row.node.id)
+      else if (row.open) next = list[index + 1]?.node.id
+    } else if (e.key === 'ArrowLeft') {
+      if (row.open) tree.toggle(row.node.id)
+      else next = list.slice(0, index).findLast(({ depth }) => depth < row.depth)?.node.id
+    } else if (e.key === 'Enter' && row.branch) tree.toggle(row.node.id)
+    else return
+    e.preventDefault()
+    if (next === undefined) return
+    const id = next
+    tree.select(id)
+    requestAnimationFrame(() => rowElement(id)?.focus({ preventScroll: true }))
+  }
+
+  /** Dragging the edge of the tree, which is kept for next time once it's let go */
+  const resize = {
+    onPointerDown(e: PointerEvent & { currentTarget: HTMLElement }) {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    },
+    onPointerMove(e: PointerEvent & { currentTarget: HTMLElement }) {
+      if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
+      const { left, width } = lanes.getBoundingClientRect()
+      setTreeWidth(clamp(e.clientX - left, TREE_MIN_WIDTH, width * TREE_MAX_SHARE))
+    },
+    onPointerUp() {
+      const width = treeWidth()
+      if (width !== null) writeTreeWidth(width)
+    },
   }
 
   return (
-    <section class="scene-timeline" aria-label="Timeline">
+    <section class="scene-timeline" aria-label="Layers and timeline" style={{ '--label-width': treeWidth() === null ? undefined : `${treeWidth()}px` }}>
+      {/* between the tree and the lanes, from the heading over the tree down */}
+      <span class="scene-layers-resize" role="separator" aria-orientation="vertical" aria-label="Resize the layers" {...resize} />
+      {/* over the tree, what it shows; over the lanes, playing them and how long they are */}
       <header>
-        <Show
-          when={props.playback.playing()}
-          fallback={
-            <button type="button" aria-label="Play" disabled={!timing()} onClick={props.playback.play}>
+        <div class="scene-layers-header">
+          <span class="scene-layers-title">Layers</span>
+          <AddMenu
+            label="Preview another scene with this one"
+            class="scene-icon-button"
+            groups={[props.preview.choices.map((name) => ({ value: name, label: name }))]}
+            onPick={props.preview.set}
+          >
+            <icons.Clapperboard aria-hidden="true" />
+          </AddMenu>
+          <button type="button" class="scene-icon-button" aria-label="Expand all" title="Expand all" disabled={tree.allExpanded()} onClick={tree.expandAll}>
+            <icons.ChevronsUpDown aria-hidden="true" />
+          </button>
+          <button type="button" class="scene-icon-button" aria-label="Collapse all" title="Collapse all" disabled={!tree.anyExpanded()} onClick={tree.collapseAll}>
+            <icons.ChevronsDownUp aria-hidden="true" />
+          </button>
+        </div>
+        <div class="scene-timeline-controls">
+          <Show
+            when={props.playback.playing()}
+            fallback={
+              <button type="button" aria-label="Play" disabled={!timing()} onClick={props.playback.play}>
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M4 2.5v11l9-5.5z" />
+                </svg>
+              </button>
+            }
+          >
+            <button type="button" aria-label="Pause" onClick={props.playback.pause}>
               <svg viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M4 2.5v11l9-5.5z" />
+                <path d="M3.5 2.5h3v11h-3zM9.5 2.5h3v11h-3z" />
               </svg>
             </button>
-          }
-        >
-          <button type="button" aria-label="Pause" onClick={props.playback.pause}>
+          </Show>
+          <button type="button" aria-label="Stop" disabled={!timing()} onClick={props.playback.stop}>
             <svg viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M3.5 2.5h3v11h-3zM9.5 2.5h3v11h-3z" />
+              <path d="M3 3h10v10H3z" />
             </svg>
           </button>
-        </Show>
-        <button type="button" aria-label="Stop" disabled={!timing()} onClick={props.playback.stop}>
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M3 3h10v10H3z" />
-          </svg>
-        </button>
-        <Show when={props.rendering}>
-          <span class="scene-spinner" role="status" aria-label="Rendering" />
-        </Show>
-        <Show when={timing()}>
-          <span class="scene-timeline-time">
-            {props.playback.position().toFixed(2)} / {timing()!.duration.toFixed(2)} s
-          </span>
-          <TimingFields lens={field(scene, 'timing') as Lens<Timing>} playback={props.playback} />
-        </Show>
-        <Show when={props.error}>
-          <span class="scene-note scene-note-warn">{props.error}</span>
-        </Show>
+          <Show when={props.rendering}>
+            <span class="scene-spinner" role="status" aria-label="Rendering" />
+          </Show>
+          <Show when={timing()} fallback={<span class="scene-note">Set any value to Keyframes to animate this scene.</span>}>
+            <span class="scene-timeline-time">
+              {props.playback.position().toFixed(2)} / {timing()!.duration.toFixed(2)} s
+            </span>
+            <TimingFields lens={field(scene, 'timing') as Lens<Timing>} playback={props.playback} />
+          </Show>
+          <Show when={props.error}>
+            <span class="scene-note scene-note-warn">{props.error}</span>
+          </Show>
+        </div>
       </header>
-      <Show
-        when={timing()}
-        fallback={<p class="scene-note">Set any value to Keyframes to animate this scene.</p>}
-      >
-        <div class="scene-timeline-tracks">
-          <div class="scene-timeline-lanes" style={{ '--played-fraction': props.playback.position() / span(), '--end-fraction': timing()!.duration / span() }}>
-            <div class="scene-timeline-row scene-timeline-times">
-              <span />
-              <div
-                class="scene-timeline-ruler"
-                onPointerDown={(e) => {
-                  e.currentTarget.setPointerCapture(e.pointerId)
-                  scrubTo(e)
-                }}
-                onPointerMove={(e) => {
-                  if (e.currentTarget.hasPointerCapture(e.pointerId)) scrubTo(e)
-                }}
-              >
+      <div class="scene-timeline-tracks">
+        <div
+          class="scene-timeline-lanes"
+          ref={lanes}
+          classList={{ 'scene-timeline-untimed': !timing() }}
+          style={timing() ? { '--played-fraction': props.playback.position() / span(), '--end-fraction': timing()!.duration / span() } : undefined}
+        >
+          <div class="scene-timeline-row scene-timeline-times">
+            <span class="scene-timeline-times-gap" />
+            <Show when={timing()} fallback={<span />}>
+              <div class="scene-timeline-ruler" ref={ruler} {...scrubbing}>
+                <span class="scene-timeline-playhead-head" aria-hidden="true" />
                 <For each={ticks()}>
                   {(tick) => (
-                    <span
-                      class="scene-timeline-tick"
-                      classList={{ 'scene-timeline-tick-end': tick / span() > 0.9 }}
-                      style={{ left: percent(tick) }}
-                    >
+                    <span class="scene-timeline-tick" classList={{ 'scene-timeline-tick-end': tick / span() > 0.9 }} style={{ left: percent(tick) }}>
                       {Number(tick.toFixed(2))}
                     </span>
                   )}
                 </For>
               </div>
-            </div>
-            <Index each={sounds.get()}>
-              {(_, index) => <SoundRow lens={item(sounds, index)} index={index} end={timing()!.duration} percent={percent} span={span()} />}
-            </Index>
-            <Index each={traversals()}>
-              {(run) => <TraversalRow run={run()} length={length(run())} end={timing()!.duration} percent={percent} span={span()} open={props.openLayer} />}
-            </Index>
-            {/* by position, so an edit doesn't tear down the editor it was made in */}
-            <Index each={tracks()} fallback={traversals().length === 0 && sounds.get().length === 0 && <p class="scene-note">Set any value to Keyframes to give it a track here.</p>}>
-              {(track) => <TrackRow track={track()} percent={percent} span={span()} reveal={props.reveal} />}
-            </Index>
-            <div class="scene-timeline-playhead" />
+            </Show>
           </div>
+          <Show when={scene.get().layers.length === 0 && scene.get().sounds.length === 0}>
+            <p class="scene-note scene-layers-empty">This scene has no layers yet.</p>
+          </Show>
+          <div role="tree" aria-label="Layers" onKeyDown={navigate}>
+            <Show when={props.preview.name}>
+              {(name) => <PreviewRow name={name()} error={props.preview.error} onRemove={() => props.preview.set(null)} />}
+            </Show>
+            {/* by position, so an edit doesn't tear down a key's editor that's open on its row */}
+            <Index each={rows()}>
+              {(row) => (
+                <Switch>
+                  <Match when={'group' in row() && (row() as GroupRowData)}>
+                    {(group) => <GroupRow row={group()} timed={timing() !== undefined} percent={percent} />}
+                  </Match>
+                  <Match when={'node' in row() && (row() as TreeRowData)}>
+                    {(node) => <TreeRow
+                        row={node()}
+                        timed={timing() !== undefined}
+                        end={timing()?.duration ?? 1}
+                        span={span()}
+                        percent={percent}
+                        lengthOf={lengthOf}
+                        expanded={!collapsed().has(node().node.id)}
+                        scrub={(seconds) => props.playback.scrub(Math.min(seconds, timing()!.duration))}
+                        onExpand={(open) => setCollapsed((ids) => (open ? new Set([...ids].filter((id) => id !== node().node.id)) : new Set(ids).add(node().node.id)))}
+                      />}
+                  </Match>
+                </Switch>
+              )}
+            </Index>
+          </div>
+          <Show when={timing()}>
+            <div class="scene-timeline-playhead" />
+          </Show>
         </div>
-      </Show>
+      </div>
     </section>
   )
+}
+
+/**
+ * Another scene drawn with the one being edited, to see how the two look together, which the tree shows but can't
+ * change. Their layers are stacked by z, with its layers under this scene's on the same z. `error` is why it couldn't be
+ * drawn, and `choices` are the scenes it can be.
+ */
+export type PreviewLayer = { name: string | null; error: string | null; choices: string[]; set(name: string | null): void }
+
+/** The preview scene's row, faded, with a button to take it away */
+function PreviewRow(props: { name: string; error: string | null; onRemove: () => void }) {
+  return (
+    <div
+      class="scene-timeline-row scene-layers-row scene-layers-preview"
+      role="treeitem"
+      aria-level={1}
+      aria-disabled="true"
+      aria-label={`${props.name}, previewed with this scene`}
+      title={props.error ?? `${props.name} is drawn with this scene, stacked in by z. It can't be edited here.`}
+    >
+      <div class="scene-timeline-name scene-layers-name" style={{ '--depth': 0 }}>
+        <span class="scene-layers-indicator" />
+        <icons.Clapperboard class="scene-tree-icon" aria-hidden="true" />
+        <span class="scene-layers-label">{props.name}</span>
+        <Show when={props.error}>
+          <icons.CircleX class="scene-layers-preview-error" aria-label={props.error!} />
+        </Show>
+        <button type="button" class="scene-icon-button scene-layers-preview-remove" aria-label={`Stop previewing ${props.name}`} title="Stop previewing" onClick={props.onRemove}>
+          <icons.X aria-hidden="true" />
+        </button>
+      </div>
+      <div class="scene-timeline-lane" />
+    </div>
+  )
+}
+
+/** A row of the tree: its node, how deep it is, whether it has rows under it and they're showing, and its group's color */
+/** `context` is what the node is in that has no row of its own, which its row names */
+type TreeRowData = { node: ConfigNode; context?: string; depth: number; branch: boolean; open: boolean; color: LayerColor }
+
+/** A row heading a group of layers, and whether the group's layers are showing */
+type GroupRowData = { group: LayerGroup; open: boolean }
+
+/**
+ * Layers that draw on the same thing, together in the tree: the light layers, each display's layers, or the sound
+ * layers. In the file they're in one list. A group of drawn layers lists them in the order they're drawn in, backwards,
+ * so the one on top is at the top, as in an image editor: by z, then later in the list over earlier. Sounds keep the
+ * list's order.
+ */
+type LayerGroup = { id: string; label: string; icon: typeof icons.Circle; color: LayerColor; nodes: ConfigNode[] }
+
+/** The scene's layers in groups: the lights, then each display in the order the scene first draws on it, then the sounds */
+function layerGroups(tree: ConfigTree): LayerGroup[] {
+  const layers = (tree.nodes().find((node) => node.id === 'scene')?.children ?? []).filter(shownInTree)
+  const groups: LayerGroup[] = [{ id: 'lights', label: 'Lights', icon: icons.Lightbulb, color: 'lights', nodes: [] }]
+  const sounds: LayerGroup = { id: 'sounds', label: 'Sounds', icon: icons.AudioLines, color: 'sound', nodes: [] }
+  for (const node of layers) {
+    if (node.kind !== 'layer') {
+      sounds.nodes.push(node)
+      continue
+    }
+    const id = layerGroupId(node.lens.get())
+    let group = groups.find((found) => found.id === id)
+    if (!group) {
+      group = { id, label: node.lens.get().display!, icon: icons.Monitor, color: 'display', nodes: [] }
+      groups.push(group)
+    }
+    group.nodes.push(node)
+  }
+  groups.forEach((group) => group.nodes.reverse().sort((a, b) => layerZ(b) - layerZ(a)))
+  return [...groups, sounds].filter(({ nodes }) => nodes.length > 0)
+}
+
+/** The group of layers a layer is in, by its id */
+const layerGroupId = (layer: SceneLayer) => (layer.display === undefined ? 'lights' : `display:${layer.display}`)
+
+/** The rows that are showing, in order: each group's row, then its layers. The variables and values are in the sidebar. */
+function treeRows(tree: ConfigTree, groups: LayerGroup[]): (TreeRowData | GroupRowData)[] {
+  const rows: (TreeRowData | GroupRowData)[] = []
+  const visit = (nodes: TreeChild[], depth: number, color: LayerColor) => {
+    for (const { node, context } of nodes) {
+      const children = treeChildren(node)
+      const open = children.length > 0 && tree.isExpanded(node.id)
+      rows.push({ node, context, depth, branch: children.length > 0, open, color })
+      if (open) visit(children, depth + 1, color)
+    }
+  }
+  for (const group of groups) {
+    const open = tree.isGroupOpen(group.id)
+    rows.push({ group, open })
+    if (open) visit(group.nodes.map((node) => ({ node })), 1, group.color)
+  }
+  return rows
+}
+
+/** A group's row, which opens and closes it. Closed, its lane shows when the props of its layers change. */
+function GroupRow(props: { row: GroupRowData; timed: boolean; percent: (seconds: number) => string }) {
+  const tree = useContext(ConfigTreeContext)!
+  const group = () => props.row.group
+  const toggle = () => tree.setGroupOpen(group().id, !props.row.open)
+  return (
+    <div class={`scene-timeline-row scene-layers-row scene-layers-group ${layerColorClass(group().color) ?? ''}`} role="treeitem" aria-level={1} aria-expanded={props.row.open} aria-label={`${group().label} layers`} tabIndex={-1}>
+      <div class="scene-timeline-name scene-layers-name" style={{ '--depth': 0 }} onDblClick={(e) => !(e.target as Element).closest('button') && toggle()}>
+        <button type="button" class="scene-layers-indicator" classList={{ 'scene-layers-open': props.row.open }} tabIndex={-1} aria-label={`${props.row.open ? 'Close' : 'Open'} ${group().label}`} onClick={toggle}>
+          <icons.ChevronRight aria-hidden="true" />
+        </button>
+        <Dynamic component={group().icon} class="scene-tree-icon" aria-hidden="true" />
+        <span class="scene-layers-label">{group().label}</span>
+        <span class="scene-tree-summary">{group().nodes.length}</span>
+      </div>
+      <div class="scene-timeline-lane">
+        <Show when={props.timed && !props.row.open}>
+          <KeySummary nodes={group().nodes} percent={props.percent} />
+        </Show>
+      </div>
+    </div>
+  )
+}
+
+/** A prop that changes along the timeline, which has a track */
+type TrackNode = Extract<ConfigNode, { kind: 'prop' }>
+const trackOf = (node: ConfigNode): TrackNode | false => (node.kind === 'prop' && hasTrack(node.lens.get()) ? node : false)
+
+/** Whether a node's lane can be made taller to show its value over time: a keyframed or modulated prop's can */
+const expandable = (node: ConfigNode) => {
+  const track = trackOf(node)
+  return track !== false && ('Keyframes' in track.lens.get() || 'Modulated' in track.lens.get())
+}
+
+/**
+ * A node's row: its name, indented under what it's in, with what it is at a glance, then its lane. A press anywhere on
+ * it selects the node, and its name can be dragged to elsewhere in its list.
+ */
+function TreeRow(props: {
+  row: TreeRowData
+  timed: boolean
+  end: number
+  span: number
+  percent: (seconds: number) => string
+  lengthOf: (node: Extract<ConfigNode, { kind: 'traversal' }>) => number | null
+  expanded: boolean
+  onExpand: (expanded: boolean) => void
+  /** Moves the playhead to a time, such as a key's that's just been added, so what's changed next changes it */
+  scrub: (seconds: number) => void
+}) {
+  const tree = useContext(ConfigTreeContext)!
+  const menu = useContext(LayerMenuContext)!
+  const node = () => props.row.node
+  const selected = () => tree.isSelected(node().id)
+  const named = () => {
+    const current = node()
+    return is(current, 'layer') || is(current, 'sound')
+  }
+  const drag = rowDrag(node, tree)
+  const color = () => props.row.color
+  const layerHidden = () => {
+    const current = node()
+    return current.kind === 'layer' && current.lens.get().hidden === true
+  }
+  const expanded = () => props.timed && props.expanded && expandable(node())
+  const trackHidden = () => {
+    const track = trackOf(node())
+    return track !== false && isHidden(track.lens.get())
+  }
+
+  return (
+    <LayerColorContext.Provider value={color()}>
+      <div
+        class={`scene-timeline-row scene-layers-row ${layerColorClass(color()) ?? ''}`}
+        classList={{
+          'scene-layers-selected': selected(),
+          'scene-timeline-hidden': trackHidden(),
+          'scene-timeline-expanded': expanded(),
+          'scene-timeline-expanded-keys': expanded() && trackOf(node()) !== false && 'Keyframes' in (trackOf(node()) as TrackNode).lens.get(),
+        }}
+        role="treeitem"
+        aria-level={props.row.depth + 1}
+        aria-selected={selected()}
+        aria-expanded={props.row.branch ? props.row.open : undefined}
+        aria-label={node().label}
+        data-id={node().id}
+        tabIndex={selected() ? 0 : -1}
+        onPointerDown={(e) => {
+          drag.grab(e)
+          tree.select(node().id)
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          menu.open(node().id, e.clientX, e.clientY)
+        }}
+        {...drag.handlers}
+      >
+        <div
+          class="scene-timeline-name scene-layers-name"
+          classList={{ 'scene-item-hidden': layerHidden() }}
+          style={{ '--depth': props.row.depth }}
+          onDblClick={(e) => {
+            if (props.row.branch && !(e.target as Element).closest('button')) tree.toggle(node().id)
+          }}
+        >
+          <Show when={props.row.branch} fallback={<span class="scene-layers-indicator" />}>
+            <button
+              type="button"
+              class="scene-layers-indicator"
+              classList={{ 'scene-layers-open': props.row.open }}
+              tabIndex={-1}
+              aria-label={`${props.row.open ? 'Close' : 'Open'} ${node().label}`}
+              onClick={() => tree.toggle(node().id)}
+            >
+              <icons.ChevronRight aria-hidden="true" />
+            </button>
+          </Show>
+          <NodeIcon node={node()} />
+          <Show
+            when={menu.renaming() === node().id && named()}
+            fallback={
+              <span class="scene-layers-label" title={props.row.context ? `${props.row.context} · ${node().label}` : node().label}>
+                <Show when={props.row.context}>{(context) => <span class="scene-layers-context">{context()} · </span>}</Show>
+                {node().label}
+              </span>
+            }
+          >
+            {(layer) => <NameEditor node={layer()} onDone={() => menu.setRenaming(null)} />}
+          </Show>
+          <NodeSummary node={node()} />
+          <Show when={props.timed && expandable(node())}>
+            <button
+              type="button"
+              class="scene-eye scene-track-expand"
+              aria-label={`${expanded() ? 'Collapse' : 'Expand'} ${node().label}`}
+              aria-pressed={expanded()}
+              title={expanded() ? 'Collapse' : 'Show its value over time'}
+              onClick={() => props.onExpand(!expanded())}
+            >
+              <Show when={expanded()} fallback={<icons.ChevronsUpDown aria-hidden="true" />}>
+                <icons.ChevronsDownUp aria-hidden="true" />
+              </Show>
+            </button>
+          </Show>
+          <RowEye node={node()} />
+        </div>
+        <div class="scene-timeline-lane" classList={{ 'scene-timeline-lane-track': trackOf(node()) !== false }}>
+          <Show when={props.timed}>
+            <Switch>
+              <Match when={trackOf(node())}>{(track) => <TrackLane node={track()} percent={props.percent} span={props.span} expanded={expanded()} scrub={props.scrub} />}</Match>
+              <Match when={is(node(), 'sound')}>{(sound) => <SoundBar label={sound().label} lens={sound().lens} end={props.end} percent={props.percent} span={props.span} />}</Match>
+              <Match when={is(node(), 'traversal')}>
+                {(traversal) => <TraversalLane node={traversal()} length={props.lengthOf(traversal())} end={props.end} percent={props.percent} span={props.span} />}
+              </Match>
+              <Match when={props.row.branch && !props.row.open}>
+                <KeySummary nodes={node().children ?? []} percent={props.percent} />
+              </Match>
+            </Switch>
+          </Show>
+        </div>
+      </div>
+    </LayerColorContext.Provider>
+  )
+}
+
+/**
+ * A layer's name being edited in its row, which Enter or leaving the field keeps and Escape puts back. An empty name
+ * goes back to what the layer is called unnamed.
+ */
+function NameEditor(props: { node: Extract<ConfigNode, { kind: 'layer' | 'sound' }>; onDone: () => void }) {
+  const name = () => field(props.node.lens as Lens<{ name?: string }>, 'name')
+  let done = false
+  const finish = (keep: string | null) => {
+    if (done) return
+    done = true
+    if (keep !== null) name().set(keep.trim() || undefined)
+    props.onDone()
+  }
+  return (
+    <input
+      class="scene-layers-rename"
+      aria-label="Name"
+      spellcheck={false}
+      placeholder={props.node.unnamed}
+      value={name().get() ?? ''}
+      ref={(input) => requestAnimationFrame(() => (input.focus(), input.select()))}
+      onPointerDown={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation()
+        if (e.key === 'Enter') finish(e.currentTarget.value)
+        else if (e.key === 'Escape') finish(null)
+      }}
+      onBlur={(e) => finish(e.currentTarget.value)}
+    />
+  )
+}
+
+/** Shows or hides a layer, or holds a track still on its first value */
+function RowEye(props: { node: ConfigNode }) {
+  return (
+    <Switch>
+      <Match when={is(props.node, 'layer')}>
+        {(layer) => <EyeButton label={layer().label} hidden={layer().lens.get().hidden === true} onChange={(hidden) => field(layer().lens, 'hidden').set(hidden || undefined)} />}
+      </Match>
+      <Match when={trackOf(props.node)}>
+        {(track) => <EyeButton label={track().label} hidden={isHidden(track().lens.get())} onChange={(hidden) => track().lens.set(withHidden(track().lens.get(), hidden))} />}
+      </Match>
+    </Switch>
+  )
+}
+
+/** When the props under closed nodes change, as marks that can't be moved from here */
+function KeySummary(props: { nodes: ConfigNode[]; percent: (seconds: number) => string }) {
+  const times = createMemo(() => {
+    const found = new Set<number>()
+    const visit = (nodes: ConfigNode[]) =>
+      nodes.forEach((node) => {
+        if (node.kind === 'prop') trackTimes(node.lens.get()).forEach((time) => found.add(time))
+        visit(node.children ?? [])
+      })
+    visit(props.nodes)
+    return [...found]
+  })
+  return <For each={times()}>{(time) => <span class="scene-key-summary" style={{ left: props.percent(time) }} aria-hidden="true" />}</For>
+}
+
+/** Whether a list's rows are shown in the opposite order to the list: the drawn layers', topmost first */
+const listedBackwards = ({ listId }: ListPlace) => listId === 'layers'
+
+/** The z of a drawn layer's node, which orders it among the others in its group before their order in the list does */
+const layerZ = (node: ConfigNode) => (node.kind === 'layer' ? (node.lens.get().z ?? 0) : 0)
+
+/** The group of layers a place in the scene's layers is in. Places in other lists are all in one. */
+const placeGroup = ({ list, listId, index }: ListPlace) => (listId === 'layers' ? layerGroupId(list.get()[index] as SceneLayer) : null)
+
+/**
+ * Dragging a row in a list to elsewhere in it, among the rows of its group, dropped before or after the row it's let go on. Only a press on its name
+ * starts a drag, and not one on a button there, so the lane's keys and bars can still be dragged along it.
+ */
+function rowDrag(node: () => ConfigNode, tree: ConfigTree) {
+  const [grabbable, setGrabbable] = createSignal(false)
+  const [drop, setDrop] = createSignal<'before' | 'after' | null>(null)
+  const place = () => node().place
+  const isDragged = () => {
+    const from = tree.dragging()
+    return !!place() && from?.listId === place()!.listId && from.index === place()!.index
+  }
+  const accepts = () => {
+    const from = tree.dragging()
+    return !!place() && from?.listId === place()!.listId && from.index !== place()!.index && placeGroup(from) === placeGroup(place()!)
+  }
+  return {
+    grab: (e: PointerEvent) => {
+      const target = e.target as HTMLElement
+      setGrabbable(!!place() && target.closest('.scene-layers-name') !== null && !target.closest('input, textarea, button, [contenteditable]'))
+    },
+    handlers: {
+      get draggable() {
+        return grabbable()
+      },
+      get 'data-dragging'() {
+        return isDragged() || undefined
+      },
+      get 'data-drop'() {
+        return drop() ?? undefined
+      },
+      onDragStart: (e: DragEvent) => {
+        const from = place()
+        if (!from) return
+        e.dataTransfer!.effectAllowed = 'move'
+        e.dataTransfer!.setData('text/plain', node().id)
+        tree.setDragging(from)
+      },
+      onDragOver: (e: DragEvent) => {
+        if (!accepts()) return
+        e.preventDefault()
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+        setDrop(e.clientY < rect.top + rect.height / 2 ? 'before' : 'after')
+      },
+      onDragLeave: () => setDrop(null),
+      onDrop: (e: DragEvent) => {
+        const from = tree.dragging()
+        const to = place()
+        const side = drop()
+        setDrop(null)
+        if (!from || !to || !side || !accepts()) return
+        e.preventDefault()
+        // where it goes once it's out of the list, which moves those after it up one. Below a row in a list shown
+        // backwards is before it in the list.
+        const after = (side === 'after') !== listedBackwards(to)
+        const at = to.index + (after ? 1 : 0)
+        const index = from.index < at ? at - 1 : at
+        // a drawn layer dropped among others on another z takes theirs, so it's drawn where it's dropped
+        const z = listedBackwards(to) ? (to.list.get()[to.index] as SceneLayer).z : undefined
+        batch(() => {
+          if (index !== from.index) tree.move(from, index - from.index)
+          if (listedBackwards(to) && ((from.list.get()[index] as SceneLayer).z ?? 0) !== (z ?? 0)) field(item(from.list as Lens<SceneLayer[]>, index), 'z').set(z || undefined)
+        })
+      },
+      onDragEnd: () => {
+        tree.setDragging(null)
+        setGrabbable(false)
+      },
+    },
+  }
 }
 
 /** The length of a cycle, and how many times it plays */
@@ -309,11 +895,12 @@ function TimeScaleMenu(props: { duration: number; scale: (by: number) => void })
   )
 }
 
-/** A prop's name and its keys, its picks, or its wave along the timeline, with a button that follows the mouse for adding a key or a pick and one for holding it still */
-function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => string; span: number; reveal: (track: SceneTrack) => void }) {
+/** A prop's keys, its picks, or its wave along its lane, with a button that follows the mouse for adding a key or a pick */
+function TrackLane(props: { node: TrackNode; percent: (seconds: number) => string; span: number; expanded: boolean; scrub: (seconds: number) => void }) {
   const scene = useContext(SceneContext)!
-  // read through `props`, as a row goes to whichever prop comes to be at its position
-  const prop: Lens<Prop<SceneValue>> = { get: () => props.track.prop.get(), set: (next) => props.track.prop.set(next) }
+  // read through `props`, as a lane goes to whichever prop comes to be at its row
+  const prop: Lens<Prop<SceneValue>> = { get: () => props.node.lens.get(), set: (next) => props.node.lens.set(next) }
+  const label = () => props.node.label
   const times = () => trackTimes(prop.get())
   const waved = () => 'Modulated' in prop.get()
   /** The time under the mouse, and whether that's a dot's rather than one to add a dot at */
@@ -339,75 +926,49 @@ function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => stri
     const current = prop.get()
     if ('Keyframes' in current) prop.set({ Keyframes: withKey(current.Keyframes, at) })
     if ('Random' in current) prop.set({ Random: withPick(current.Random, at) })
+    props.scrub(at)
   }
 
-  // a track that isn't on a drawn layer is a sound's volume
-  const color = (): LayerColor => (props.track.layer === null ? 'sound' : undefined)
-
   return (
-    <LayerColorContext.Provider value={color()}>
-      <div class={`scene-timeline-row ${layerColorClass(color()) ?? ''}`} classList={{ 'scene-timeline-hidden': isHidden(prop.get()) }}>
-        <div class="scene-timeline-name">
-          <EyeButton label={props.track.label} hidden={isHidden(prop.get())} onChange={(hidden) => prop.set(withHidden(prop.get(), hidden))} />
-          <button type="button" class="scene-timeline-label" title={`Find ${props.track.label} in Config`} onClick={() => props.reveal(props.track)}>
-            {props.track.label}
-          </button>
-        </div>
-        <div class="scene-timeline-lane" ref={lane} onPointerMove={hover} onPointerLeave={() => setHovering(null)}>
-          <Show when={hovering()?.onDot === false}>
-            <button
-              type="button"
-              class="scene-key-add"
-              aria-label={`Add a key to ${props.track.label}`}
-              style={{ left: props.percent(hovering()!.at) }}
-              onClick={() => {
-                add(hovering()!.at)
-                setHovering(null)
-              }}
-            >
-              +
-            </button>
+    <div class="scene-track" ref={lane} onPointerMove={hover} onPointerLeave={() => setHovering(null)}>
+      <Show when={hovering()?.onDot === false}>
+        <button
+          type="button"
+          class="scene-key-add"
+          aria-label={`Add a key to ${label()}`}
+          style={{ left: props.percent(hovering()!.at) }}
+          onClick={() => {
+            add(hovering()!.at)
+            setHovering(null)
+          }}
+        >
+          +
+        </button>
+      </Show>
+      <Show when={hovering() !== null}>
+        <ScenePortal>
+          <span class="scene-key-add-time" style={addTimePlace()}>
+            {hovering()!.at.toFixed(2)} s
+          </span>
+        </ScenePortal>
+      </Show>
+      <Show when={waved()}>
+        <WaveLine modulated={variant(prop, 'Modulated').get()} scene={scene.get()} duration={scene.get().timing?.duration ?? props.span} percent={props.percent} />
+      </Show>
+      <Show when={props.expanded && 'Keyframes' in prop.get()}>
+        <KeyedPreview keys={variant(prop, 'Keyframes').get().keys} cycle={variant(prop, 'Keyframes').get().cycle} span={props.span} />
+      </Show>
+      <Index each={times()}>
+        {(time, index) => (
+          <Show
+            when={'Keyframes' in prop.get()}
+            fallback={<PickDot label={label()} picks={field(variant(prop, 'Random'), 'picks')} index={index} left={props.percent(time())} times={times()} span={props.span} />}
+          >
+            <KeyDot label={label()} ranges={props.node.ranges} keys={field(variant(prop, 'Keyframes'), 'keys')} index={index} left={props.percent(time())} times={times()} span={props.span} />
           </Show>
-          <Show when={hovering() !== null}>
-            <ScenePortal>
-              <span class="scene-key-add-time" style={addTimePlace()}>
-                {hovering()!.at.toFixed(2)} s
-              </span>
-            </ScenePortal>
-          </Show>
-          <Show when={waved()}>
-            <WaveLine modulated={variant(prop, 'Modulated').get()} scene={scene.get()} duration={scene.get().timing?.duration ?? props.span} percent={props.percent} />
-          </Show>
-          <Index each={times()}>
-            {(time, index) => (
-              <Show
-                when={'Keyframes' in prop.get()}
-                fallback={
-                  <PickDot
-                    label={props.track.label}
-                    picks={field(variant(prop, 'Random'), 'picks')}
-                    index={index}
-                    left={props.percent(time())}
-                    times={times()}
-                    span={props.span}
-                  />
-                }
-              >
-                <KeyDot
-                  label={props.track.label}
-                  ranges={props.track}
-                  keys={field(variant(prop, 'Keyframes'), 'keys')}
-                  index={index}
-                  left={props.percent(time())}
-                  times={times()}
-                  span={props.span}
-                />
-              </Show>
-            )}
-          </Index>
-        </div>
-      </div>
-    </LayerColorContext.Provider>
+        )}
+      </Index>
+    </div>
   )
 }
 
@@ -437,9 +998,16 @@ function WaveLine(props: { modulated: Modulated; scene: Scene; duration: number;
  */
 function phaseAt(phase: Prop<number>, scene: Scene, seconds: number): number {
   if (!('Keyframes' in phase)) return startingValue(phase, scene, 0)
-  const { keys, cycle } = phase.Keyframes
+  return keyedAt(phase.Keyframes.keys, phase.Keyframes.cycle, seconds, (a, b, height) => a + (b - a) * height) ?? 0
+}
+
+/**
+ * A keyframed value `seconds` into the scene's cycle, as `Keyframes::resolve` in frontbox-gfx has it, with a curve
+ * written by hand taken as linear. `mix` goes from one key's value to the next's by the curve's height between them.
+ */
+function keyedAt<T>(keys: Key<T>[], cycle: Cycle, seconds: number, mix: (a: T, b: T, height: number) => T): T | undefined {
   const [first, last] = [keys[0], keys[keys.length - 1]]
-  if (!first || !last) return 0
+  if (!first || !last) return undefined
   const laps = cycle === 'Once' ? 1 : cycle === 'Forever' ? Infinity : cycle.Times
   const time = last.at <= 0 ? seconds : seconds >= laps * last.at ? last.at : cycle === 'Once' ? seconds : seconds % last.at
   if (time <= first.at) return first.value
@@ -448,30 +1016,72 @@ function phaseAt(phase: Prop<number>, scene: Scene, seconds: number): number {
     if (time < b.at) {
       const span = b.at - a.at
       const through = span > 0 ? (time - a.at) / span : 1
-      return a.value + (b.value - a.value) * curveHeight(b.curve, through)
+      return mix(a.value, b.value, curveHeight(b.curve, through))
     }
   }
   return last.value
 }
 
-/** A sound layer's name, and a bar for when it plays */
-function SoundRow(props: { lens: Lens<SoundLayer>; index: number; end: number; percent: (seconds: number) => string; span: number }) {
-  const label = () => soundLabel(props.lens.get(), props.index)
+/** How many points a keyframed value's preview is drawn with across the view */
+const KEYED_SAMPLES = 400
 
+/** Two keyed values `height` of the way from `a` to `b`. A boolean switches on the key it arrives at. */
+function mixValues(a: SceneValue, b: SceneValue, height: number): SceneValue {
+  if (typeof a === 'number' && typeof b === 'number') return a + (b - a) * height
+  if (Array.isArray(a) && Array.isArray(b)) return a.map((value, index) => value + ((b[index] ?? value) - value) * height) as SceneValue
+  return height >= 1 ? b : a
+}
+
+/** The numbers a value is drawn as: a number or a boolean as one line, a point as two */
+const lineValues = (value: SceneValue): number[] => (typeof value === 'boolean' ? [value ? 1 : 0] : typeof value === 'number' ? [value] : value)
+
+/**
+ * A keyframed prop's value over the view, below its keys: a line from its lowest value at the bottom to its highest at
+ * the top, one for each of a point's x and y, or a color as a band of the colors it goes through.
+ */
+function KeyedPreview(props: { keys: Key<SceneValue>[]; cycle: Cycle; span: number }) {
+  const samples = createMemo(() =>
+    Array.from({ length: KEYED_SAMPLES + 1 }, (_, index) => {
+      const at = index / KEYED_SAMPLES
+      return { at, value: keyedAt(props.keys, props.cycle, at * props.span, mixValues) }
+    }).filter((sample): sample is { at: number; value: SceneValue } => sample.value !== undefined),
+  )
+  const isColor = () => {
+    const first = props.keys[0]?.value
+    return Array.isArray(first) && first.length === 4
+  }
+  /** Each line's points, each fit to the height between its own lowest and highest values */
+  const lines = () => {
+    const values = samples().map(({ value }) => lineValues(value))
+    return (values[0] ?? []).map((_, line) => {
+      const of = values.map((value) => value[line])
+      const [low, high] = [Math.min(...of), Math.max(...of)]
+      const height = (value: number) => (high - low > 1e-6 ? (value - low) / (high - low) : 0.5)
+      return samples()
+        .map(({ at }, index) => `${at},${1 - height(of[index])}`)
+        .join(' ')
+    })
+  }
+  const id = `scene-keyed-${Math.random().toString(36).slice(2)}`
   return (
-    <div class="scene-timeline-row scene-color-sound">
-      <div class="scene-timeline-name">
-        <span class="scene-timeline-mark" aria-hidden="true">
-          ♪
-        </span>
-        <span class="scene-timeline-label" title={props.lens.get().sound}>
-          {label()}
-        </span>
-      </div>
-      <div class="scene-timeline-lane">
-        <SoundBar label={label()} lens={props.lens} end={props.end} percent={props.percent} span={props.span} />
-      </div>
-    </div>
+    <svg class="scene-keyed" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
+      <Show
+        when={isColor()}
+        fallback={<For each={lines()}>{(points, line) => <polyline classList={{ 'scene-keyed-second': line() > 0 }} points={points} />}</For>}
+      >
+        <defs>
+          <linearGradient id={id}>
+            <For each={samples().filter((_, index) => index % 8 === 0)}>
+              {({ at, value }) => {
+                const [r, g, b] = value as number[]
+                return <stop offset={at} stop-color={`rgb(${r} ${g} ${b})`} />
+              }}
+            </For>
+          </linearGradient>
+        </defs>
+        <rect class="scene-keyed-band" x="0" y="0.2" width="1" height="0.6" fill={`url(#${id})`} />
+      </Show>
+    </svg>
   )
 }
 
@@ -567,31 +1177,13 @@ function SoundBar(props: { label: string; lens: Lens<SoundLayer>; end: number; p
   )
 }
 
-/**
- * A traversal's name and when it plays out: a bar from its start for as long as it takes, marking the part past the end
- * of the scene, where it's cut off. `length` is `null` while that isn't known.
- */
-function TraversalRow(props: { run: SceneTraversal; length: number | null; end: number; percent: (seconds: number) => string; span: number; open: (layer: number) => void }) {
-  // read through `props`, as a row goes to whichever traversal comes to be at its position
-  const traversal: Lens<Traversal> = { get: () => props.run.traversal.get(), set: (next) => props.run.traversal.set(next) }
+/** When a traversal plays out. `length` is `null` while that isn't known. */
+function TraversalLane(props: { node: Extract<ConfigNode, { kind: 'traversal' }>; length: number | null; end: number; percent: (seconds: number) => string; span: number }) {
+  // read through `props`, as a lane goes to whichever traversal comes to be at its row
+  const traversal: Lens<Traversal> = { get: () => props.node.lens.get(), set: (next) => props.node.lens.set(next) }
   const over = () => (props.length === null ? 0 : traversal.get().start + props.length - props.end)
-  const overText = () => (over() > TIME_STEP / 2 ? `${props.run.label} runs ${over().toFixed(2)} s past the end of the scene, so it's cut off before it finishes` : null)
-
-  return (
-    <div class="scene-timeline-row">
-      <div class="scene-timeline-name">
-        <span class="scene-timeline-mark" classList={{ 'scene-timeline-over': overText() !== null }} title={overText() ?? undefined}>
-          <Show when={overText()}>!</Show>
-        </span>
-        <button type="button" class="scene-timeline-label" title={`Find ${props.run.label} in Config`} onClick={() => props.open(props.run.layer)}>
-          {props.run.label}
-        </button>
-      </div>
-      <div class="scene-timeline-lane">
-        <TraversalBar label={props.run.label} lens={traversal} length={props.length} end={props.end} over={overText()} percent={props.percent} span={props.span} />
-      </div>
-    </div>
-  )
+  const overText = () => (over() > TIME_STEP / 2 ? `${props.node.label} runs ${over().toFixed(2)} s past the end of the scene, so it's cut off before it finishes` : null)
+  return <TraversalBar label={props.node.label} lens={traversal} length={props.length} end={props.end} over={overText()} percent={props.percent} span={props.span} />
 }
 
 /**
@@ -745,7 +1337,7 @@ function PickDot(props: DotPlace & { label: string; picks: Lens<RandomPick[]> })
 }
 
 /** A key on a track */
-function KeyDot(props: DotPlace & { label: string; ranges: Pick<SceneTrack, 'ranges'>; keys: Lens<Key<SceneValue>[]> }) {
+function KeyDot(props: DotPlace & { label: string; ranges: Ranges; keys: Lens<Key<SceneValue>[]> }) {
   const key = () => item(props.keys, props.index)
   const at = () => key().get().at
   const room = () => roomNear(props)
@@ -758,7 +1350,7 @@ function KeyDot(props: DotPlace & { label: string; ranges: Pick<SceneTrack, 'ran
   return (
     <Dot {...props} label={`${props.label} key at ${at().toFixed(2)} seconds`} moments={props.keys} background={background()}>
       <FieldRow label="Value">
-        <ValueField label="Value" lens={field(key(), 'value')} ranges={props.ranges.ranges} />
+        <ValueField label="Value" lens={field(key(), 'value')} ranges={props.ranges} />
       </FieldRow>
       <Show when={props.index > 0}>
         <FieldRow label="Curve into this key">

@@ -1,5 +1,5 @@
 import { Dialog } from '@ark-ui/solid/dialog'
-import { createSignal, For, Show } from 'solid-js'
+import { createEffect, createSignal, For, Show } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import {
   addContentImage,
@@ -13,14 +13,42 @@ import type { Lens } from './sceneModel'
 /** The chosen image, and a way to choose from the machine's content folder or add to it */
 export function ImagePicker(props: { lens: Lens<string> }) {
   const [open, setOpen] = createSignal(false)
+  return (
+    <>
+      <div class="scene-image-chosen">
+        <Show when={props.lens.get()} fallback={<span class="scene-note">No image chosen</span>}>
+          <img src={contentImageUrl(props.lens.get())} alt="" />
+          <span title={props.lens.get()}>{props.lens.get()}</span>
+        </Show>
+        <button type="button" class="scene-button" onClick={() => setOpen(true)}>
+          Choose
+        </button>
+      </div>
+      <ImageDialog
+        open={open()}
+        chosen={props.lens.get()}
+        onChoose={(name) => {
+          props.lens.set(name)
+          setOpen(false)
+        }}
+        onClose={() => setOpen(false)}
+      />
+    </>
+  )
+}
+
+/** Lists the images in the machine's content folder to choose one, and adds one to it from a file */
+export function ImageDialog(props: { open: boolean; chosen: string; onChoose: (name: string) => void; onClose: () => void }) {
   const [error, setError] = createSignal<string | null>(null)
   const [adding, setAdding] = createSignal(false)
   let list: HTMLDivElement | undefined
 
-  const choose = (name: string) => {
-    props.lens.set(name)
-    setOpen(false)
-  }
+  // the folder can have changed since it was last read
+  createEffect(() => {
+    if (!props.open) return
+    setError(null)
+    refreshContentImages()
+  })
 
   const add = async (input: HTMLInputElement) => {
     const file = input.files?.[0]
@@ -29,7 +57,7 @@ export function ImagePicker(props: { lens: Lens<string> }) {
     setAdding(true)
     setError(null)
     try {
-      choose(await addContentImage(file))
+      props.onChoose(await addContentImage(file))
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -41,12 +69,8 @@ export function ImagePicker(props: { lens: Lens<string> }) {
     <Dialog.Root
       lazyMount
       unmountOnExit
-      open={open()}
-      onOpenChange={(details) => {
-        setOpen(details.open)
-        setError(null)
-        if (details.open) refreshContentImages()
-      }}
+      open={props.open}
+      onOpenChange={(details) => !details.open && props.onClose()}
       // opens at the chosen image, which could be a long way down. Taking focus doesn't scroll to it here.
       initialFocusEl={() => {
         const selected = list?.querySelector<HTMLElement>('[aria-selected="true"]') ?? null
@@ -54,13 +78,6 @@ export function ImagePicker(props: { lens: Lens<string> }) {
         return selected
       }}
     >
-      <div class="scene-image-chosen">
-        <Show when={props.lens.get()} fallback={<span class="scene-note">No image chosen</span>}>
-          <img src={contentImageUrl(props.lens.get())} alt="" />
-          <span title={props.lens.get()}>{props.lens.get()}</span>
-        </Show>
-        <Dialog.Trigger class="scene-button">Choose</Dialog.Trigger>
-      </div>
       <Portal>
         <Dialog.Backdrop class="scene-dialog-backdrop" />
         <Dialog.Positioner class="scene-dialog-positioner">
@@ -78,14 +95,7 @@ export function ImagePicker(props: { lens: Lens<string> }) {
             <div class="scene-image-list" role="listbox" aria-label="Image" ref={list}>
               <For each={contentImages()}>
                 {(name) => (
-                  <button
-                    type="button"
-                    class="scene-image"
-                    role="option"
-                    title={name}
-                    aria-selected={props.lens.get() === name}
-                    onClick={() => choose(name)}
-                  >
+                  <button type="button" class="scene-image" role="option" title={name} aria-selected={props.chosen === name} onClick={() => props.onChoose(name)}>
                     <img src={contentImageUrl(name)} alt="" loading="lazy" />
                     <span>{name}</span>
                   </button>

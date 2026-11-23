@@ -1,11 +1,13 @@
 import { ColorPicker, parseColor, type Color as PickerColor } from '@ark-ui/solid/color-picker'
+import { Menu } from '@ark-ui/solid/menu'
+import { Dynamic } from 'solid-js/web'
 import { createListCollection, Select } from '@ark-ui/solid/select'
 import { Slider } from '@ark-ui/solid/slider'
 import { Switch as Toggle } from '@ark-ui/solid/switch'
 import { createContext, createEffect, createMemo, createSignal, For, Match, Show, splitProps, Switch, useContext, type Accessor, type JSX, type Signal } from 'solid-js'
-import ScenePortal from './ScenePortal'
+import ScenePortal, { layerColorClass, type LayerColor } from './ScenePortal'
 import InfoTip from '../../components/InfoTip'
-import { Eye, EyeOff } from '../../components/icons'
+import { AudioWaveform, ChartSpline, Dices, Eye, EyeOff, Footprints, Orbit, Pin, Pipette, Variable } from '../../components/icons'
 import type { Color } from '../../types/generated/Color'
 import { NAMED_COLORS } from '../../types/generated/namedColors'
 import type { Prop } from '../../types/generated/Prop'
@@ -26,9 +28,6 @@ export const SceneContext = createContext<Lens<Scene>>()
 /** The size the scene is being edited for */
 export const SurfaceContext = createContext<Accessor<Surface>>()
 export const LayerSurfacesContext = createContext<LayerSurfaces>()
-
-/** The prop waiting to be shown to whoever asked, until its field comes up and takes it */
-export const RevealContext = createContext<Signal<Prop<SceneValue> | null>>()
 
 /** The names of the traversals in the layer being edited, which a prop can respond to the visits of */
 export const TraversalsContext = createContext<Accessor<string[]>>(() => [])
@@ -66,9 +65,9 @@ function useScene() {
 }
 
 /** A value's control and the label above it */
-export function FieldRow(props: { label: string; children: any }) {
+export function FieldRow(props: { label: string; children: any; /** Beside the label rather than under it, for a small control */ inline?: boolean }) {
   return (
-    <div class="scene-field">
+    <div class="scene-field" classList={{ 'scene-field-inline': props.inline }}>
       <span class="scene-field-label">{props.label}</span>
       {props.children}
     </div>
@@ -94,20 +93,53 @@ export function EyeButton(props: { label: string; hidden: boolean; onChange: (hi
   )
 }
 
+/**
+ * After a choice in the sidebar that can add fields below it, such as a fill's type or a prop's source, scrolls the
+ * sidebar down to show the rest of the section it's in, as far as that keeps the choice itself in view.
+ */
+export function revealBelow(choice: Element) {
+  // after the fields the choice adds have been laid out
+  requestAnimationFrame(() => {
+    if (!choice.isConnected || !choice.closest('.scene-sidebar-tabs')) return
+    const section = choice.closest('.scene-prop-under, .scene-part, .scene-prop, .scene-properties-node')
+    const scroller = scrollParent(choice)
+    if (!section || !scroller) return
+    const view = scroller.getBoundingClientRect()
+    const MARGIN = 12
+    const past = section.getBoundingClientRect().bottom + MARGIN - view.bottom
+    const room = choice.getBoundingClientRect().top - MARGIN - view.top
+    // the sticky tabs cover the top of the sidebar
+    const tabs = scroller.querySelector('.scene-sidebar-tab-list')?.getBoundingClientRect().height ?? 0
+    const by = Math.min(past, room - tabs)
+    if (by > 0) scroller.scrollBy({ top: by, behavior: 'smooth' })
+  })
+}
+
+/** The nearest element above one that scrolls */
+function scrollParent(element: Element): Element | null {
+  for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+    const overflow = getComputedStyle(parent).overflowY
+    if ((overflow === 'auto' || overflow === 'scroll') && parent.scrollHeight > parent.clientHeight) return parent
+  }
+  return null
+}
+
 /** Picks one of an enum's values. Options with a `group` are listed under its name, with the groups in the order they first come. */
 export function Dropdown<T extends string>(props: {
   label: string
-  options: { value: T; label: string; group?: string }[]
+  /** `color` marks an option in the color of the layers it's for */
+  options: { value: T; label: string; group?: string; color?: LayerColor }[]
   value: T
   onChange: (value: T) => void
   /** As wide as its value rather than its row, with a list as wide as the options need */
   compact?: boolean
 }) {
+  let root!: HTMLDivElement
   const collection = createMemo(() => createListCollection({ items: props.options }))
   const groups = createMemo(() => [...new Set(props.options.map((option) => option.group))])
   const inGroup = (group: string | undefined) => collection().items.filter((option) => option.group === group)
-  const item = (option: { value: T; label: string }) => (
-    <Select.Item item={option}>
+  const item = (option: { value: T; label: string; color?: LayerColor }) => (
+    <Select.Item item={option} class={layerColorClass(option.color)}>
       <Select.ItemText>{option.label}</Select.ItemText>
       <Select.ItemIndicator>
         <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -118,11 +150,15 @@ export function Dropdown<T extends string>(props: {
   )
   return (
     <Select.Root
+      ref={root}
       class="scene-dropdown"
       classList={{ 'scene-dropdown-compact': props.compact }}
       collection={collection()}
       value={[props.value]}
-      onValueChange={(details) => props.onChange(details.value[0] as T)}
+      onValueChange={(details) => {
+        props.onChange(details.value[0] as T)
+        revealBelow(root)
+      }}
       positioning={props.compact ? { placement: 'bottom-end' } : { sameWidth: true }}
     >
       <Select.Control>
@@ -416,7 +452,15 @@ export function ColorField(props: { label: string; lens: Lens<Color>; class?: st
             </ColorPicker.Area>
             {channelSlider('hue')}
             {channelSlider('alpha')}
-            <ColorPicker.ChannelInput channel="hex" aria-label={`${props.label} as hex`} />
+            <div class="scene-color-hex">
+              <ColorPicker.ChannelInput channel="hex" aria-label={`${props.label} as hex`} />
+              {/* takes a color from anywhere on screen, such as a pixel of an image in the preview, where the browser can */}
+              <Show when={'EyeDropper' in window}>
+                <ColorPicker.EyeDropperTrigger class="scene-icon-button scene-eyedropper" aria-label="Pick a color from the screen" title="Pick a color from the screen, such as from the preview">
+                  <Pipette aria-hidden="true" />
+                </ColorPicker.EyeDropperTrigger>
+              </Show>
+            </div>
             <ColorPicker.SwatchGroup>
               <For each={NAMED_COLORS}>
                 {({ name, hex }) => (
@@ -489,6 +533,28 @@ export const PROP_KIND_LABELS: Record<PropKind, string> = {
   Visit: 'Visit',
 }
 
+/** A prop's icon says where its value comes from */
+export const SOURCE_ICONS: Record<PropKind, typeof Pin> = {
+  Fixed: Pin,
+  Variable: Variable,
+  Keyframes: ChartSpline,
+  Random: Dices,
+  Modulated: AudioWaveform,
+  Sweep: Orbit,
+  Visit: Footprints,
+}
+
+/** What each source does, in the menu that picks one */
+const PROP_KIND_HINTS: Record<PropKind, string> = {
+  Fixed: 'One value that stays the same',
+  Variable: 'Read from a variable the game sets',
+  Keyframes: 'Changes over time, by keys on its timeline row',
+  Random: 'A value picked at random, at times on its timeline row',
+  Modulated: 'Moves back and forth in a wave',
+  Sweep: 'Follows a path, drawn under it',
+  Visit: 'Reacts when a traversal reaches a light',
+}
+
 export const propKind = (prop: Prop<SceneValue>) => Object.keys(prop)[0] as PropKind
 
 type PropProps<T extends SceneValue> = {
@@ -503,7 +569,7 @@ type PropProps<T extends SceneValue> = {
 
 /**
  * A prop: whether it's fixed, read from a variable, keyframed, picked at random, moved in a wave, swept along a path,
- * or set off by visits, and the control for that. A sweep's path is edited in the config tree, under the prop's node.
+ * or set off by visits, and the control for that. A sweep's path is under the prop's row in the tree, and selected there to edit it.
  */
 export function PropField<T extends SceneValue>(
   props: PropProps<T> & {
@@ -512,21 +578,10 @@ export function PropField<T extends SceneValue>(
   },
 ) {
   const scene = useScene()
-  const [revealing, setRevealing] = useContext(RevealContext)!
-  const [pinged, setPinged] = createSignal(false)
-  let element!: HTMLDivElement
   const prop = () => props.lens.get()
   const kind = () => propKind(prop())
   const value = () => startingValue(prop(), scene.get(), props.fallback)
   const variableName = () => (prop() as { Variable: string }).Variable
-
-  // a field can come up for this, in a layer that's only now opening
-  createEffect(() => {
-    if (revealing() === null || revealing() !== prop()) return
-    setRevealing(null)
-    setPinged(true)
-    requestAnimationFrame(() => element.scrollIntoView({ block: 'center', behavior: 'smooth' }))
-  })
 
   const rename = (name: string) => {
     if (name === '' || name === variableName()) return
@@ -535,18 +590,13 @@ export function PropField<T extends SceneValue>(
   }
 
   return (
-    <div
-      class="scene-field scene-prop"
-      classList={{ 'scene-ping': pinged() }}
-      ref={element}
-      onAnimationEnd={(e) => {
-        if (e.target === e.currentTarget) setPinged(false)
-      }}
-    >
+    <div class="scene-field scene-prop">
       <Show when={!props.bare}>
         <div class="scene-prop-header">
-          <span class="scene-field-label">{props.label}</span>
-          <PropSource {...props} />
+          <span class="scene-prop-name">
+            <PropSource {...props} />
+            <span class="scene-field-label">{props.label}</span>
+          </span>
         </div>
       </Show>
       <Switch>
@@ -573,7 +623,7 @@ export function PropField<T extends SceneValue>(
           </Show>
         </Match>
         <Match when={kind() === 'Keyframes'}>
-          <p class="scene-note">Keyframes are on the timeline below.</p>
+          <p class="scene-note">Its keyframes are on its row in the timeline.</p>
         </Match>
         <Match when={kind() === 'Random'}>
           <SpreadField
@@ -585,7 +635,7 @@ export function PropField<T extends SceneValue>(
             <p class="scene-note scene-note-warn">This range is for another type of value, so this reads as zero.</p>
           </Show>
           <ForceUniqueField label={props.label} lens={field(variant(props.lens, 'Random'), 'force_unique')} />
-          <p class="scene-note">When to pick a new value is on the timeline below.</p>
+          <p class="scene-note">When to pick a new value is on its row in the timeline.</p>
         </Match>
         <Match when={kind() === 'Modulated'}>
           <ModulatedField label={props.label} ranges={props.ranges} fallback={props.fallback} lens={variant(props.lens as Lens<Prop<SceneValue>>, 'Modulated')} />
@@ -601,7 +651,10 @@ export function PropField<T extends SceneValue>(
   )
 }
 
-/** Where a prop takes its value from. Switching it starts the new way at the value the prop starts at now. */
+/**
+ * Where a prop takes its value from, as an icon that opens a menu of the others. Switching it starts the new way at the
+ * value the prop starts at now.
+ */
 export function PropSource<T extends SceneValue>(props: PropProps<T>) {
   const scene = useScene()
   const prop = () => props.lens.get()
@@ -647,14 +700,38 @@ export function PropSource<T extends SceneValue>(props: PropProps<T>) {
     }
   }
 
+  let trigger!: HTMLButtonElement
   return (
-    <Dropdown
-      compact
-      label={`${props.label} source`}
-      options={kinds().map((option) => ({ value: option, label: PROP_KIND_LABELS[option] }))}
-      value={kind()}
-      onChange={choose}
-    />
+    <Menu.Root positioning={{ placement: 'bottom-start' }}>
+      <Menu.Trigger ref={trigger} class="scene-icon-button scene-prop-source" data-kind={kind()} aria-label={`${props.label} source: ${PROP_KIND_LABELS[kind()]}`} title={`${PROP_KIND_LABELS[kind()]}: ${PROP_KIND_HINTS[kind()].toLowerCase()}. Click to change.`}>
+        <Dynamic component={SOURCE_ICONS[kind()]} aria-hidden="true" />
+      </Menu.Trigger>
+      <ScenePortal>
+        <Menu.Positioner>
+          <Menu.Content class="scene-dropdown-list scene-source-menu">
+            <Menu.RadioItemGroup
+              value={kind()}
+              onValueChange={(details) => {
+                choose(details.value as PropKind)
+                revealBelow(trigger)
+              }}
+            >
+              <For each={kinds()}>
+                {(option) => (
+                  <Menu.RadioItem value={option}>
+                    <Dynamic component={SOURCE_ICONS[option]} aria-hidden="true" />
+                    <span class="scene-source-option">
+                      <Menu.ItemText>{PROP_KIND_LABELS[option]}</Menu.ItemText>
+                      <span class="scene-source-hint">{PROP_KIND_HINTS[option]}</span>
+                    </span>
+                  </Menu.RadioItem>
+                )}
+              </For>
+            </Menu.RadioItemGroup>
+          </Menu.Content>
+        </Menu.Positioner>
+      </ScenePortal>
+    </Menu.Root>
   )
 }
 
