@@ -38,6 +38,7 @@ fn sample(scene: &Scene, x: f32, y: f32, radius: f32) -> Rgba<u8> {
     timing: None,
     defaults: no_variables(),
     values: no_values(),
+    modulators: no_modulators(),
   };
   scene.sample(&Sample::new(Vec2::new(x, y), radius), &frame)
 }
@@ -92,6 +93,7 @@ fn a_hidden_layer_isnt_drawn_and_keeps_its_place() {
     timing: None,
     defaults: no_variables(),
     values: no_values(),
+    modulators: no_modulators(),
   };
   assert_eq!(scene.outlines(&frame).len(), 2);
 }
@@ -109,6 +111,7 @@ fn at(scene: &Scene, time: f32, variables: &Variables) -> Rgba<u8> {
     timing: scene.timing,
     defaults: no_variables(),
     values: no_values(),
+    modulators: no_modulators(),
   };
   scene.sample(&Sample::new(Vec2::new(1.0, 1.0), 0.5), &frame)
 }
@@ -186,12 +189,11 @@ fn a_layer_switches_on_the_key_it_arrives_at() {
 #[test]
 fn a_wave_shows_a_layer_for_its_upper_half() {
   let wave = Modulated {
-    envelope: Envelope::new(EnvelopeCurve::new(Curve::Linear)),
+    modulator: "rise".into(),
     spread: Spread::Float(0.0, 1.0),
-    rate: 1.0,
     phase: Box::new(0.0.into()),
   };
-  let scene = Scene::new(
+  let mut scene = Scene::new(
     Surface::Area,
     vec![
       Layer::new(solid(RED)),
@@ -199,6 +201,10 @@ fn a_wave_shows_a_layer_for_its_upper_half() {
     ],
   )
   .timing(Timing::new(1.0, Cycle::Forever));
+  scene.modulators.insert(
+    "rise".into(),
+    Modulator::new(Envelope::new(EnvelopeCurve::new(Curve::Linear)), 1.0),
+  );
   assert_eq!(at(&scene, 0.25, &Variables::new()), RED);
   assert_eq!(at(&scene, 0.75, &Variables::new()), BLUE);
 }
@@ -350,6 +356,7 @@ fn line(scene: &Scene, count: usize) -> Vec<Rgba<u8>> {
     timing: None,
     defaults: no_variables(),
     values: no_values(),
+    modulators: no_modulators(),
   };
   Line::new(count)
     .samples()
@@ -390,6 +397,7 @@ fn random_color_at(scene: &Scene, time: f32, playback_seed: u32) -> Rgba<u8> {
     timing: None,
     defaults: no_variables(),
     values: no_values(),
+    modulators: no_modulators(),
   };
   scene.sample(&Sample::new(Vec2::new(0.5, 0.0), 0.5), &frame)
 }
@@ -580,6 +588,7 @@ fn outlines(layer: Layer) -> Vec<Vec<Vec2>> {
     timing: None,
     defaults: no_variables(),
     values: no_values(),
+    modulators: no_modulators(),
   };
   Scene::new(Surface::Area, vec![layer])
     .outlines(&frame)
@@ -605,6 +614,7 @@ fn a_device_decides_the_size_of_an_area() {
         timing: None,
         defaults: no_variables(),
         values: no_values(),
+        modulators: no_modulators(),
       },
     )
   };
@@ -628,6 +638,7 @@ fn a_gradient_with_no_shape_stretches_to_the_device() {
       timing: None,
       defaults: no_variables(),
       values: no_values(),
+      modulators: no_modulators(),
     };
     scene.sample(&Sample::new(Vec2::new(width, 25.0), 0.0), &frame)
   };
@@ -825,6 +836,7 @@ fn a_masks_outline_and_pose_line_up_with_the_layers() {
     timing: None,
     defaults: no_variables(),
     values: no_values(),
+    modulators: no_modulators(),
   };
   assert!(scene.mask_outlines(&frame)[0].is_empty());
   assert!(!scene.mask_outlines(&frame)[1].is_empty());
@@ -954,6 +966,7 @@ fn a_grid_of_another_shape_does_not_squash_the_scene() {
     timing: None,
     defaults: no_variables(),
     values: no_values(),
+    modulators: no_modulators(),
   };
   let pixels: Vec<_> = Grid::new(128, 32, Vec2::new(100.0, 50.0))
     .samples()
@@ -1009,6 +1022,7 @@ fn level_at(scene: &Scene, time: f32) -> u8 {
       timing: None,
       defaults: no_variables(),
       values: no_values(),
+      modulators: no_modulators(),
     },
   )[0]
 }
@@ -1124,6 +1138,7 @@ fn params_override_defaults() {
     timing: None,
     defaults: no_variables(),
     values: no_values(),
+    modulators: no_modulators(),
   };
   assert_eq!(scene.sample(&Sample::new(Vec2::ZERO, 0.5), &frame), BLUE);
 }
@@ -1158,6 +1173,7 @@ fn drawn(scene: &Scene, x: f32, y: f32, radius: f32) -> Rgba<u8> {
     timing: None,
     defaults: no_variables(),
     values: no_values(),
+    modulators: no_modulators(),
   };
   scene.sample(&Sample::new(Vec2::new(x, y), radius), &frame)
 }
@@ -1178,6 +1194,7 @@ fn an_image_shows_its_pixels_on_a_grid_of_the_same_size() {
     timing: None,
     defaults: no_variables(),
     values: no_values(),
+    modulators: no_modulators(),
   };
   let colors: Vec<_> = Grid::new(4, 3, size)
     .samples()
@@ -1219,6 +1236,7 @@ fn a_strip_runs_along_the_middle_of_an_image() {
     timing: None,
     defaults: no_variables(),
     values: no_values(),
+    modulators: no_modulators(),
   };
   for at in Line::new(5).samples() {
     assert_eq!(
@@ -1246,6 +1264,7 @@ fn a_shape_scaled_down_covers_more_of_its_image_with_each_sample() {
     timing: None,
     defaults: no_variables(),
     values: no_values(),
+    modulators: no_modulators(),
   };
 
   // a whole viewport of it shows each pixel, and the same image in a shape of 4 units has 16 pixels to each unit
@@ -1320,6 +1339,7 @@ fn frame_at(scene: &Scene, time: f32, playback_seed: u32, variables: &Variables)
     timing: None,
     defaults: no_variables(),
     values: no_values(),
+    modulators: no_modulators(),
   };
   scene.sample(&Sample::new(Vec2::splat(0.5), 0.1), &frame)[0]
 }
@@ -1457,6 +1477,7 @@ fn graph_alphas(scene: &Scene, time: f32) -> Vec<u8> {
     timing: None,
     defaults: no_variables(),
     values: no_values(),
+    modulators: no_modulators(),
   };
   let visits = scene.visits(&graph, &frame);
   samples
@@ -1524,6 +1545,7 @@ fn a_graph_layer_leaves_out_samples_that_arent_nodes() {
     timing: None,
     defaults: no_variables(),
     values: no_values(),
+    modulators: no_modulators(),
   };
   assert_eq!(scene.sample(&Sample::new(Vec2::ZERO, 0.1), &frame), BLUE);
   assert_eq!(
@@ -1547,6 +1569,7 @@ fn without_visits_a_graph_layer_rests() {
     timing: None,
     defaults: no_variables(),
     values: no_values(),
+    modulators: no_modulators(),
   };
   assert_eq!(
     scene.sample(&Sample::new(Vec2::ZERO, 0.1).at_node(0), &frame)[3],
@@ -1628,6 +1651,7 @@ fn fit_colors(fill: Fill, shape: Option<Shape>, from: &str, to: &str) -> Vec<Rgb
     timing: None,
     defaults: no_variables(),
     values: no_values(),
+    modulators: no_modulators(),
   };
   let visits = scene.visits(&graph, &frame);
   samples
@@ -1726,6 +1750,7 @@ fn a_grid_is_drawn_over_what_is_already_in_it() {
     timing: None,
     defaults: no_variables(),
     values: no_values(),
+    modulators: no_modulators(),
   };
   let mut pixels = vec![BLUE; 32 * 16];
   layer.sample_grid(&grid, &frame, &mut pixels);
@@ -1754,6 +1779,7 @@ fn a_prepared_layer_draws_samples_of_another_radius_as_they_are_drawn_alone() {
     timing: None,
     defaults: no_variables(),
     values: no_values(),
+    modulators: no_modulators(),
   };
   let prepared = scene.layers[0].prepare(&frame, 0.25);
   for at in Line::new(8).samples() {
@@ -1841,6 +1867,7 @@ fn pixels(scene: &Scene, width: usize, height: usize) -> Vec<String> {
     timing: None,
     defaults: no_variables(),
     values: no_values(),
+    modulators: no_modulators(),
   };
   let alpha = |x: usize, y: usize| {
     scene.sample(
@@ -2106,6 +2133,7 @@ fn sprites_drawn(sprite: Prop<f32>) -> Vec<(u8, u8)> {
     timing: None,
     defaults: no_variables(),
     values: no_values(),
+    modulators: no_modulators(),
   };
   Grid::new(2, 2, size)
     .samples()
@@ -2163,6 +2191,7 @@ fn tall_image_drawn(size: ImageSize, transform: Vec<Transform>) -> Vec<Option<(u
     timing: None,
     defaults: no_variables(),
     values: no_values(),
+    modulators: no_modulators(),
   };
   Grid::new(4, 2, size)
     .samples()
@@ -2229,6 +2258,7 @@ fn a_sprite_at_its_native_size_is_the_sprites_pixels() {
     timing: None,
     defaults: no_variables(),
     values: no_values(),
+    modulators: no_modulators(),
   };
   let drawn: Vec<_> = Grid::new(4, 4, size)
     .samples()

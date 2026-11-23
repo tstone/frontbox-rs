@@ -5,7 +5,7 @@ use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::animation::Lerp;
-use crate::scene::{Assets, Bounds, NamedValue, NodeVisits, Timing, Values};
+use crate::scene::{Assets, Bounds, Modulators, NamedValue, NodeVisits, Timing, Values};
 
 /// Variable values by name
 pub type Variables = BTreeMap<String, Value>;
@@ -182,6 +182,8 @@ pub(crate) struct Env<'a> {
   pub defaults: &'a Variables,
   /// The scene's named values, which a variable can point at
   pub values: &'a Values,
+  /// The scene's modulators, which modulated props move by
+  pub modulators: &'a Modulators,
   /// How many named values deep this is resolving, so values that point at each other stop
   pub depth: u8,
   pub assets: &'a Assets,
@@ -223,7 +225,7 @@ const MAX_VALUE_DEPTH: u8 = 8;
 #[cfg(test)]
 pub(crate) mod tests {
   use super::*;
-  use crate::scene::no_values;
+  use crate::scene::{no_modulators, no_values};
 
   pub(crate) fn env<'a>(time: f32, variables: &'a Variables) -> Env<'a> {
     Env {
@@ -234,6 +236,7 @@ pub(crate) mod tests {
       variables,
       defaults: variables,
       values: no_values(),
+      modulators: no_modulators(),
       depth: 0,
       assets: Assets::none(),
       viewport: Bounds::sized(Vec2::new(100.0, 50.0)),

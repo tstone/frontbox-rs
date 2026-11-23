@@ -2,7 +2,7 @@
 import type { EnvelopeCurve } from "./EnvelopeCurve";
 
 /**
- * The shape of one wave of a [`Modulated`]: the attack alone over the whole wave, or the attack over its first half
+ * The shape of one wave of a [`Modulator`]: the attack alone over the whole wave, or the attack over its first half
  * and the decay over its second
  */
 export type Envelope = { attack: EnvelopeCurve, decay?: EnvelopeCurve, };

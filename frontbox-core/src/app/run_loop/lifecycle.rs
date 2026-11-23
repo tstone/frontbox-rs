@@ -64,9 +64,19 @@ impl RunLoop {
       });
       let mut children: Vec<SystemContainer> = Vec::new();
       if let Some(group) = system.downcast_mut::<Group>() {
-        children.extend(group.take_children().into_iter().map(|child| child.to_system_container()));
+        children.extend(
+          group
+            .take_children()
+            .into_iter()
+            .map(|child| child.to_system_container()),
+        );
       } else if let Some(multi) = system.downcast_mut::<Multi>() {
-        children.extend(multi.take_copies().into_iter().map(|copy| copy.to_system_container()));
+        children.extend(
+          multi
+            .take_copies()
+            .into_iter()
+            .map(|copy| copy.to_system_container()),
+        );
       }
       children
     };
@@ -836,7 +846,9 @@ mod cause_tests {
   fn descriptions(traces: &mut UnboundedReceiver<TraceEvent>) -> Vec<(u64, Option<&'static str>)> {
     std::iter::from_fn(|| traces.try_recv().ok())
       .filter_map(|trace| match trace {
-        TraceEvent::SystemSpawned { id, description, .. } => Some((id, description)),
+        TraceEvent::SystemSpawned {
+          id, description, ..
+        } => Some((id, description)),
         _ => None,
       })
       .collect()
@@ -879,7 +891,9 @@ mod multi_tests {
   fn found<T: System + 'static>(h: &Harness, from: SystemHandle) -> Option<u64> {
     let ctx = h.service_context().for_system(from);
     ctx.systems.get::<T>()?;
-    h.groups.nearest(from, TypeId::of::<T>()).map(|handle| handle.id)
+    h.groups
+      .nearest(from, TypeId::of::<T>())
+      .map(|handle| handle.id)
   }
 
   #[test]

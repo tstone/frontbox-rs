@@ -500,7 +500,10 @@ impl ConsoleHub {
   pub fn export(&self) -> Option<String> {
     let (snapshot, console_ms) = {
       let state = self.state.lock().unwrap();
-      (state.snapshot.clone(), state.started.elapsed().as_millis() as u64)
+      (
+        state.snapshot.clone(),
+        state.started.elapsed().as_millis() as u64,
+      )
     };
     let export = Export {
       exported_at: humantime::format_rfc3339_seconds(std::time::SystemTime::now()).to_string(),
@@ -802,17 +805,14 @@ fn end_open_steps(system: &mut System, at_ms: u64, how: StepEnding) {
 /// keeps its latest status, and the routine steps it still holds, so what's current still shows.
 fn clear_history(snapshot: &mut Snapshot, at_ms: u64) {
   snapshot.log.clear();
-  snapshot.systems.retain(|system| system.despawned_ms.is_none());
+  snapshot
+    .systems
+    .retain(|system| system.despawned_ms.is_none());
   for system in &mut snapshot.systems {
-    let held = system.history.drain(..).filter(|entry| {
-      matches!(
-        entry,
-        HistoryEntry::RoutineStep {
-          ended_ms: None,
-          ..
-        }
-      )
-    });
+    let held = system
+      .history
+      .drain(..)
+      .filter(|entry| matches!(entry, HistoryEntry::RoutineStep { ended_ms: None, .. }));
     system.history = std::iter::once(HistoryEntry::HistoryCleared {
       at_ms,
       active: system.active,
@@ -1162,7 +1162,10 @@ mod tests {
       });
     }
 
-    assert!(matches!(history(&hub, 1)[1], HistoryEntry::StatusReported { .. }));
+    assert!(matches!(
+      history(&hub, 1)[1],
+      HistoryEntry::StatusReported { .. }
+    ));
     let state = hub.state.lock().unwrap();
     let system = &state.snapshot.systems[0];
     assert_eq!(system.recent_statuses.len(), RECENT_STATUSES_PER_SYSTEM);
@@ -1217,7 +1220,11 @@ mod tests {
     ));
     let state = hub.state.lock().unwrap();
     assert!(state.snapshot.log.is_empty());
-    assert_eq!(state.snapshot.systems.len(), 1, "the despawned system is gone");
+    assert_eq!(
+      state.snapshot.systems.len(),
+      1,
+      "the despawned system is gone"
+    );
     let statuses = &state.snapshot.systems[0].recent_statuses;
     assert_eq!(statuses.len(), 1);
     assert!(matches!(

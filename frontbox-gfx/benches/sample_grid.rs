@@ -157,6 +157,7 @@ fn draw(c: &mut Criterion) {
     variables: &variables,
     defaults: no_variables(),
     values: no_values(),
+    modulators: no_modulators(),
     assets: &assets,
     size: SIZE,
     surface: Surface::Area,

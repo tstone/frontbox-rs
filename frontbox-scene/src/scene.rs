@@ -4,8 +4,8 @@ use frontbox_core::prelude::*;
 use frontbox_gfx::animation::Cycle;
 use frontbox_gfx::scene::file::{self, FormatError};
 use frontbox_gfx::scene::{
-  self, Assets, Content, Inputs, Layer, LayerAssetError, LayerFrame, SceneError, SceneFileError,
-  Timing, Value, Values, Variables, Visits,
+  self, Assets, Content, Inputs, Layer, LayerAssetError, LayerFrame, Modulators, SceneError,
+  SceneFileError, Timing, Value, Values, Variables, Visits,
 };
 use serde::{Deserialize, Serialize};
 
@@ -39,6 +39,10 @@ pub struct Scene {
   #[serde(default, skip_serializing_if = "Values::is_empty")]
   #[cfg_attr(feature = "ts", ts(as = "Option<Values>", optional))]
   pub values: Values,
+  /// Waves by name, each a shape and a rate, which any number of modulated props can move by
+  #[serde(default, skip_serializing_if = "Modulators::is_empty")]
+  #[cfg_attr(feature = "ts", ts(as = "Option<Modulators>", optional))]
+  pub modulators: Modulators,
   /// `None` is static, and its keyframes stay on their first key
   #[serde(default, skip_serializing_if = "Option::is_none")]
   #[cfg_attr(feature = "ts", ts(optional))]
@@ -60,6 +64,7 @@ impl Scene {
       version: file::VERSION,
       variables: Variables::new(),
       values: Values::new(),
+      modulators: Modulators::new(),
       timing: None,
       layers,
       assets: Assets::new(),
@@ -108,6 +113,9 @@ impl Scene {
   pub fn check(&self) -> Result<(), SceneError> {
     if let Some(timing) = self.timing {
       timing.check()?;
+    }
+    for (name, modulator) in &self.modulators {
+      modulator.check(name)?;
     }
     if let Some(name) = self
       .values
@@ -295,6 +303,7 @@ impl Scene {
       variables: moment.variables,
       defaults: &self.variables,
       values: &self.values,
+      modulators: &self.modulators,
       assets: &self.assets,
       size,
       surface,
@@ -696,6 +705,15 @@ mod tests {
   fn a_timing_with_no_length_is_refused() {
     let scene = Scene::new(vec![]).timing(Timing::new(0.0, Cycle::Once));
     assert_eq!(scene.check(), Err(SceneError::NoDuration));
+  }
+
+  #[test]
+  fn a_modulator_slower_than_once_a_cycle_is_refused() {
+    let source = r#"Scene(version: 2, timing: (duration: 1.0), modulators: {"drift": (envelope: (attack: (curve: Linear)), rate: 0.5)})"#;
+    let Err(FormatError::Invalid(message)) = Scene::load(source) else {
+      panic!("loaded a modulator with a rate of 0.5");
+    };
+    assert!(message.contains("drift"), "{message}");
   }
 
   #[test]

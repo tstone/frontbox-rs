@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::color::RgbaColor;
 use crate::scene::{
-  Graph, Layer, LayerFrame, Sample, SceneError, ShapePose, Surface, Timing, Variables, Visits,
+  Graph, Layer, LayerFrame, Modulators, Sample, SceneError, ShapePose, Surface, Timing, Variables,
+  Visits,
 };
 
 /// Layers sharing variables and timing, as a scene file holds them but with nothing about hardware
@@ -14,6 +15,8 @@ use crate::scene::{
 pub(crate) struct Composition {
   #[serde(default, skip_serializing_if = "Variables::is_empty")]
   pub variables: Variables,
+  #[serde(default, skip_serializing_if = "Modulators::is_empty")]
+  pub modulators: Modulators,
   #[serde(default, skip_serializing_if = "Option::is_none")]
   pub timing: Option<Timing>,
   #[serde(default)]
@@ -24,6 +27,9 @@ impl Composition {
   pub fn check(&self) -> Result<(), SceneError> {
     if let Some(timing) = self.timing {
       timing.check()?;
+    }
+    for (name, modulator) in &self.modulators {
+      modulator.check(name)?;
     }
     self
       .layers
@@ -107,6 +113,7 @@ impl Scene {
       surface: self.surface,
       timing: self.timing,
       defaults: &self.variables,
+      modulators: &self.modulators,
       ..*frame
     }
   }

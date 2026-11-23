@@ -7,7 +7,7 @@ import { Switch as Toggle } from '@ark-ui/solid/switch'
 import { createContext, createEffect, createMemo, createSignal, For, Match, Show, splitProps, Switch, useContext, type Accessor, type JSX, type Signal } from 'solid-js'
 import ScenePortal, { layerColorClass, type LayerColor } from './ScenePortal'
 import InfoTip from '../../components/InfoTip'
-import { AudioWaveform, ChartSpline, Dices, Eye, EyeOff, Footprints, Orbit, Pin, Pipette, Variable } from '../../components/icons'
+import { AudioWaveform, ChartSpline, Dices, Eye, EyeOff, Footprints, Orbit, Pin, Pipette, Plus, SlidersHorizontal, Variable, X } from '../../components/icons'
 import type { Color } from '../../types/generated/Color'
 import { NAMED_COLORS } from '../../types/generated/namedColors'
 import type { Prop } from '../../types/generated/Prop'
@@ -16,11 +16,12 @@ import type { Layer } from '../../types/generated/Layer'
 import type { Curve } from '../../types/generated/Curve'
 import type { EnvelopeCurve } from '../../types/generated/EnvelopeCurve'
 import type { Modulated } from '../../types/generated/Modulated'
+import type { Modulator } from '../../types/generated/Modulator'
 import type { Overlap } from '../../types/generated/Overlap'
 import type { Spread } from '../../types/generated/Spread'
 import type { VisitResponse } from '../../types/generated/VisitResponse'
 import CurvePicker, { CurveGraph, CURVES, CUSTOM_CURVE } from './CurvePicker'
-import { curveHeight, field, freshVariableName, fullSpread, HUE, newPick, newSweep, newVisit, variableReads, spreadFits, startingValue, STEPS, UNIT, variant, WAVE_RATE, withVariable, withTiming, type Lens, type Range, type Ranges, type LayerSurfaces, type Scene, type SceneValue, type Selection, type Surface, type Vec2 } from './sceneModel'
+import { curveHeight, field, freshVariableName, fullSpread, HUE, newPick, newSweep, newVisit, variableReads, spreadFits, startingValue, STEPS, UNIT, variant, WAVE_RATE, withNewModulator, withVariable, withTiming, type Lens, type Range, type Ranges, type LayerSurfaces, type Scene, type SceneValue, type Selection, type Surface, type Vec2 } from './sceneModel'
 
 /** The scene being edited, for fields whose edits reach past their own place in it */
 export const SceneContext = createContext<Lens<Scene>>()
@@ -681,8 +682,12 @@ export function PropSource<T extends SceneValue>(props: PropProps<T>) {
       props.lens.set({ Random: { picks: [newPick(0)], spread: fullSpread(current, props.ranges), seed, force_unique: true } })
     }
     if (next === 'Modulated') {
-      scene.set(withTiming(scene.get()))
-      props.lens.set({ Modulated: { envelope: { attack: { curve: 'Linear' } }, spread: fullSpread(current, props.ranges), rate: 1, phase: { Fixed: 0 } } })
+      // moves by the scene's first modulator, or a new one if it has none yet
+      let timed = withTiming(scene.get())
+      let modulator = Object.keys(timed.modulators ?? {})[0]
+      if (modulator === undefined) [timed, modulator] = withNewModulator(timed)
+      scene.set(timed)
+      props.lens.set({ Modulated: { modulator, spread: fullSpread(current, props.ranges), phase: { Fixed: 0 } } })
     }
     if (next === 'Sweep') {
       const timed = withTiming(scene.get())
@@ -822,34 +827,71 @@ function VisitField(props: { label: string; lens: Lens<VisitResponse<SceneValue>
   )
 }
 
-/** A wave's attack and its decay, the range it moves through, and how many times it goes by each cycle. Its phase is a prop under it. */
-function ModulatedField(props: { label: string; lens: Lens<Modulated>; ranges: Ranges; fallback: SceneValue }) {
-  const envelope = field(props.lens, 'envelope')
+/** Opens the sidebar's Modulators tab at the modulator named */
+export const ShowModulatorContext = createContext<(name: string) => void>(() => {})
 
+/**
+ * Which of the scene's modulators a prop moves by, with a button to make a new one for it, and the range it moves
+ * through. The modulator's shape and rate are in the Modulators tab, and the prop's phase is a prop under it.
+ */
+function ModulatedField(props: { label: string; lens: Lens<Modulated>; ranges: Ranges; fallback: SceneValue }) {
+  const scene = useScene()
+  const showModulator = useContext(ShowModulatorContext)
+  const chosen = () => props.lens.get().modulator
+  const names = () => Object.keys(scene.get().modulators ?? {})
+  const missing = () => !names().includes(chosen())
+  // one the scene doesn't have anymore stays chosen, so it can be seen and changed
+  const options = () => [...names(), ...(missing() ? [chosen()] : [])].map((name) => ({ value: name, label: name }))
+  const addModulator = () => {
+    const [next, name] = withNewModulator(scene.get())
+    scene.set(next)
+    field(props.lens, 'modulator').set(name)
+    showModulator(name)
+  }
+
+  return (
+    <>
+      <div class="scene-modulator-pick">
+        <Dropdown label={`${props.label} modulator`} options={options()} value={chosen()} onChange={field(props.lens, 'modulator').set} />
+        <button type="button" class="scene-icon-button" aria-label={`Edit modulator ${chosen()}`} title="Edit this modulator" disabled={missing()} onClick={() => showModulator(chosen())}>
+          <SlidersHorizontal aria-hidden="true" />
+        </button>
+        <button type="button" class="scene-icon-button" aria-label={`New modulator for ${props.label}`} title="New modulator" onClick={addModulator}>
+          <Plus aria-hidden="true" />
+        </button>
+      </div>
+      <Show when={missing()}>
+        <p class="scene-note scene-note-warn">The scene has no modulator by that name, so this reads as zero.</p>
+      </Show>
+      <SpreadField label={props.label} ranges={props.ranges} lens={field(props.lens, 'spread')} />
+      <Show when={!spreadFits(props.lens.get().spread, props.fallback)}>
+        <p class="scene-note scene-note-warn">This range is for another type of value, so this reads as zero.</p>
+      </Show>
+      <p class="scene-note">The modulator sets the wave's shape and rate, and can be shared. The phase under it shifts this prop's wave along, and keyframing it can speed the wave up or slow it down.</p>
+    </>
+  )
+}
+
+/** One of the scene's modulators: its attack and decay, and how many times its wave goes by each cycle */
+export function ModulatorFields(props: { label: string; lens: Lens<Modulator> }) {
+  const envelope = field(props.lens, 'envelope')
   return (
     <>
       <div class="scene-envelope">
         <EnvelopeCurveField label={`${props.label} attack`} name="Attack" value={envelope.get().attack} onChange={field(envelope, 'attack').set} />
         <EnvelopeCurveField optional label={`${props.label} decay`} name="Decay" value={envelope.get().decay} onChange={field(envelope, 'decay').set} />
       </div>
-      <SpreadField label={props.label} ranges={props.ranges} lens={field(props.lens, 'spread')} />
-      <Show when={!spreadFits(props.lens.get().spread, props.fallback)}>
-        <p class="scene-note scene-note-warn">This range is for another type of value, so this reads as zero.</p>
-      </Show>
       <FieldRow label="Rate">
-        <NumberField label={`${props.label} rate`} range={WAVE_RATE} value={props.lens.get().rate} onChange={field(props.lens, 'rate').set} />
+        <NumberField label={`${props.label} rate`} range={WAVE_RATE} value={props.lens.get().rate} onChange={(rate) => field(props.lens, 'rate').set(Math.max(WAVE_RATE.min, rate))} />
       </FieldRow>
-      <p class="scene-note">
-        The attack takes the whole wave, or the first half of it with a decay after it. Rate is waves per cycle. The phase under it shifts the wave along, and keyframing it can speed the wave up or
-        slow it down.
-      </p>
     </>
   )
 }
 
 /**
- * One curve of a wave drawn out, which opens the curves to pick from, and a switch that plays it backwards. Only a
- * decay can be left out, which is what `undefined` stands for, and shows as a box to add one.
+ * One curve of a wave drawn out, which opens the curves to pick from and whether to play it backwards. Only a decay
+ * can be left out, which is what `undefined` stands for: it shows as a box to add one, and once added has an X to
+ * remove it on hover.
  */
 function EnvelopeCurveField<T extends EnvelopeCurve | undefined>(props: { label: string; name: string; value: T; onChange: (value: T) => void; optional?: boolean }) {
   const reversed = () => props.value?.reversed ?? false
@@ -858,26 +900,25 @@ function EnvelopeCurveField<T extends EnvelopeCurve | undefined>(props: { label:
   return (
     <div class="scene-envelope-part">
       <span class="scene-field-label">{props.name}</span>
-      <CurvePicker
-        class="scene-envelope-curve"
-        label={props.label}
-        value={props.value?.curve}
-        onPick={(curve) => props.onChange({ ...props.value, curve } as T)}
-        onRemove={props.optional && props.value ? () => props.onChange(undefined as T) : undefined}
-      >
-        <Show when={props.value} fallback={<span class="scene-envelope-add">+</span>}>
-          <CurveGraph height={height} />
+      <div class="scene-envelope-box">
+        <CurvePicker
+          class="scene-envelope-curve"
+          label={props.label}
+          value={props.value?.curve}
+          onPick={(curve, reversed) => props.onChange({ curve, reversed: reversed || undefined } as T)}
+          reversed={reversed()}
+          onReverse={(to) => props.value && props.onChange({ ...props.value, reversed: to || undefined } as T)}
+        >
+          <Show when={props.value} fallback={<span class="scene-envelope-add">+</span>}>
+            <CurveGraph height={height} />
+          </Show>
+        </CurvePicker>
+        <Show when={props.optional && props.value}>
+          <button type="button" class="scene-envelope-remove" aria-label={`Remove ${props.label}`} title="Remove" onClick={() => props.onChange(undefined as T)}>
+            <X aria-hidden="true" />
+          </button>
         </Show>
-      </CurvePicker>
-      <Show when={props.value}>
-        <Toggle.Root class="scene-switch" checked={reversed()} onCheckedChange={(details) => props.onChange({ ...props.value!, reversed: details.checked || undefined } as T)}>
-          <Toggle.Control>
-            <Toggle.Thumb />
-          </Toggle.Control>
-          <Toggle.Label>Reverse</Toggle.Label>
-          <Toggle.HiddenInput aria-label={`Reverse ${props.label}`} />
-        </Toggle.Root>
-      </Show>
+      </div>
     </div>
   )
 }

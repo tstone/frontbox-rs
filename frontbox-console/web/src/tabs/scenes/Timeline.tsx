@@ -6,6 +6,7 @@ import ScenePortal, { LayerColorContext, layerColorClass, type LayerColor } from
 import type { Cycle } from '../../types/generated/Cycle'
 import type { Key } from '../../types/generated/Key'
 import type { Modulated } from '../../types/generated/Modulated'
+import type { Modulator } from '../../types/generated/Modulator'
 import type { Pick as RandomPick } from '../../types/generated/Pick'
 import type { Prop } from '../../types/generated/Prop'
 import type { RenderedGraph } from '../../types/generated/RenderedGraph'
@@ -953,7 +954,11 @@ function TrackLane(props: { node: TrackNode; percent: (seconds: number) => strin
         </ScenePortal>
       </Show>
       <Show when={waved()}>
-        <WaveLine modulated={variant(prop, 'Modulated').get()} scene={scene.get()} duration={scene.get().timing?.duration ?? props.span} percent={props.percent} />
+        <Show when={scene.get().modulators?.[variant(prop, 'Modulated').get().modulator]}>
+          {(modulator) => (
+            <WaveLine modulated={variant(prop, 'Modulated').get()} modulator={modulator()} scene={scene.get()} duration={scene.get().timing?.duration ?? props.span} percent={props.percent} />
+          )}
+        </Show>
       </Show>
       <Show when={props.expanded && 'Keyframes' in prop.get()}>
         <KeyedPreview keys={variant(prop, 'Keyframes').get().keys} cycle={variant(prop, 'Keyframes').get().cycle} span={props.span} />
@@ -975,14 +980,14 @@ function TrackLane(props: { node: TrackNode; percent: (seconds: number) => strin
 /** Most points drawn along a wave, however many times it goes by */
 const WAVE_SAMPLES = 2048
 
-/** A modulated prop's wave over the scene's first cycle, from its low end at the bottom to its high end at the top */
-function WaveLine(props: { modulated: Modulated; scene: Scene; duration: number; percent: (seconds: number) => string }) {
+/** A modulated prop's wave by `modulator` over the scene's first cycle, from its low end at the bottom to its high end at the top */
+function WaveLine(props: { modulated: Modulated; modulator: Modulator; scene: Scene; duration: number; percent: (seconds: number) => string }) {
   const points = () => {
-    const samples = Math.min(Math.ceil(96 * Math.max(props.modulated.rate, 1)), WAVE_SAMPLES)
+    const samples = Math.min(Math.ceil(96 * Math.max(props.modulator.rate, 1)), WAVE_SAMPLES)
     return Array.from({ length: samples + 1 }, (_, index) => {
       const at = index / samples
       const phase = phaseAt(props.modulated.phase, props.scene, at * props.duration)
-      return `${at},${1 - envelopeHeight(props.modulated.envelope, wavePosition(props.modulated, phase, at))}`
+      return `${at},${1 - envelopeHeight(props.modulator.envelope, wavePosition(props.modulator, phase, at))}`
     }).join(' ')
   }
   return (

@@ -1379,7 +1379,20 @@ label.scene-button:hover {
   vector-effect: non-scaling-stroke;
 }
 
-/* a modulated prop's attack and decay, side by side */
+/* the modulator a prop moves by, with buttons to edit it or make a new one */
+.scene-modulator-pick {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.scene-modulator-pick > .scene-dropdown {
+  flex: 1;
+  min-width: 0;
+}
+
+/* a modulator's attack and decay, side by side */
 .scene-envelope {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 5.5rem));
@@ -1392,6 +1405,46 @@ label.scene-button:hover {
   flex-direction: column;
   gap: 0.375rem;
   min-width: 0;
+}
+
+/* holds the curve and, over its corner, the X that removes it */
+.scene-envelope-box {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.scene-envelope-remove {
+  position: absolute;
+  top: 0.125rem;
+  right: 0.125rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.scene-envelope-remove svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.scene-envelope-box:hover .scene-envelope-remove,
+.scene-envelope-remove:focus-visible {
+  opacity: 1;
+}
+
+.scene-envelope-remove:hover {
+  background: var(--surface-hover);
+  color: var(--text);
 }
 
 .scene-envelope-curve {

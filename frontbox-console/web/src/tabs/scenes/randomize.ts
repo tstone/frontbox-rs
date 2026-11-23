@@ -3,7 +3,7 @@ import type { Color } from '../../types/generated/Color'
 import type { Curve } from '../../types/generated/Curve'
 import type { Prop } from '../../types/generated/Prop'
 import type { ConfigNode } from './configNodes'
-import { fullSpread, newPick, newSweep, snap, withTiming, type Lens, type Range, type Ranges, type Scene, type SceneValue, type Vec2 } from './sceneModel'
+import { fullSpread, newModulator, newPick, newSweep, snap, withNewModulator, withTiming, type Lens, type Range, type Ranges, type Scene, type SceneValue, type Vec2 } from './sceneModel'
 
 /** The ways a randomized prop can take its value, with how likely each is. A sweep is only for a position. */
 const SOURCES: { kind: 'Fixed' | 'Keyframes' | 'Random' | 'Modulated' | 'Sweep'; weight: number }[] = [
@@ -37,7 +37,7 @@ export function randomizeNode(node: ConfigNode, scene: Lens<Scene>) {
       // a fixed value has nothing to time, and a scene with none of the others is left without a timing
       if (kind !== 'Fixed') scene.set(withTiming(scene.get()))
       const duration = scene.get().timing?.duration ?? 1
-      prop.lens.set(randomProp(kind, prop.fallback, prop.ranges, duration))
+      prop.lens.set(randomProp(kind, prop.fallback, prop.ranges, duration, () => randomModulator(scene)))
     }
   })
 }
@@ -53,7 +53,8 @@ function propsUnder(node: ConfigNode): PropNode[] {
   return (node.children ?? []).flatMap(propsUnder)
 }
 
-function randomProp(kind: (typeof SOURCES)[number]['kind'], like: SceneValue, ranges: Ranges, duration: number): Prop<SceneValue> {
+/** `modulator` gives the name of the modulator a wave moves by */
+function randomProp(kind: (typeof SOURCES)[number]['kind'], like: SceneValue, ranges: Ranges, duration: number, modulator: () => string): Prop<SceneValue> {
   const value = () => randomValue(like, ranges)
   if (kind === 'Keyframes' && typeof like !== 'boolean') {
     // the start, the end, and one or two between, at times of their own
@@ -66,11 +67,23 @@ function randomProp(kind: (typeof SOURCES)[number]['kind'], like: SceneValue, ra
     return { Random: { picks: [newPick(0)], spread: fullSpread(like, ranges), seed: Math.floor(Math.random() * 2 ** 32), force_unique: true } }
   }
   if (kind === 'Modulated' && typeof like !== 'boolean') {
-    const rate = Math.round((0.25 + Math.random() * 1.75) * 100) / 100
-    return { Modulated: { envelope: { attack: { curve: 'Linear' } }, spread: fullSpread(like, ranges), rate, phase: { Fixed: Math.round(Math.random() * 100) / 100 } } }
+    return { Modulated: { modulator: modulator(), spread: fullSpread(like, ranges), phase: { Fixed: Math.round(Math.random() * 100) / 100 } } }
   }
   if (kind === 'Sweep' && Array.isArray(like) && like.length === 2) return { Sweep: newSweep(value() as Vec2, ranges, duration) }
   return { Fixed: value() }
+}
+
+/**
+ * One of the scene's modulators for a randomized wave to move by: an existing one half the time, so that waves come to
+ * share them, or else a new one at a rate of its own
+ */
+function randomModulator(scene: Lens<Scene>): string {
+  const names = Object.keys(scene.get().modulators ?? {})
+  if (names.length > 0 && Math.random() < 0.5) return names[Math.floor(Math.random() * names.length)]
+  const rate = Math.round((1 + Math.random()) * 100) / 100
+  const [next, name] = withNewModulator(scene.get(), { ...newModulator(), rate })
+  scene.set(next)
+  return name
 }
 
 /** A value like `like`, picked at random within its ranges */

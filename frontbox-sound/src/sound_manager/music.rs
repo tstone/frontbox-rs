@@ -218,7 +218,10 @@ mod tests {
 
   impl Effect for Peaks {
     fn process(&mut self, input: &mut [Frame], _dt: f64, _info: &Info) {
-      let peak = input.iter().map(|frame| frame.left.abs()).fold(0.0, f32::max);
+      let peak = input
+        .iter()
+        .map(|frame| frame.left.abs())
+        .fold(0.0, f32::max);
       self.0.lock().unwrap().push(peak);
     }
   }
@@ -268,13 +271,25 @@ mod tests {
           music.update(&mut self.track, &self.clock);
         }
       }
-      self.peaks.lock().unwrap().iter().copied().fold(0.0, f32::max)
+      self
+        .peaks
+        .lock()
+        .unwrap()
+        .iter()
+        .copied()
+        .fold(0.0, f32::max)
     }
 
     /// The quietest buffer in `seconds` of audio
     fn quietest(&mut self, music: &mut Music, seconds: f64) -> f32 {
       self.render(Some(music), seconds);
-      self.peaks.lock().unwrap().iter().copied().fold(f32::MAX, f32::min)
+      self
+        .peaks
+        .lock()
+        .unwrap()
+        .iter()
+        .copied()
+        .fold(f32::MAX, f32::min)
     }
 
     fn start(&mut self, fade_in: Option<Duration>) -> Music {

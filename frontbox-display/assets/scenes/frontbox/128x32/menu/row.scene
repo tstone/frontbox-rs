@@ -16,6 +16,16 @@ Scene(
     "normal_arrow_offset": Vec2(Fixed(0.0, 0.0)),
     "normal_text_color": Color(Fixed(255, 255, 77, 255)),
     "selected_arrow_offset": Vec2(Modulated(
+      modulator: "Back and forth",
+      spread: Vec2(
+        x: (0.0, 2.0),
+        y: (0.0, 0.0),
+      ),
+    )),
+    "selected_text_color": Color(Fixed(255, 255, 255, 255)),
+  },
+  modulators: {
+    "Back and forth": (
       envelope: (
         attack: (
           curve: EaseInOut,
@@ -25,13 +35,8 @@ Scene(
           reversed: true,
         ),
       ),
-      spread: Vec2(
-        x: (0.0, 2.0),
-        y: (0.0, 0.0),
-      ),
       rate: 1.0,
-    )),
-    "selected_text_color": Color(Fixed(255, 255, 255, 255)),
+    ),
   },
   layers: [
     Display(

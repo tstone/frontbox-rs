@@ -64,7 +64,7 @@ mod tests {
   use crate::scene::value::tests::env;
   use crate::scene::{
     Assets, Color, Fill, FillNode, Key, Keyframes, Layer, LayerFrame, Surface, Timing, Transform,
-    Value, Variables, no_values, no_variables,
+    Value, Variables, no_modulators, no_values, no_variables,
   };
 
   /// Once along the path between `start` and `end` seconds
@@ -208,6 +208,7 @@ mod tests {
         timing: None,
         defaults: no_variables(),
         values: no_values(),
+        modulators: no_modulators(),
       };
       let line = Line::new(5);
       line

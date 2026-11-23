@@ -10,7 +10,7 @@ use crate::scene::{
 /// along a path, or set off by a traversal's visits
 ///
 /// In RON: `Fixed(4.0)`, `Variable("size")`, `Keyframes((keys: [...]))`, `Random((picks: [...], spread: Float(0.0, 1.0)))`,
-/// `Modulated((wave: Sine, spread: Float(0.0, 1.0), rate: 2.0))`, `Sweep((path: (base: Circle(radius: Fixed(5.0))), position: Variable("lap")))`,
+/// `Modulated((modulator: "pulse", spread: Float(0.0, 1.0)))`, `Sweep((path: (base: Circle(radius: Fixed(5.0))), position: Variable("lap")))`,
 /// or `Visit((traversal: "bolt", from: 0.0, to: 1.0, smooth_out: 3.0))`. Files from before variables were named so can
 /// say `Param` for `Variable`.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -26,7 +26,7 @@ pub enum Prop<T> {
   Keyframes(Keyframes<T>),
   /// Picked at random at set times
   Random(Random),
-  /// Moves through a range in a repeating wave, timed to the scene cycle
+  /// Moves through a range by one of the scene's modulators, a repeating wave timed to the scene cycle
   Modulated(Modulated),
   /// Moves along a shape's outline. Only valid for positions (`Vec2`); a file using it for anything else fails to load.
   #[serde(deserialize_with = "only_for_positions::<T, _>")]
@@ -103,7 +103,7 @@ impl Prop<f32> {
 mod tests {
   use super::*;
   use crate::scene::value::tests::env;
-  use crate::scene::{Assets, Bounds, Color, Value, Variables, no_values};
+  use crate::scene::{Assets, Bounds, Color, Value, Variables, no_modulators, no_values};
 
   #[test]
   fn fixed_resolves_to_its_value() {
@@ -126,6 +126,7 @@ mod tests {
       variables: &variables,
       defaults: &defaults,
       values: no_values(),
+      modulators: no_modulators(),
       depth: 0,
       assets: Assets::none(),
       viewport: Bounds::sized(glam::Vec2::ONE),

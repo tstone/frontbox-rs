@@ -9,6 +9,25 @@ Scene(
     "player_3": Vec2(Fixed(75.0, 29.0)),
     "player_4": Vec2(Fixed(107.0, 29.0)),
   },
+  modulators: {
+    "Fade": (
+      envelope: (
+        attack: (
+          curve: Linear,
+          reversed: true,
+        ),
+      ),
+      rate: 1.0,
+    ),
+    "Grow": (
+      envelope: (
+        attack: (
+          curve: EaseOut,
+        ),
+      ),
+      rate: 1.0,
+    ),
+  },
   timing: (
     duration: 0.3,
     cycle: Once,
@@ -34,14 +53,8 @@ Scene(
           ),
           adjust: [
             Opacity(Modulated(
-              envelope: (
-                attack: (
-                  curve: Linear,
-                  reversed: true,
-                ),
-              ),
+              modulator: "Fade",
               spread: Float(0.0, 1.0),
-              rate: 1.0,
               phase: Fixed(0.0),
             )),
           ],
@@ -51,13 +64,8 @@ Scene(
             Translate(Variable("center")),
             Scale(
               amount: Modulated(
-                envelope: (
-                  attack: (
-                    curve: EaseOut,
-                  ),
-                ),
+                modulator: "Grow",
                 spread: Float(0.25, 5.0),
-                rate: 1.0,
                 phase: Fixed(0.0),
               ),
               anchor: Fixed(0.0, 0.0),

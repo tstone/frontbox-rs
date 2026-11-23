@@ -1,6 +1,6 @@
 use glam::Vec2;
 
-use crate::scene::{Assets, Surface, Timing, Values, Variables, Visits};
+use crate::scene::{Assets, Modulators, Surface, Timing, Values, Variables, Visits};
 
 /// A point to get a color for: a position in scene units and the radius of the area it covers
 ///
@@ -45,6 +45,8 @@ pub struct LayerFrame<'a> {
   pub defaults: &'a Variables,
   /// The scene's named values, which a variable can point at
   pub values: &'a Values,
+  /// The scene's modulators, which modulated props move by
+  pub modulators: &'a Modulators,
   /// Decoded images and fonts by name. A layer whose image or font is missing draws nothing; get these from
   /// [`Content::assets_for`](crate::scene::Content::assets_for), which reports missing ones up front.
   pub assets: &'a Assets,

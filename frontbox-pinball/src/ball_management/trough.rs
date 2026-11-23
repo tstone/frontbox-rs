@@ -391,7 +391,9 @@ impl ReportedStatus {
 enum ReportedEject {
   Ready,
   /// Fired, and checking the ball left. It has once occupancy falls to `target_occupancy`.
-  Verifying { target_occupancy: u8 },
+  Verifying {
+    target_occupancy: u8,
+  },
   Pending,
 }
 

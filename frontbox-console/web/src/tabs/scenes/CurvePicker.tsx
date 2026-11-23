@@ -1,4 +1,5 @@
 import { Dialog } from '@ark-ui/solid/dialog'
+import { Switch as Toggle } from '@ark-ui/solid/switch'
 import { createSignal, For, Show, type JSX } from 'solid-js'
 import ScenePortal from './ScenePortal'
 import type { Curve } from '../../types/generated/Curve'
@@ -37,24 +38,40 @@ const BACK_C3 = BACK_C1 + 1
 
 /**
  * A button that opens every curve drawn from 0 to 1, for picking `label`'s curve by how it looks. It shows `children`
- * in place of its own icon when given them, and the list has a button for `onRemove` when there's one.
+ * in place of its own icon when given them. With `onReverse`, the list has a switch that plays the curves backwards,
+ * and draws them that way.
  */
 export default function CurvePicker(props: {
   label: string
   value: Curve | undefined
-  onPick: (curve: Extract<Curve, string>) => void
-  onRemove?: () => void
+  onPick: (curve: Extract<Curve, string>, reversed: boolean) => void
+  reversed?: boolean
+  onReverse?: (reversed: boolean) => void
   class?: string
   children?: JSX.Element
 }) {
   const [open, setOpen] = createSignal(false)
+  // kept here too, so it can be switched before a curve is picked
+  const [reversed, setReversed] = createSignal(false)
   const pick = (curve: Extract<Curve, string>) => {
-    props.onPick(curve)
+    props.onPick(curve, reversed())
     setOpen(false)
+  }
+  const reverse = (to: boolean) => {
+    setReversed(to)
+    props.onReverse?.(to)
   }
 
   return (
-    <Dialog.Root lazyMount unmountOnExit open={open()} onOpenChange={(details) => setOpen(details.open)}>
+    <Dialog.Root
+      lazyMount
+      unmountOnExit
+      open={open()}
+      onOpenChange={(details) => {
+        if (details.open) setReversed(props.reversed ?? false)
+        setOpen(details.open)
+      }}
+    >
       <Dialog.Trigger class={props.class ?? 'scene-eye'} aria-label={`Pick ${props.label} from the curves drawn out`} title="Show the curves">
         {props.children ?? (
           <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -71,23 +88,18 @@ export default function CurvePicker(props: {
               <Dialog.CloseTrigger aria-label="Close">×</Dialog.CloseTrigger>
             </header>
             <div class="scene-curve-list">
-              <For each={CURVES}>{(curve) => <CurveBox curve={curve} chosen={props.value === curve} onClick={() => pick(curve)} />}</For>
+              <For each={CURVES}>{(curve) => <CurveBox curve={curve} reversed={reversed()} chosen={props.value === curve} onClick={() => pick(curve)} />}</For>
             </div>
-            <Show when={props.onRemove}>
-              {(remove) => (
-                <footer>
-                  <button
-                    type="button"
-                    class="scene-button"
-                    onClick={() => {
-                      remove()()
-                      setOpen(false)
-                    }}
-                  >
-                    Remove
-                  </button>
-                </footer>
-              )}
+            <Show when={props.onReverse}>
+              <footer>
+                <Toggle.Root class="scene-switch" checked={reversed()} onCheckedChange={(details) => reverse(details.checked)}>
+                  <Toggle.Control>
+                    <Toggle.Thumb />
+                  </Toggle.Control>
+                  <Toggle.Label>Reverse</Toggle.Label>
+                  <Toggle.HiddenInput aria-label={`Reverse ${props.label}`} />
+                </Toggle.Root>
+              </footer>
             </Show>
           </Dialog.Content>
         </Dialog.Positioner>
@@ -97,10 +109,10 @@ export default function CurvePicker(props: {
 }
 
 /** One curve, with lines where it starts from and goes to */
-function CurveBox(props: { curve: Extract<Curve, string>; chosen: boolean; onClick: () => void }) {
+function CurveBox(props: { curve: Extract<Curve, string>; reversed: boolean; chosen: boolean; onClick: () => void }) {
   return (
     <button type="button" class="scene-curve" aria-pressed={props.chosen} onClick={props.onClick}>
-      <CurveGraph height={(phase) => sample(props.curve, phase)} />
+      <CurveGraph height={(phase) => sample(props.curve, props.reversed ? 1 - phase : phase)} />
       <span>{props.curve}</span>
     </button>
   )

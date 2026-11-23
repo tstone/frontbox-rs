@@ -27,6 +27,7 @@
 //!   variables: &variables,
 //!   defaults: no_variables(),
 //!   values: no_values(),
+//!   modulators: no_modulators(),
 //!   assets: Assets::none(),
 //!   size: Default::default(),
 //!   surface: Surface::Sequence,
@@ -46,7 +47,7 @@
 //! - [`Surface`] -- Whether the scene is drawn along a 1D line of points or over a 2D area
 //! - [`Node`] -- The structure shared by shapes and fills: a base, plus [`Transform`]s and adjusts
 //! - [`Prop`] -- A value that's fixed, read from a variable, keyframed, picked at random, moved in a wave
-//!   ([`Modulated`]), or swept along a path ([`Sweep`])
+//!   ([`Modulated`], by one of the scene's [`Modulator`]s), or swept along a path ([`Sweep`])
 //! - [`NamedValue`] -- One of a scene's named values, which a variable can point at
 //! - [`Inputs`] -- The variables a layer reads, to check against what the code playing it sends
 //! - [`Timing`] -- How long an animated scene runs, and how many times

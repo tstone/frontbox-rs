@@ -36,7 +36,10 @@ impl Multi {
     Self {
       name,
       description: None,
-      copies: copies.into_iter().map(SpawnableSystemContainer::new).collect(),
+      copies: copies
+        .into_iter()
+        .map(SpawnableSystemContainer::new)
+        .collect(),
     }
   }
 

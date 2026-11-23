@@ -116,6 +116,7 @@ mod tests {
           timing: None,
           defaults: no_variables(),
           values: no_values(),
+          modulators: no_modulators(),
         };
         (0..20)
           .flat_map(|y| {
@@ -162,10 +163,8 @@ mod tests {
         Layer::new(
           Fill::new(FillNode::Solid(Color(Rgba([0, 0, 255, 255])).into())).adjust(
             ColorAdjust::Opacity(Prop::Modulated(Modulated {
-              envelope: Envelope::new(EnvelopeCurve::new(Curve::EaseIn).reversed())
-                .decay(EnvelopeCurve::new(Curve::BounceOut)),
+              modulator: "pulse".into(),
               spread: Spread::Float(0.5, 1.0),
-              rate: 2.0,
               phase: Box::new(Prop::Variable("offset".into())),
             })),
           ),
@@ -319,10 +318,8 @@ mod tests {
                 ],
               }),
               Prop::Modulated(Modulated {
-                envelope: Envelope::new(EnvelopeCurve::new(Curve::Linear))
-                  .decay(EnvelopeCurve::new(Curve::Linear).reversed()),
+                modulator: "back and forth".into(),
                 spread: Spread::Float(0.0, 1.0),
-                rate: 1.0,
                 phase: Box::new(0.0.into()),
               }),
             ),
@@ -335,6 +332,22 @@ mod tests {
       Value::Color(Color(Rgba([16, 16, 16, 255]))),
     );
     scene.variables.insert("lap".into(), Value::Float(0.5));
+    scene.modulators.insert(
+      "pulse".into(),
+      Modulator::new(
+        Envelope::new(EnvelopeCurve::new(Curve::EaseIn).reversed())
+          .decay(EnvelopeCurve::new(Curve::BounceOut)),
+        2.0,
+      ),
+    );
+    scene.modulators.insert(
+      "back and forth".into(),
+      Modulator::new(
+        Envelope::new(EnvelopeCurve::new(Curve::Linear))
+          .decay(EnvelopeCurve::new(Curve::Linear).reversed()),
+        1.0,
+      ),
+    );
     scene.timing(Timing::new(1.0, Cycle::Forever))
   }
 
@@ -461,12 +474,15 @@ mod tests {
 
   #[test]
   fn modulated_props_read_and_write() {
-    let source = "(timing: (duration: 2.0), layers: [(fill: (base: Solid(Modulated(
-      envelope: (attack: (curve: EaseIn, reversed: true), decay: (curve: BounceOut)),
-      spread: Color(hue: (0.0, 120.0), brightness: (0.5, 1.0)),
-      rate: 0.5,
-      phase: Keyframes(keys: [(at: 0.0, value: 0.0), (at: 2.0, value: 1.0)]),
-    ))))])";
+    let source = r#"(
+      timing: (duration: 2.0),
+      modulators: {"slow": (envelope: (attack: (curve: EaseIn, reversed: true), decay: (curve: BounceOut)), rate: 1.5)},
+      layers: [(fill: (base: Solid(Modulated(
+        modulator: "slow",
+        spread: Color(hue: (0.0, 120.0), brightness: (0.5, 1.0)),
+        phase: Keyframes(keys: [(at: 0.0, value: 0.0), (at: 2.0, value: 1.0)]),
+      ))))],
+    )"#;
     let written = save(&load(source).unwrap()).unwrap();
     let loaded = load(&written).unwrap();
     let FillNode::Solid(Prop::Modulated(modulated)) = &loaded.layers[0].fill.base else {
@@ -477,12 +493,13 @@ mod tests {
       brightness: (0.5, 1.0),
       alpha: (1.0, 1.0),
     };
+    assert_eq!(
+      (modulated.modulator.as_str(), &modulated.spread),
+      ("slow", &spread)
+    );
     let envelope = Envelope::new(EnvelopeCurve::new(Curve::EaseIn).reversed())
       .decay(EnvelopeCurve::new(Curve::BounceOut));
-    assert_eq!(
-      (&modulated.envelope, &modulated.spread, modulated.rate),
-      (&envelope, &spread, 0.5)
-    );
+    assert_eq!(loaded.modulators["slow"], Modulator::new(envelope, 1.5));
     let Prop::Keyframes(phase) = &*modulated.phase else {
       panic!("{written}");
     };
@@ -498,16 +515,22 @@ mod tests {
 
   #[test]
   fn a_modulated_with_no_phase_starts_at_the_start_of_its_wave() {
-    let scene = load("(timing: (duration: 1.0), layers: [(fill: (base: Solid(Modulated(
-      envelope: (attack: (curve: Linear)), spread: Color(hue: (0.0, 360.0), brightness: (1.0, 1.0)), rate: 1.0,
-    ))))])");
+    let scene = load(
+      r#"(
+      timing: (duration: 1.0),
+      modulators: {"rise": (envelope: (attack: (curve: Linear)), rate: 1.0)},
+      layers: [(fill: (base: Solid(Modulated(
+        modulator: "rise", spread: Color(hue: (0.0, 360.0), brightness: (1.0, 1.0)),
+      ))))],
+    )"#,
+    );
     let scene = scene.unwrap();
     let FillNode::Solid(Prop::Modulated(modulated)) = &scene.layers[0].fill.base else {
       panic!("{scene:?}");
     };
     assert!(matches!(*modulated.phase, Prop::Fixed(0.0)));
     assert_eq!(
-      modulated.envelope,
+      scene.modulators["rise"].envelope,
       Envelope::new(EnvelopeCurve::new(Curve::Linear))
     );
     let written = save(&scene).unwrap();
@@ -558,6 +581,7 @@ mod tests {
       timing: None,
       defaults: no_variables(),
       values: no_values(),
+      modulators: no_modulators(),
     };
     let colors: Vec<_> = line.samples().map(|s| scene.sample(&s, &frame)).collect();
     assert_eq!(colors[0], Rgba([255, 0, 0, 255]));
@@ -661,6 +685,7 @@ mod tests {
           timing: None,
           defaults: no_variables(),
           values: no_values(),
+          modulators: no_modulators(),
         },
       )
     };
@@ -698,6 +723,7 @@ mod tests {
       timing: None,
       defaults: no_variables(),
       values: no_values(),
+      modulators: no_modulators(),
     };
     let at = Sample::new(Vec2::new(0.5, 0.5), 0.5);
     assert_eq!(read.sample(&at, &frame), scene.sample(&at, &frame));
@@ -742,6 +768,7 @@ mod tests {
       timing: None,
       defaults: no_variables(),
       values: no_values(),
+      modulators: no_modulators(),
     };
     let at = Sample::new(Vec2::new(1.5, 0.5), 0.5);
     assert_eq!(read.sample(&at, &frame), scene.sample(&at, &frame));
@@ -932,6 +959,7 @@ mod tests {
           timing: None,
           defaults: no_variables(),
           values: no_values(),
+          modulators: no_modulators(),
         };
         let visits = scene.visits(&graph, &frame);
         samples

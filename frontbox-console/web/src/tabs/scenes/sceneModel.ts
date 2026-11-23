@@ -8,7 +8,7 @@ import type { Key } from '../../types/generated/Key'
 import type { Layer } from '../../types/generated/Layer'
 import type { Mask } from '../../types/generated/Mask'
 import type { NamedValue } from '../../types/generated/NamedValue'
-import type { Modulated } from '../../types/generated/Modulated'
+import type { Modulator } from '../../types/generated/Modulator'
 import type { NodeRef } from '../../types/generated/NodeRef'
 import type { Prop } from '../../types/generated/Prop'
 import type { Pick } from '../../types/generated/Pick'
@@ -237,12 +237,54 @@ export function withoutValue(scene: Scene, name: string): Scene {
   return { ...scene, values, variables }
 }
 
+/** A modulator before it's been changed: one linear rise per cycle */
+export const newModulator = (): Modulator => ({ envelope: { attack: { curve: 'Linear' } }, rate: 1 })
+
+/** `Modulator 1`, or the next number the scene hasn't used */
+function freshModulatorName(scene: Scene) {
+  let n = 1
+  while (scene.modulators?.[`Modulator ${n}`] !== undefined) n++
+  return `Modulator ${n}`
+}
+
+/** A scene with a new modulator, and the name it was given */
+export function withNewModulator(scene: Scene, modulator = newModulator()): [Scene, string] {
+  const name = freshModulatorName(scene)
+  return [{ ...scene, modulators: { ...scene.modulators, [name]: modulator } }, name]
+}
+
+/** The props in a scene moving by modulator `name`, phases and named values included */
+function modulatorUsers(scene: Lens<Scene>, name: string) {
+  return propUses(scene).filter(({ lens }) => {
+    const prop = lens.get()
+    return 'Modulated' in prop && prop.Modulated.modulator === name
+  })
+}
+
+/** How many props move by modulator `name` */
+export const modulatorUseCount = (scene: Scene, name: string) => modulatorUsers(reading(scene), name).length
+
+/** A scene with a modulator renamed, and the props moving by it following. A name that's taken or empty is refused. */
+export function withModulatorRenamed(scene: Scene, from: string, to: string): Scene {
+  if (to === '' || scene.modulators?.[to] !== undefined) return scene
+  let renamed: Scene = { ...scene, modulators: renamedKey(scene.modulators ?? {}, from, to) }
+  const editing: Lens<Scene> = { get: () => renamed, set: (next) => (renamed = next) }
+  for (const { lens } of modulatorUsers(editing, from)) {
+    const prop = lens.get() as Extract<Prop<SceneValue>, { Modulated: unknown }>
+    lens.set({ Modulated: { ...prop.Modulated, modulator: to } })
+  }
+  return renamed
+}
+
+/** A scene without a modulator. Props that moved by it keep its name, and read as zero until they're given another. */
+export function withoutModulator(scene: Scene, name: string): Scene {
+  return { ...scene, modulators: Object.fromEntries(Object.entries(scene.modulators ?? {}).filter(([key]) => key !== name)) }
+}
+
 /** Whether a random prop holding values like `like` can pick from a spread. One of the wrong type gives the type's default. */
 export function spreadFits(spread: Spread, like: SceneValue) {
   return kindReads(Object.keys(wrapValue(like))[0], Object.keys(spread)[0])
 }
-
-const midpoint = ([low, high]: [number, number]) => (low + high) / 2
 
 /** The fully saturated color at a hue in degrees, and a brightness and an alpha from 0 to 1 */
 function hsvColor(hue: number, brightness: number, alpha: number): Color {
@@ -277,8 +319,8 @@ export function curveHeight(curve: Curve, phase: number) {
   return typeof curve === 'string' ? sample(curve, phase) : phase
 }
 
-/** Where in its wave a modulated prop is, 0 to 1, at `cycles` into the scene (counting the ones already played), with its phase at `phase` then */
-export function wavePosition({ rate }: Modulated, phase: number, cycles: number) {
+/** Where in its modulator's wave a modulated prop is, 0 to 1, at `cycles` into the scene (counting the ones already played), with its phase at `phase` then */
+export function wavePosition({ rate }: Modulator, phase: number, cycles: number) {
   const position = (cycles * rate + phase) % 1
   return position < 0 ? position + 1 : position
 }
@@ -299,9 +341,11 @@ export function startingValue<T extends SceneValue>(prop: Prop<T>, scene: Scene,
   if ('Keyframes' in prop) return prop.Keyframes.keys[0]?.value ?? fallback
   if ('Random' in prop) return spreadFits(prop.Random.spread, fallback) ? asLike(spreadAt(prop.Random.spread, 0.5), fallback) : fallback
   if ('Modulated' in prop) {
-    const { spread, envelope, phase } = prop.Modulated
-    const position = wavePosition(prop.Modulated, startingValue(phase, scene, 0), 0)
-    return spreadFits(spread, fallback) ? asLike(spreadAt(spread, envelopeHeight(envelope, position)), fallback) : fallback
+    const { spread, modulator: name, phase } = prop.Modulated
+    const modulator = scene.modulators?.[name]
+    if (!modulator || !spreadFits(spread, fallback)) return fallback
+    const position = wavePosition(modulator, startingValue(phase, scene, 0), 0)
+    return asLike(spreadAt(spread, envelopeHeight(modulator.envelope, position)), fallback)
   }
   if ('Sweep' in prop) {
     const moved = prop.Sweep.path.transform?.find((transform) => 'Translate' in transform)
@@ -373,7 +417,7 @@ export function changesEachCycle(scene: Scene) {
     repeats(scene) &&
     propUses(reading(scene)).some(({ lens }) => {
       const prop = lens.get()
-      return 'Random' in prop || ('Modulated' in prop && !Number.isInteger(prop.Modulated.rate))
+      return 'Random' in prop || ('Modulated' in prop && !Number.isInteger(scene.modulators?.[prop.Modulated.modulator]?.rate ?? 0))
     })
   )
 }
@@ -716,23 +760,29 @@ export function withHidden(prop: Prop<SceneValue>, hidden: boolean) {
   return { [kind]: { ...track, hidden: hidden || undefined } } as Prop<SceneValue>
 }
 
-/** A spread that can only pick its middle */
-function middleOf(spread: Spread): Spread {
-  const middle = (range: [number, number]): [number, number] => [midpoint(range), midpoint(range)]
-  if ('Float' in spread) return { Float: middle(spread.Float) }
-  if ('Vec2' in spread) return { Vec2: { x: middle(spread.Vec2.x), y: middle(spread.Vec2.y) } }
+/** A spread that can only pick the point `height` of the way through it, from its low end at 0 to its high end at 1 */
+function pointOf(spread: Spread, height: number): Spread {
+  const point = ([low, high]: [number, number]): [number, number] => [low + (high - low) * height, low + (high - low) * height]
+  if ('Float' in spread) return { Float: point(spread.Float) }
+  if ('Vec2' in spread) return { Vec2: { x: point(spread.Vec2.x), y: point(spread.Vec2.y) } }
   const { hue, brightness, alpha } = spread.Color
-  return { Color: { hue: middle(hue), brightness: middle(brightness), alpha: middle(alpha) } }
+  return { Color: { hue: point(hue), brightness: point(brightness), alpha: point(alpha) } }
 }
 
 /**
  * A track that stays on its first value. Only the machine knows what a random prop's first pick comes to, so that stays
- * on the middle of its spread, as it does for anything else that needs a value for it here. A wave with no rate stays
- * where it starts.
+ * on the middle of its spread, as it does for anything else that needs a value for it here. A wave becomes a random
+ * prop that can only pick where the wave starts, as its modulator may be moving other props too.
  */
-function held(prop: Prop<SceneValue>): Prop<SceneValue> {
-  if ('Modulated' in prop) return { Modulated: { ...prop.Modulated, rate: 0 } }
-  if ('Random' in prop) return { Random: { ...prop.Random, spread: middleOf(prop.Random.spread), force_unique: false } }
+function held(prop: Prop<SceneValue>, scene: Scene): Prop<SceneValue> {
+  if ('Modulated' in prop) {
+    const { modulator: name, spread, phase } = prop.Modulated
+    const modulator = scene.modulators?.[name]
+    if (!modulator) return prop
+    const height = envelopeHeight(modulator.envelope, wavePosition(modulator, startingValue(phase, scene, 0), 0))
+    return { Random: { picks: [newPick(0)], spread: pointOf(spread, height), seed: 0, force_unique: false } }
+  }
+  if ('Random' in prop) return { Random: { ...prop.Random, spread: pointOf(prop.Random.spread, 0.5), force_unique: false } }
   return 'Keyframes' in prop && prop.Keyframes.keys.length > 0 ? { Fixed: prop.Keyframes.keys[0].value } : prop
 }
 
@@ -789,7 +839,7 @@ export function sceneSource(scene: Scene): SceneSource {
   let shown = scene
   const tracks = sceneTracks({ get: () => shown, set: (edited) => (shown = edited) })
   for (const { prop } of tracks) {
-    if (isHidden(prop.get())) prop.set(held(prop.get()))
+    if (isHidden(prop.get())) prop.set(held(prop.get(), scene))
   }
   const definition = sceneFile(scene)
   return shown === scene ? { Definition: definition } : { Preview: { scene: definition, shown: sceneFile(shown) } }
@@ -1032,8 +1082,8 @@ export const GROWTH_DENSITY: Range = { min: 0, max: 32, step: 1, rest: 4 }
 export const BRANCHING: Range = { ...UNIT, rest: 0.3 }
 /** Steps of a visit response's timing */
 export const STEPS: Range = { min: 0, max: 10, step: 0.1, rest: 0 }
-/** Waves per scene cycle. Fractions carry a wave on across cycles. */
-export const WAVE_RATE: Range = { min: 0, max: 16, step: 0.25, rest: 1 }
+/** Waves per scene cycle, at least one, as `MIN_RATE` in frontbox-gfx has it. Fractions carry a wave on across cycles. */
+export const WAVE_RATE: Range = { min: 1, max: 16, step: 0.25, rest: 1 }
 /** A fraction of a star's leg is dropped, so a spread goes one past the last, as it does for `frameRanges` */
 /** A number written out as text, such as a bonus counted up */
 export const NUMBER: Range = { min: 0, max: 100_000, step: 1, rest: 0 }

@@ -69,9 +69,11 @@ import {
   RegionVisibilityContext,
   SceneContext,
   ShapePosesContext,
+  ShowModulatorContext,
   SurfaceContext,
   TraversalsContext,
 } from './SceneFields'
+import ModulatorList, { modulatorElementId } from './ModulatorList'
 import {
   ADJUSTS,
   BULGE,
@@ -341,11 +343,11 @@ const INLINE_KINDS: NodeKind[] = ['lights', 'z', 'mask', 'fit', 'fill', 'region'
 const SETTING_KINDS: NodeKind[] = ['lights', 'z', 'mask']
 
 /** The sidebar's sections, which open and close on their own */
-type SidebarSection = 'properties' | 'variables'
+type SidebarSection = 'properties' | 'variables' | 'modulators'
 
 /**
  * The sidebar, in tabs: the properties of what's selected, in the tree on the timeline or by a click in the preview, the
- * scene's variables, and its named values. Selecting something goes to its properties.
+ * scene's variables and its named values, and its modulators. Selecting something goes to its properties.
  */
 export default function PropertiesPanel() {
   const tree = useContext(ConfigTreeContext)!
@@ -363,13 +365,22 @@ export default function PropertiesPanel() {
     ),
   )
   const section = (id: 'variables' | 'values') => tree.nodes().find((node) => node.id === id)?.children ?? []
+  const scene = useContext(SceneContext)!
+  const modulatorCount = () => Object.keys(scene.get().modulators ?? {}).length
+  const showModulator = (name: string) => {
+    setTab('modulators')
+    // once the tab's content is showing
+    requestAnimationFrame(() => document.getElementById(modulatorElementId(name))?.scrollIntoView({ block: 'nearest' }))
+  }
 
   return (
     <div class="scene-config scene-properties">
+      <ShowModulatorContext.Provider value={showModulator}>
       <Tabs.Root class="scene-sidebar-tabs" value={tab()} onValueChange={(details) => setTab(details.value as SidebarSection)}>
         <Tabs.List class="scene-sidebar-tab-list">
           <SidebarTab value="properties" label="Properties" />
           <SidebarTab value="variables" label="Variables" count={section('variables').length + section('values').length} />
+          <SidebarTab value="modulators" label="Modulators" count={modulatorCount()} />
         </Tabs.List>
         <SidebarItem value="properties">
           <Show when={tree.selected()} keyed fallback={<NothingSelected />}>
@@ -393,7 +404,11 @@ export default function PropertiesPanel() {
             <AddValue />
           </section>
         </SidebarItem>
+        <SidebarItem value="modulators">
+          <ModulatorList />
+        </SidebarItem>
       </Tabs.Root>
+      </ShowModulatorContext.Provider>
       <datalist id={LIGHT_NAMES}>
         <For each={graphNodes()}>{(name) => <option value={name} />}</For>
       </datalist>

@@ -7,6 +7,8 @@ pub enum SceneError {
   NoTiming { layer: String },
   /// The timing's duration isn't a positive number
   NoDuration,
+  /// A modulator's wave goes by less than once a cycle
+  ModulatorTooSlow { modulator: String },
   /// Two traversals in a layer's graph have the same name
   SameTraversalName { layer: String, traversal: String },
   /// A traversal's fixed rate isn't a positive number
@@ -26,6 +28,10 @@ impl fmt::Display for SceneError {
         write!(f, "{layer} changes over time, so the scene needs a timing")
       }
       Self::NoDuration => write!(f, "a scene's duration must be more than zero"),
+      Self::ModulatorTooSlow { modulator } => write!(
+        f,
+        "modulator \"{modulator}\" needs a rate of at least 1 wave per cycle"
+      ),
       Self::SameTraversalName { layer, traversal } => write!(
         f,
         "{layer} has more than one traversal named \"{traversal}\""

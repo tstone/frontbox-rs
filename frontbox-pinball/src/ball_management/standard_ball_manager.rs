@@ -585,7 +585,11 @@ impl BallManager for StandardBallManager {
     self.queue.clear();
 
     // An eject the trough hadn't started yet leaves its ball in the trough
-    if ctx.systems.expect::<TroughSystem>().cancel_queued_ejects(ctx.into()) {
+    if ctx
+      .systems
+      .expect::<TroughSystem>()
+      .cancel_queued_ejects(ctx.into())
+    {
       self.trough_ejecting = None;
       self.end_en_route(ctx);
     }

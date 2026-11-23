@@ -31,7 +31,6 @@
 ### Scenes/Editor
 
 - Rotate transform gets an adjustable center point (X/Y prop)
-- Modulators become global then assigned
 - Line-based fills (polyline, spiral, logarithmic spiral, etc. snake patterns) 
 - Line based fill patterns usable for Sweep
 - Change sweep to, instead of having a nested line/shape, you choose to use an existing one.
@@ -73,7 +72,7 @@
 - Per-point phase for `Modulated`: a prop source that reads the point's position or `Sequence` index.
 - One internal walker over every `Prop`, replacing the hand-written `is_animated`, `read_inputs`, `image_names`,
   `font_names`, and `check` walks.
-- Gaps in `check`: `Visit`/`Fit` naming a missing traversal; unsorted `Keyframes::keys`, `Random::picks`, gradient
+- Gaps in `check`: `Visit`/`Fit` naming a missing traversal; `Modulated` naming a missing modulator; unsorted `Keyframes::keys`, `Random::picks`, gradient
   `stops` (sort on load); `Prop::Sweep` on a non-position type built in code.
 - Replace `DefaultHasher` in `scene/random.rs` with a fixed integer hash (stable across Rust releases, cheaper).
 - Images on hard-edged displays are point-sampled and alias when shrunk: give images their own footprint.
