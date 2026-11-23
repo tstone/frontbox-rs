@@ -335,16 +335,14 @@ mod tests {
     scene.modulators.insert(
       "pulse".into(),
       Modulator::new(
-        Envelope::new(EnvelopeCurve::new(Curve::EaseIn).reversed())
-          .decay(EnvelopeCurve::new(Curve::BounceOut)),
+        Envelope::new(Curve::EaseIn.reverse()).decay(Curve::BounceOut),
         2.0,
       ),
     );
     scene.modulators.insert(
       "back and forth".into(),
       Modulator::new(
-        Envelope::new(EnvelopeCurve::new(Curve::Linear))
-          .decay(EnvelopeCurve::new(Curve::Linear).reversed()),
+        Envelope::new(Curve::Linear).decay(Curve::Linear.reverse()),
         1.0,
       ),
     );
@@ -401,32 +399,11 @@ mod tests {
   }
 
   #[test]
-  fn a_random_color_with_no_alpha_is_opaque() {
-    let scene = load(
-      "(timing: (duration: 1.0), layers: [(fill: (base: Solid(Random(
-      picks: [(at: 0.0)],
-      spread: Color(hue: (0.0, 360.0), brightness: (1.0, 1.0)),
-    ))))])",
-    );
-    let scene = scene.unwrap();
-    let FillNode::Solid(Prop::Random(random)) = &scene.layers[0].fill.base else {
-      panic!("{scene:?}");
-    };
-    assert!(matches!(
-      random.spread,
-      Spread::Color {
-        alpha: (1.0, 1.0),
-        ..
-      }
-    ));
-  }
-
-  #[test]
   fn a_random_forces_unique_picks_unless_told_otherwise() {
     let scene = load(
       "(timing: (duration: 1.0), layers: [(fill: (base: Solid(Random(
       picks: [(at: 0.0)],
-      spread: Color(hue: (0.0, 360.0), brightness: (1.0, 1.0)),
+      spread: Color(hue: (0.0, 360.0)),
     ))))])",
     );
     let scene = scene.unwrap();
@@ -440,7 +417,7 @@ mod tests {
   fn random_props_read_and_write() {
     let source = "(timing: (duration: 2.0), layers: [(fill: (base: Solid(Random(
       picks: [(at: 0.0), (at: 1.0, smooth_in: 0.25, smooth_out: 0.5)],
-      spread: Color(hue: (330.0, 390.0), brightness: (0.5, 1.0), alpha: (0.25, 1.0)),
+      spread: Color(hue: (330.0, 390.0)),
       seed: 7,
       force_unique: false,
     ))))])";
@@ -463,9 +440,7 @@ mod tests {
     assert_eq!(
       random.spread,
       Spread::Color {
-        hue: (330.0, 390.0),
-        brightness: (0.5, 1.0),
-        alpha: (0.25, 1.0)
+        hue: (330.0, 390.0)
       }
     );
     assert_eq!(random.seed, 7);
@@ -476,10 +451,10 @@ mod tests {
   fn modulated_props_read_and_write() {
     let source = r#"(
       timing: (duration: 2.0),
-      modulators: {"slow": (envelope: (attack: (curve: EaseIn, reversed: true), decay: (curve: BounceOut)), rate: 1.5)},
+      modulators: {"slow": (envelope: (attack: Reverse(EaseIn), decay: BounceOut), rate: 1.5)},
       layers: [(fill: (base: Solid(Modulated(
         modulator: "slow",
-        spread: Color(hue: (0.0, 120.0), brightness: (0.5, 1.0)),
+        spread: Color(hue: (0.0, 120.0)),
         phase: Keyframes(keys: [(at: 0.0, value: 0.0), (at: 2.0, value: 1.0)]),
       ))))],
     )"#;
@@ -490,15 +465,12 @@ mod tests {
     };
     let spread = Spread::Color {
       hue: (0.0, 120.0),
-      brightness: (0.5, 1.0),
-      alpha: (1.0, 1.0),
     };
     assert_eq!(
       (modulated.modulator.as_str(), &modulated.spread),
       ("slow", &spread)
     );
-    let envelope = Envelope::new(EnvelopeCurve::new(Curve::EaseIn).reversed())
-      .decay(EnvelopeCurve::new(Curve::BounceOut));
+    let envelope = Envelope::new(Curve::EaseIn.reverse()).decay(Curve::BounceOut);
     assert_eq!(loaded.modulators["slow"], Modulator::new(envelope, 1.5));
     let Prop::Keyframes(phase) = &*modulated.phase else {
       panic!("{written}");
@@ -518,9 +490,9 @@ mod tests {
     let scene = load(
       r#"(
       timing: (duration: 1.0),
-      modulators: {"rise": (envelope: (attack: (curve: Linear)), rate: 1.0)},
+      modulators: {"rise": (envelope: (attack: Linear), rate: 1.0)},
       layers: [(fill: (base: Solid(Modulated(
-        modulator: "rise", spread: Color(hue: (0.0, 360.0), brightness: (1.0, 1.0)),
+        modulator: "rise", spread: Color(hue: (0.0, 360.0)),
       ))))],
     )"#,
     );
@@ -531,13 +503,10 @@ mod tests {
     assert!(matches!(*modulated.phase, Prop::Fixed(0.0)));
     assert_eq!(
       scene.modulators["rise"].envelope,
-      Envelope::new(EnvelopeCurve::new(Curve::Linear))
+      Envelope::new(Curve::Linear)
     );
     let written = save(&scene).unwrap();
-    assert!(
-      !written.contains("decay") && !written.contains("reversed"),
-      "{written}"
-    );
+    assert!(!written.contains("decay"), "{written}");
   }
 
   #[test]

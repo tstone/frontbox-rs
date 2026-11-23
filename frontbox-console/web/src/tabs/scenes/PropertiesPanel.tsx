@@ -62,6 +62,7 @@ import {
   LayerSurfacesContext,
   NodePickingContext,
   NumberBox,
+  NumberField,
   PropField,
   propKind,
   PropSource,
@@ -105,6 +106,7 @@ import {
   soundEnd,
   soundVolume,
   startingValue,
+  VOLUME,
   TIME_STEP,
   traversalNames,
   traversalTarget,
@@ -995,11 +997,9 @@ const propFieldSpec = (spec: PropSpec) => ({
   ranges: spec.ranges,
 })
 
-/** A sound layer's sound. How loud it is goes under it, and when it starts and ends is set on the timeline. */
+/** A sound layer's sound and how loud it is. When it starts and ends is set on the timeline. */
 function SoundFields(props: { lens: Lens<SoundLayer> }) {
-  const scene = useContext(SceneContext)!
-  /** What it's heard at when it's tried out */
-  const startingVolume = () => startingValue(soundVolume(props.lens).get(), scene.get(), 1)
+  const volume = () => soundVolume(props.lens)
   const length = () => contentSoundLength(props.lens.get().sound)
   const end = () => soundEnd(props.lens.get(), length())
 
@@ -1007,8 +1007,12 @@ function SoundFields(props: { lens: Lens<SoundLayer> }) {
     <>
       <FieldRow label="Sound">
         <Show when={contentSounds().length > 0 || props.lens.get().sound !== ''} fallback={<span class="scene-note">No sounds in the machine's content folder</span>}>
-          <SoundPicker lens={field(props.lens, 'sound')} volume={startingVolume()} />
+          <SoundPicker lens={field(props.lens, 'sound')} volume={volume().get()} />
         </Show>
+      </FieldRow>
+      {/* a number rather than a value that changes, as a sound takes its volume when it starts */}
+      <FieldRow label="Volume">
+        <NumberField label="Volume" range={VOLUME} value={volume().get()} onChange={(next) => volume().set(Math.max(0, next))} />
       </FieldRow>
       <Show when={length()}>
         {(known) => (

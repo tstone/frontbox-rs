@@ -33,8 +33,7 @@ import type { Transform } from '../../types/generated/Transform'
 import type { Traversal } from '../../types/generated/Traversal'
 import type { TraversalAlgorithm } from '../../types/generated/TraversalAlgorithm'
 import type { Envelope } from '../../types/generated/Envelope'
-import type { EnvelopeCurve } from '../../types/generated/EnvelopeCurve'
-import { sample } from './CurvePicker'
+import { curveHeight } from './curves'
 
 export type Vec2 = [number, number]
 
@@ -238,7 +237,7 @@ export function withoutValue(scene: Scene, name: string): Scene {
 }
 
 /** A modulator before it's been changed: one linear rise per cycle */
-export const newModulator = (): Modulator => ({ envelope: { attack: { curve: 'Linear' } }, rate: 1 })
+export const newModulator = (): Modulator => ({ envelope: { attack: 'Linear' }, rate: 1 })
 
 /** `Modulator 1`, or the next number the scene hasn't used */
 function freshModulatorName(scene: Scene) {
@@ -286,13 +285,13 @@ export function spreadFits(spread: Spread, like: SceneValue) {
   return kindReads(Object.keys(wrapValue(like))[0], Object.keys(spread)[0])
 }
 
-/** The fully saturated color at a hue in degrees, and a brightness and an alpha from 0 to 1 */
-function hsvColor(hue: number, brightness: number, alpha: number): Color {
+/** The fully saturated, fully bright, opaque color at a hue in degrees */
+function hueColor(hue: number): Color {
   const channel = (n: number) => {
-    const k = (n + hue / 60) % 6
-    return Math.round(255 * brightness * (1 - Math.max(0, Math.min(k, 4 - k, 1))))
+    const k = (((n + hue / 60) % 6) + 6) % 6
+    return Math.round(255 * (1 - Math.max(0, Math.min(k, 4 - k, 1))))
   }
-  return [channel(5), channel(3), channel(1), Math.round(alpha * 255)]
+  return [channel(5), channel(3), channel(1), 255]
 }
 
 /** What a spread comes to at `height`, from its low end at 0 to its high end at 1, as `Animatable::from_spread` has it */
@@ -300,23 +299,13 @@ function spreadAt(spread: Spread, height: number): SceneValue {
   const at = ([low, high]: [number, number]) => low + (high - low) * height
   if ('Float' in spread) return at(spread.Float)
   if ('Vec2' in spread) return [at(spread.Vec2.x), at(spread.Vec2.y)]
-  const { hue, brightness, alpha } = spread.Color
-  return hsvColor(at(hue), at(brightness), at(alpha))
+  return hueColor(at(spread.Color.hue))
 }
 
 /** An envelope's height at `position` through its wave, 0 to 1, as `Envelope::sample` in frontbox-gfx has it */
 export function envelopeHeight({ attack, decay }: Envelope, position: number): number {
-  if (!decay) return envelopeCurveHeight(attack, position)
-  return position < 0.5 ? envelopeCurveHeight(attack, position * 2) : envelopeCurveHeight(decay, position * 2 - 1)
-}
-
-function envelopeCurveHeight({ curve, reversed }: EnvelopeCurve, phase: number) {
-  return curveHeight(curve, reversed ? 1 - phase : phase)
-}
-
-/** Where a curve is at a phase from 0 to 1, with one written by hand taken as linear, as only the machine knows what it comes to */
-export function curveHeight(curve: Curve, phase: number) {
-  return typeof curve === 'string' ? sample(curve, phase) : phase
+  if (!decay) return curveHeight(attack, position)
+  return position < 0.5 ? curveHeight(attack, position * 2) : curveHeight(decay, position * 2 - 1)
 }
 
 /** Where in its modulator's wave a modulated prop is, 0 to 1, at `cycles` into the scene (counting the ones already played), with its phase at `phase` then */
@@ -325,13 +314,13 @@ export function wavePosition({ rate }: Modulator, phase: number, cycles: number)
   return position < 0 ? position + 1 : position
 }
 
-/** The widest spread for a prop holding values like `like`, short of making a color see-through */
+/** The widest spread for a prop holding values like `like`: for a color, every hue */
 export function fullSpread(like: SceneValue, [x, y]: Ranges): Spread {
   // half the range is true
   if (typeof like === 'boolean') return { Float: [0, 1] }
   if (typeof like === 'number') return { Float: [x.min, x.spreadEnd ?? x.max] }
   if (like.length === 2) return { Vec2: { x: [x.min, x.max], y: [y.min, y.max] } }
-  return { Color: { hue: [HUE.min, HUE.max], brightness: [UNIT.min, UNIT.max], alpha: [UNIT.max, UNIT.max] } }
+  return { Color: { hue: [HUE.min, HUE.max] } }
 }
 
 /** The value a prop shows with no game running: the variable's default, a track's first key, the middle of a spread, where a wave starts, where a path was moved to, or a visit response at rest */
@@ -663,10 +652,8 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
     }
   })
 
-  const sounds = field(scene, 'sounds')
   layerIndex = null
   inMask = false
-  sounds.get().forEach((layer, index) => use(soundVolume(item(sounds, index)), `${soundLabel(layer, index)} · Volume`, both(VOLUME)))
 
   const values = field(scene, 'values') as Lens<Record<string, NamedValue>>
   for (const [name, value] of Object.entries(values.get() ?? {})) {
@@ -683,10 +670,10 @@ export function layerVisible(layer: Lens<SceneLayer>): Lens<Prop<boolean>> {
   return { get: () => visible.get() ?? { Fixed: true }, set: (next) => visible.set('Fixed' in next && next.Fixed === true ? undefined : next) }
 }
 
-/** A sound layer's volume, which is 1 when the file leaves it out */
-export function soundVolume(layer: Lens<SoundLayer>): Lens<Prop<number>> {
+/** A sound layer's volume, which is 1 when the file leaves it out, as the file does then */
+export function soundVolume(layer: Lens<SoundLayer>): Lens<number> {
   const volume = field(layer, 'volume')
-  return { get: () => volume.get() ?? { Fixed: 1 }, set: volume.set }
+  return { get: () => volume.get() ?? 1, set: (next) => volume.set(next === 1 ? undefined : next) }
 }
 
 /** What to call a layer, which is its place from the bottom until it's given a name */
@@ -765,8 +752,7 @@ function pointOf(spread: Spread, height: number): Spread {
   const point = ([low, high]: [number, number]): [number, number] => [low + (high - low) * height, low + (high - low) * height]
   if ('Float' in spread) return { Float: point(spread.Float) }
   if ('Vec2' in spread) return { Vec2: { x: point(spread.Vec2.x), y: point(spread.Vec2.y) } }
-  const { hue, brightness, alpha } = spread.Color
-  return { Color: { hue: point(hue), brightness: point(brightness), alpha: point(alpha) } }
+  return { Color: { hue: point(spread.Color.hue) } }
 }
 
 /**
@@ -919,12 +905,12 @@ export function withTimesScaled(scene: Scene, by: number): Scene {
 
 /**
  * `next` without its timing once `current`'s last track is gone, as the timing was only there for them and would
- * otherwise end a scene that's meant to stay up. A sound starting after the start keeps it, as it needs one to start in.
+ * otherwise end a scene that's meant to stay up. A sound keeps it, as a sound is placed on the timeline and played
+ * along it.
  */
 export function withoutDroppedTiming(current: Scene, next: Scene): Scene {
   const tracks = (scene: Scene) => sceneTracks(reading(scene)).length
-  const startsLater = next.sounds.some(({ start }) => start > 0)
-  if (!next.timing || tracks(current) === 0 || tracks(next) > 0 || traverses(next) || startsLater) return next
+  if (!next.timing || tracks(current) === 0 || tracks(next) > 0 || traverses(next) || next.sounds.length > 0) return next
   const { timing: _, ...rest } = next
   return rest
 }

@@ -18,9 +18,10 @@ import { ConfigTreeContext, hasTrack, shownInTree, treeChildren, type ConfigTree
 import { AddMenu, NodeIcon, NodeSummary } from './PropertiesPanel'
 import { LayerMenuContext } from './LayerMenu'
 import { CurveField, Dropdown, EyeButton, FieldRow, LayerSurfacesContext, NumberBox, NumberField, SceneContext, ValueField } from './SceneFields'
+import { curveHeight } from './curves'
 import { contentSoundLength } from '../../state/contentSounds'
 import type { SoundLayer } from '../../types/generated/SoundLayer'
-import { curveHeight, field, isHidden, item, moveMoment, removed, repeats, sceneTracks, soundEnd, soundNaturalEnd, sceneTraversals, snap, startingValue, TIME_STEP, trackTimes, traversalLength, UNIT, variant, envelopeHeight, wavePosition, withKey, withKeyCopy, withPick, withHidden, withTimesInLength, withTimesScaled, type Lens, type Ranges, type Scene, type SceneLayer, type SceneValue } from './sceneModel'
+import { field, isHidden, item, moveMoment, removed, repeats, sceneTracks, soundEnd, soundNaturalEnd, sceneTraversals, snap, startingValue, TIME_STEP, trackTimes, traversalLength, UNIT, variant, envelopeHeight, wavePosition, withKey, withKeyCopy, withPick, withHidden, withTimesInLength, withTimesScaled, type Lens, type Ranges, type Scene, type SceneLayer, type SceneValue } from './sceneModel'
 
 /** How close in pixels a click can be to a key before it's taken to mean that key */
 const KEY_REACH = 12
@@ -614,7 +615,7 @@ function TreeRow(props: {
           <Show when={props.timed}>
             <Switch>
               <Match when={trackOf(node())}>{(track) => <TrackLane node={track()} percent={props.percent} span={props.span} expanded={expanded()} scrub={props.scrub} />}</Match>
-              <Match when={is(node(), 'sound')}>{(sound) => <SoundBar label={sound().label} lens={sound().lens} end={props.end} percent={props.percent} span={props.span} />}</Match>
+              <Match when={is(node(), 'sound')}>{(sound) => <SoundBar label={sound().label} lens={sound().lens} end={props.end} percent={props.percent} span={props.span} onSelect={() => tree.select(node().id)} />}</Match>
               <Match when={is(node(), 'traversal')}>
                 {(traversal) => <TraversalLane node={traversal()} length={props.lengthOf(traversal())} end={props.end} percent={props.percent} span={props.span} />}
               </Match>
@@ -1094,9 +1095,9 @@ function KeyedPreview(props: { keys: Key<SceneValue>[]; cycle: Cycle; span: numb
  * When a sound plays: a bar from its start to where it ends or is cut off, between the parts of the sound that are
  * skipped and cut off. Its left edge skips more or less of the sound's beginning and its right edge moves the end, each
  * leaving the other where it is, and the rest moves the whole of it. It can't start at `end`, as that's the start of the
- * next cycle, but it can play on past it.
+ * next cycle, but it can play on past it. Pressing any of it selects its layer with `onSelect`.
  */
-function SoundBar(props: { label: string; lens: Lens<SoundLayer>; end: number; percent: (seconds: number) => string; span: number }) {
+function SoundBar(props: { label: string; lens: Lens<SoundLayer>; end: number; percent: (seconds: number) => string; span: number; onSelect: () => void }) {
   const layer = () => props.lens.get()
   const length = () => contentSoundLength(layer().sound)
   const skip = () => layer().skip ?? 0
@@ -1126,8 +1127,10 @@ function SoundBar(props: { label: string; lens: Lens<SoundLayer>; end: number; p
     const lane = () => bar.parentElement!
     return {
       onPointerDown(e: PointerEvent & { currentTarget: HTMLElement }) {
-        // an edge is inside the bar, which would take the drag as its own
+        // an edge is inside the bar, which would take the drag as its own, and the row would take it as moving the
+        // layer, so the row's selecting is done here
         e.stopPropagation()
+        props.onSelect()
         e.currentTarget.setPointerCapture(e.pointerId)
         press = { x: along(e, lane()), span: props.span, times: { start: layer().start, skip: skip(), end: layer().end ?? natural() } }
       },

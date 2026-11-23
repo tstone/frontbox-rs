@@ -12,18 +12,13 @@ Scene(
   modulators: {
     "Fade": (
       envelope: (
-        attack: (
-          curve: Linear,
-          reversed: true,
-        ),
+        attack: Reverse(Linear),
       ),
       rate: 1.0,
     ),
     "Grow": (
       envelope: (
-        attack: (
-          curve: EaseOut,
-        ),
+        attack: EaseOut,
       ),
       rate: 1.0,
     ),

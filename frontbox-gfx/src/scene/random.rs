@@ -237,22 +237,14 @@ pub enum Spread {
     x: (f32, f32),
     y: (f32, f32),
   },
-  /// Fully saturated HSV colors. Hue is in degrees and can wrap past 360, so `(330.0, 390.0)` covers the reds on both
-  /// sides of 0. Brightness (HSV value) and alpha are 0 to 1.
-  Color {
-    hue: (f32, f32),
-    brightness: (f32, f32),
-    #[serde(default = "opaque")]
-    alpha: (f32, f32),
-  },
+  /// Fully saturated, fully bright, opaque colors by hue, in degrees. Hue can wrap past 360, so `(330.0, 390.0)` covers
+  /// the reds on both sides of 0. How bright or see-through they are is up to the `Brightness` and `Opacity` adjusts,
+  /// as only the hue varies here.
+  Color { hue: (f32, f32) },
 }
 
 fn on() -> bool {
   true
-}
-
-fn opaque() -> (f32, f32) {
-  (1.0, 1.0)
 }
 
 /// One occurrence of a pick: the pick's index within a particular scene cycle
@@ -405,14 +397,10 @@ mod tests {
   }
 
   #[test]
-  fn colors_are_picked_by_hue_and_brightness() {
+  fn colors_are_picked_by_hue() {
     let variables = Variables::new();
-    let color = |hue, brightness| -> Rgba<u8> {
-      let spread = Spread::Color {
-        hue,
-        brightness,
-        alpha: (1.0, 1.0),
-      };
+    let color = |hue| -> Rgba<u8> {
+      let spread = Spread::Color { hue };
       Random {
         picks: vec![Pick::new(0.0)],
         spread,
@@ -422,9 +410,8 @@ mod tests {
       .resolve::<Color>(&env(0.0, &variables))
       .0
     };
-    assert_eq!(color((120.0, 120.0), (1.0, 1.0)), Rgba([0, 255, 0, 255]));
-    assert_eq!(color((240.0, 240.0), (0.5, 0.5)), Rgba([0, 0, 128, 255]));
-    assert_eq!(color((0.0, 360.0), (0.0, 0.0)), Rgba([0, 0, 0, 255]));
+    assert_eq!(color((120.0, 120.0)), Rgba([0, 255, 0, 255]));
+    assert_eq!(color((240.0, 240.0)), Rgba([0, 0, 255, 255]));
   }
 
   #[test]
@@ -433,8 +420,6 @@ mod tests {
     for seed in 0..500 {
       let spread = Spread::Color {
         hue: (330.0, 390.0),
-        brightness: (1.0, 1.0),
-        alpha: (1.0, 1.0),
       };
       let picks = vec![Pick::new(0.0)];
       let Rgba([red, green, blue, _]) = Random {
@@ -448,35 +433,6 @@ mod tests {
       assert_eq!(red, 255);
       assert!(green <= 128 && blue <= 128, "{green} {blue}");
     }
-  }
-
-  #[test]
-  fn alpha_stays_in_its_spread_and_comes_apart_from_the_color() {
-    let variables = Variables::new();
-    let spread = Spread::Color {
-      hue: (120.0, 120.0),
-      brightness: (1.0, 1.0),
-      alpha: (0.25, 0.75),
-    };
-    let alphas: Vec<u8> = (0..500)
-      .map(|seed| {
-        let Rgba([red, green, blue, alpha]) = Random {
-          picks: vec![Pick::new(0.0)],
-          spread,
-          seed,
-          force_unique: true,
-        }
-        .resolve::<Color>(&env(0.0, &variables))
-        .0;
-        assert_eq!((red, green, blue), (0, 255, 0));
-        alpha
-      })
-      .collect();
-    assert!(
-      alphas.iter().all(|alpha| (64..=191).contains(alpha)),
-      "{alphas:?}"
-    );
-    assert!(alphas.iter().any(|alpha| *alpha != alphas[0]));
   }
 
   #[test]
@@ -683,11 +639,9 @@ mod tests {
   fn colors_differ_from_the_one_before_too() {
     let variables = Variables::new();
     let timing = Timing::new(1.0, Cycle::Forever);
-    // only a few colors are this dark
+    // only a few colors are this close in hue
     let spread = Spread::Color {
-      hue: (120.0, 120.0),
-      brightness: (0.0, 0.016),
-      alpha: (1.0, 1.0),
+      hue: (120.0, 121.5),
     };
     let random = Random {
       spread,

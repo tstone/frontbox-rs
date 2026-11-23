@@ -148,7 +148,7 @@ impl Scene {
       .for_each(|value| value.read_inputs(&mut inputs));
     for layer in &self.layers {
       match layer {
-        SceneLayer::Sound(sound) => sound.volume.read_inputs(&mut inputs),
+        SceneLayer::Sound(_) => {}
         drawn => drawn
           .layer()
           .iter()
@@ -196,9 +196,8 @@ impl Scene {
       .map(|layer| layer.sound.as_str())
   }
 
-  /// The sounds that start after `after` and up to `moment`'s time, in the order they start, each at the volume its
-  /// layer gives then. Pass the time of the last call as `after`, so each start is given once, or `None` for a playback that
-  /// has just started.
+  /// The sounds that start after `after` and up to `moment`'s time, in the order they start. Pass the time of the last
+  /// call as `after`, so each start is given once, or `None` for a playback that has just started.
   pub fn sounds_started<'a>(
     &'a self,
     moment: &Moment<'a>,
@@ -210,12 +209,12 @@ impl Scene {
         .started(self.timing, after, moment.time)
         .map(|start| (layer, start))
     });
-    self.sound_starts(moment, starts)
+    sound_starts(starts)
   }
 
-  /// Where each sound starts in cycle `cycle` (counting from zero) at the volume its layer gives then, in the order they
-  /// start, for previewing a cycle. `moment`'s time is ignored. A cycle past the last is the last.
-  pub fn sounds_in_cycle<'a>(&'a self, moment: &Moment<'a>, cycle: u32) -> Vec<SoundStart<'a>> {
+  /// Where each sound starts in cycle `cycle` (counting from zero), in the order they start, for previewing a cycle. A
+  /// cycle past the last is the last.
+  pub fn sounds_in_cycle(&self, cycle: u32) -> Vec<SoundStart<'_>> {
     let top = self.timing.map_or(0.0, |timing| {
       let cycle = match timing.cycle {
         Cycle::Once => 0,
@@ -226,33 +225,7 @@ impl Scene {
     });
     let layers = self.layers.iter().filter_map(SceneLayer::as_sound);
     let starts = layers.map(|layer| (layer, top + layer.start));
-    self.sound_starts(moment, starts)
-  }
-
-  fn sound_starts<'a>(
-    &'a self,
-    moment: &Moment<'a>,
-    starts: impl Iterator<Item = (&'a SoundLayer, f32)>,
-  ) -> Vec<SoundStart<'a>> {
-    let mut started: Vec<_> = starts
-      .map(|(layer, time)| {
-        let frame = self.frame(
-          &Moment { time, ..*moment },
-          scene::Surface::Sequence,
-          Vec2::ZERO,
-          None,
-        );
-        SoundStart {
-          sound: &layer.sound,
-          time,
-          volume: layer.volume_at(&frame),
-          skip: layer.skip,
-          length: layer.length(),
-        }
-      })
-      .collect();
-    started.sort_by(|a, b| a.time.total_cmp(&b.time));
-    started
+    sound_starts(starts)
   }
 
   /// Loads the images and fonts its layers draw from `content`. A layer whose image or font is missing is an error,
@@ -526,6 +499,21 @@ impl fmt::Display for DifferentLights {
 
 impl std::error::Error for DifferentLights {}
 
+/// Each layer's sound starting at its time, sorted by when they start
+fn sound_starts<'a>(starts: impl Iterator<Item = (&'a SoundLayer, f32)>) -> Vec<SoundStart<'a>> {
+  let mut started: Vec<_> = starts
+    .map(|(layer, time)| SoundStart {
+      sound: &layer.sound,
+      time,
+      volume: layer.volume.max(0.0),
+      skip: layer.skip,
+      length: layer.length(),
+    })
+    .collect();
+  started.sort_by(|a, b| a.time.total_cmp(&b.time));
+  started
+}
+
 fn is_zero(z: &i8) -> bool {
   *z == 0
 }
@@ -564,7 +552,6 @@ enum SceneFile {
 
 #[cfg(test)]
 mod tests {
-  use frontbox_gfx::animation::Curve;
   use frontbox_gfx::prelude::*;
   use frontbox_gfx::scene::*;
 
@@ -709,7 +696,7 @@ mod tests {
 
   #[test]
   fn a_modulator_slower_than_once_a_cycle_is_refused() {
-    let source = r#"Scene(version: 2, timing: (duration: 1.0), modulators: {"drift": (envelope: (attack: (curve: Linear)), rate: 0.5)})"#;
+    let source = r#"Scene(version: 2, timing: (duration: 1.0), modulators: {"drift": (envelope: (attack: Linear), rate: 0.5)})"#;
     let Err(FormatError::Invalid(message)) = Scene::load(source) else {
       panic!("loaded a modulator with a rate of 0.5");
     };
@@ -804,22 +791,13 @@ mod tests {
   }
 
   #[test]
-  fn each_sound_plays_at_the_volume_its_layer_has_then_in_the_order_they_start() {
-    let fade_in = || {
-      Prop::Keyframes(Keyframes {
-        keys: vec![
-          Key::new(0.0, 0.0, Curve::Linear),
-          Key::new(1.0, 1.0, Curve::Linear),
-        ],
-        cycle: Cycle::Once,
-      })
-    };
+  fn each_sound_plays_at_its_layers_volume_in_the_order_they_start() {
     let late = SoundLayer::new("a.wav")
       .start(0.5)
       .skip(0.125)
       .end(0.75)
-      .volume(fade_in());
-    let early = SoundLayer::new("b.wav").start(0.25).volume(fade_in());
+      .volume(0.5);
+    let early = SoundLayer::new("b.wav").start(0.25).volume(0.25);
     let scene =
       Scene::new(vec![late.into(), early.into()]).timing(Timing::new(1.0, Cycle::Forever));
     let variables = Variables::new();
@@ -860,15 +838,9 @@ mod tests {
       SoundLayer::new("a.wav").into(),
     ])
     .timing(Timing::new(2.0, Cycle::Times(2)));
-    let variables = Variables::new();
-    let moment = Moment {
-      time: 0.0,
-      playback_seed: 0,
-      variables: &variables,
-    };
     let times = |cycle| {
       scene
-        .sounds_in_cycle(&moment, cycle)
+        .sounds_in_cycle(cycle)
         .iter()
         .map(|start| (start.sound, start.time))
         .collect::<Vec<_>>()
@@ -908,19 +880,6 @@ mod tests {
       r#"Scene(version: 2, values: {"pulse": Float(Keyframes((keys: [(at: 0.0, value: 0.0), (at: 1.0, value: 1.0)], cycle: Once)))})"#,
     );
     assert!(scene.is_err());
-  }
-
-  #[test]
-  fn a_sounds_volume_is_read_too() {
-    let scene = Scene::new(vec![
-      SoundLayer::new("a.wav")
-        .volume(Prop::Variable("loud".into()))
-        .into(),
-    ]);
-    assert_eq!(
-      scene.inputs().variables.keys().collect::<Vec<_>>(),
-      ["loud"]
-    );
   }
 
   #[test]

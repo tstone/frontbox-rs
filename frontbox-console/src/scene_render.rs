@@ -229,12 +229,7 @@ pub(crate) fn render_clip(
 
   let light_count = lights.len();
   let variables = Variables::new();
-  let top = Moment {
-    time: 0.0,
-    playback_seed: seed,
-    variables: &variables,
-  };
-  let sounds = scene.sounds_in_cycle(&top, cycle).into_iter();
+  let sounds = scene.sounds_in_cycle(cycle).into_iter();
   let sounds = sounds.map(|start| ClipSound {
     at: start.time.rem_euclid(timing.duration),
     sound: start.sound.into(),
@@ -1822,7 +1817,7 @@ mod tests {
           version: 2, timing: (duration: 1.0, cycle: {cycle}),
           layers: [Lights(surface: Sequence, layer: (fill: (base: Solid(Random(
             picks: [(at: 0.0, smooth_in: 1.0)],
-            spread: Color(hue: (0.0, 360.0), brightness: (1.0, 1.0)),
+            spread: Color(hue: (0.0, 360.0)),
           )))))],)"#
       ))
     };
@@ -1860,7 +1855,7 @@ mod tests {
         version: 2, timing: (duration: 1.0, cycle: {cycle}),
         layers: [Lights(surface: Sequence, layer: (fill: (base: Solid(Random(
           picks: [(at: 0.0, smooth_in: {smooth_in})],
-          spread: Color(hue: (0.0, 360.0), brightness: (1.0, 1.0)),
+          spread: Color(hue: (0.0, 360.0)),
         )))))],)"#
     ))
   }
@@ -2181,8 +2176,8 @@ mod tests {
     let source = r#"Scene(
       version: 2, timing: (duration: 1.0, cycle: Forever), layers: [
         Lights(lights: Name("light0"), surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255))))),
-        Sound(sound: "sounds/b.wav", volume: Fixed(0.5), start: 0.6, skip: 0.5, end: 0.85),
-        Sound(sound: "sounds/a.wav", volume: Fixed(0.5), start: 0.1),
+        Sound(sound: "sounds/b.wav", volume: 0.5, start: 0.6, skip: 0.5, end: 0.85),
+        Sound(sound: "sounds/a.wav", volume: 0.5, start: 0.1),
       ],)"#;
     let clip = render_clip(
       0,

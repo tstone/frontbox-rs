@@ -41,13 +41,11 @@ import {
   ROTATION,
   shapeProps,
   soundLabel,
-  soundVolume,
   strokeProps,
   traversalTarget,
   translateRanges,
   UNIT,
   variant,
-  VOLUME,
   WANDER,
   type LayerSurfaces,
   type AdjustKind,
@@ -229,7 +227,6 @@ function layerNodes(scene: Lens<Scene>, surfaces: LayerSurfaces): ConfigNode[] {
         value: sound,
         fields: true,
         place: { list: sounds, listId: 'sounds', index },
-        children: [propNode(`${id}/volume`, 'Volume', { lens: soundVolume(lens), variableName: 'volume', fallback: 1, ranges: both(VOLUME) }, null)],
       })
     }),
   ]

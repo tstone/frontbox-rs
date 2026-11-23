@@ -27,13 +27,8 @@ Scene(
   modulators: {
     "Back and forth": (
       envelope: (
-        attack: (
-          curve: EaseInOut,
-        ),
-        decay: (
-          curve: EaseInOut,
-          reversed: true,
-        ),
+        attack: EaseInOut,
+        decay: Reverse(EaseInOut),
       ),
       rate: 1.0,
     ),

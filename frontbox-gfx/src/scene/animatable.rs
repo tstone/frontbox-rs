@@ -99,27 +99,14 @@ impl Animatable for Color {
     }
   }
 
-  fn from_spread(spread: &Spread, [hue_rnd, brightness_rnd, alpha_rnd]: [f32; 3]) -> Option<Self> {
+  fn from_spread(spread: &Spread, [hue_rnd, _, _]: [f32; 3]) -> Option<Self> {
     match *spread {
-      Spread::Color {
-        hue,
-        brightness,
-        alpha,
-      } => {
-        let picked = Hsv::new(
-          rng_range(hue, hue_rnd),
-          1.0,
-          rng_range(brightness, brightness_rnd),
-        );
+      Spread::Color { hue } => {
+        let picked = Hsv::new(rng_range(hue, hue_rnd), 1.0, 1.0);
         let (r, g, b) = Srgb::from_color(picked)
           .into_format::<u8>()
           .into_components();
-        Some(Color(Rgba([
-          r,
-          g,
-          b,
-          (rng_range(alpha, alpha_rnd) * 255.0).round() as u8,
-        ])))
+        Some(Color(Rgba([r, g, b, 255])))
       }
       _ => None,
     }

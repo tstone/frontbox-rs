@@ -4,7 +4,7 @@ import { Dynamic } from 'solid-js/web'
 import { createListCollection, Select } from '@ark-ui/solid/select'
 import { Slider } from '@ark-ui/solid/slider'
 import { Switch as Toggle } from '@ark-ui/solid/switch'
-import { createContext, createEffect, createMemo, createSignal, For, Match, Show, splitProps, Switch, useContext, type Accessor, type JSX, type Signal } from 'solid-js'
+import { createContext, createMemo, createSignal, For, Match, Show, Switch, useContext, type Accessor, type Signal } from 'solid-js'
 import ScenePortal, { layerColorClass, type LayerColor } from './ScenePortal'
 import InfoTip from '../../components/InfoTip'
 import { AudioWaveform, ChartSpline, Dices, Eye, EyeOff, Footprints, Orbit, Pin, Pipette, Plus, SlidersHorizontal, Variable, X } from '../../components/icons'
@@ -14,14 +14,15 @@ import type { Prop } from '../../types/generated/Prop'
 import type { RenderedShape } from '../../types/generated/RenderedShape'
 import type { Layer } from '../../types/generated/Layer'
 import type { Curve } from '../../types/generated/Curve'
-import type { EnvelopeCurve } from '../../types/generated/EnvelopeCurve'
 import type { Modulated } from '../../types/generated/Modulated'
 import type { Modulator } from '../../types/generated/Modulator'
 import type { Overlap } from '../../types/generated/Overlap'
 import type { Spread } from '../../types/generated/Spread'
 import type { VisitResponse } from '../../types/generated/VisitResponse'
-import CurvePicker, { CurveGraph, CURVES, CUSTOM_CURVE } from './CurvePicker'
-import { curveHeight, field, freshVariableName, fullSpread, HUE, newPick, newSweep, newVisit, variableReads, spreadFits, startingValue, STEPS, UNIT, variant, WAVE_RATE, withNewModulator, withVariable, withTiming, type Lens, type Range, type Ranges, type LayerSurfaces, type Scene, type SceneValue, type Selection, type Surface, type Vec2 } from './sceneModel'
+import CurvePicker, { CurveGraph } from './CurvePicker'
+import { curveHeight, curveText, PLAIN_CURVES } from './curves'
+import NumberBox from './NumberBox'
+import { field, freshVariableName, fullSpread, HUE, newPick, newSweep, newVisit, variableReads, spreadFits, startingValue, STEPS, variant, WAVE_RATE, withNewModulator, withVariable, withTiming, type Lens, type Range, type Ranges, type LayerSurfaces, type Scene, type SceneValue, type Selection, type Surface, type Vec2 } from './sceneModel'
 
 /** The scene being edited, for fields whose edits reach past their own place in it */
 export const SceneContext = createContext<Lens<Scene>>()
@@ -194,33 +195,6 @@ export function Dropdown<T extends string>(props: {
 }
 
 /**
- * A box for typing a number, which is given each number as it's typed. Writing to a box moves its caret and drops text
- * like `0.` that's on its way to a number, so it's only written when the value becomes something it doesn't already say,
- * and tidied up when it's left.
- */
-export function NumberBox(props: Omit<JSX.InputHTMLAttributes<HTMLInputElement>, 'value'> & { value: number; onNumber: (value: number) => void }) {
-  const [own, input] = splitProps(props, ['value', 'onNumber'])
-  const value = createMemo(() => own.value)
-  let box!: HTMLInputElement
-
-  createEffect(() => {
-    if (box.valueAsNumber !== value()) box.value = String(value())
-  })
-
-  return (
-    <input
-      {...input}
-      ref={box}
-      type="number"
-      onInput={() => {
-        if (Number.isFinite(box.valueAsNumber)) own.onNumber(box.valueAsNumber)
-      }}
-      onBlur={() => (box.value = String(value()))}
-    />
-  )
-}
-
-/**
  * A slider and a box for typing a value. A value from the box or the file past the range widens the slider, and double
  * clicking the slider's handle resets it to the range's `rest`.
  */
@@ -320,11 +294,10 @@ function hueTrack(min: number, max: number) {
   return `linear-gradient(to right, ${stops.join(', ')})`
 }
 
-const brightnessTrack = () => 'linear-gradient(to right, #000, #fff)'
-
-const opacityTrack = () => 'linear-gradient(to right, transparent, #fff)'
-
-/** What a random prop can pick from, or a wave moves through, with a control for each thing about it that varies */
+/**
+ * What a random prop can pick from, or a wave moves through, with a control for each thing about it that varies. A
+ * color only varies in hue: how bright or see-through it is is up to the layer's adjusts.
+ */
 function SpreadField(props: { label: string; lens: Lens<Spread>; ranges: Ranges }) {
   const spread = () => props.lens.get()
   const float = () => variant(props.lens, 'Float')
@@ -360,24 +333,6 @@ function SpreadField(props: { label: string; lens: Lens<Spread>; ranges: Ranges 
             track={hueTrack}
             value={field(color(), 'hue').get()}
             onChange={field(color(), 'hue').set}
-          />
-        </FieldRow>
-        <FieldRow label="Brightness">
-          <RangeField
-            label={`${props.label} brightness`}
-            range={UNIT}
-            track={brightnessTrack}
-            value={field(color(), 'brightness').get()}
-            onChange={field(color(), 'brightness').set}
-          />
-        </FieldRow>
-        <FieldRow label="Opacity">
-          <RangeField
-            label={`${props.label} opacity`}
-            range={UNIT}
-            track={opacityTrack}
-            value={field(color(), 'alpha').get()}
-            onChange={field(color(), 'alpha').set}
           />
         </FieldRow>
       </Match>
@@ -740,28 +695,37 @@ export function PropSource<T extends SceneValue>(props: PropProps<T>) {
   )
 }
 
+export { NumberBox }
+
 const OVERLAP_OPTIONS: { value: Overlap; label: string }[] = [
   { value: 'Max', label: 'Strongest' },
   { value: 'Add', label: 'Add up' },
 ]
 
-/** A curve from the list, or from the curves drawn out beside it. One written by hand in the file shows as Custom. */
+/** Stands for a curve that isn't in the dropdown's list, such as one made from others, so the dropdown can show it */
+const OTHER_CURVE = 'other'
+
+/**
+ * A curve from the list, or from the curves drawn out beside it. One that isn't in the list, such as one made from
+ * others, shows written out, and is changed from the curves drawn out.
+ */
 export function CurveField(props: { label: string; lens: Lens<Curve> }) {
   const chosen = () => {
     const value = props.lens.get()
-    return typeof value === 'string' ? value : CUSTOM_CURVE
+    return typeof value === 'string' ? value : OTHER_CURVE
   }
+  const options = () => [...PLAIN_CURVES.map((value) => ({ value: value as string, label: value as string })), ...(chosen() === OTHER_CURVE ? [{ value: OTHER_CURVE, label: curveText(props.lens.get()) }] : [])]
   return (
     <div class="scene-field-line">
       <Dropdown
         label={props.label}
-        options={[...CURVES, ...(chosen() === CUSTOM_CURVE ? [CUSTOM_CURVE] : [])].map((value) => ({ value, label: value }))}
+        options={options()}
         value={chosen()}
         onChange={(next) => {
-          if (next !== CUSTOM_CURVE) props.lens.set(next as Curve)
+          if (next !== OTHER_CURVE) props.lens.set(next as Curve)
         }}
       />
-      <CurvePicker label={props.label} value={props.lens.get()} onPick={props.lens.set} />
+      <CurvePicker label={props.label} value={props.lens.get()} onChange={props.lens.set} />
     </div>
   )
 }
@@ -889,32 +853,21 @@ export function ModulatorFields(props: { label: string; lens: Lens<Modulator> })
 }
 
 /**
- * One curve of a wave drawn out, which opens the curves to pick from and whether to play it backwards. Only a decay
- * can be left out, which is what `undefined` stands for: it shows as a box to add one, and once added has an X to
- * remove it on hover.
+ * One curve of a wave drawn out, which opens the curves to pick from. Only a decay can be left out, which is what
+ * `undefined` stands for: it shows as a box to add one, and once added has an X to remove it on hover.
  */
-function EnvelopeCurveField<T extends EnvelopeCurve | undefined>(props: { label: string; name: string; value: T; onChange: (value: T) => void; optional?: boolean }) {
-  const reversed = () => props.value?.reversed ?? false
-  const height = (phase: number) => (props.value ? curveHeight(props.value.curve, reversed() ? 1 - phase : phase) : 0)
-
+function EnvelopeCurveField<T extends Curve | undefined>(props: { label: string; name: string; value: T; onChange: (value: T) => void; optional?: boolean }) {
   return (
     <div class="scene-envelope-part">
       <span class="scene-field-label">{props.name}</span>
-      <div class="scene-envelope-box">
-        <CurvePicker
-          class="scene-envelope-curve"
-          label={props.label}
-          value={props.value?.curve}
-          onPick={(curve, reversed) => props.onChange({ curve, reversed: reversed || undefined } as T)}
-          reversed={reversed()}
-          onReverse={(to) => props.value && props.onChange({ ...props.value, reversed: to || undefined } as T)}
-        >
+      <div class="scene-curve-removable">
+        <CurvePicker class="scene-envelope-curve" label={props.label} value={props.value} onChange={(curve) => props.onChange(curve as T)}>
           <Show when={props.value} fallback={<span class="scene-envelope-add">+</span>}>
-            <CurveGraph height={height} />
+            {(curve) => <CurveGraph height={(phase) => curveHeight(curve(), phase)} />}
           </Show>
         </CurvePicker>
         <Show when={props.optional && props.value}>
-          <button type="button" class="scene-envelope-remove" aria-label={`Remove ${props.label}`} title="Remove" onClick={() => props.onChange(undefined as T)}>
+          <button type="button" class="scene-curve-remove" aria-label={`Remove ${props.label}`} title="Remove" onClick={() => props.onChange(undefined as T)}>
             <X aria-hidden="true" />
           </button>
         </Show>

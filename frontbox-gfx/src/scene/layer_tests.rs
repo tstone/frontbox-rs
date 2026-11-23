@@ -203,7 +203,7 @@ fn a_wave_shows_a_layer_for_its_upper_half() {
   .timing(Timing::new(1.0, Cycle::Forever));
   scene.modulators.insert(
     "rise".into(),
-    Modulator::new(Envelope::new(EnvelopeCurve::new(Curve::Linear)), 1.0),
+    Modulator::new(Envelope::new(Curve::Linear), 1.0),
   );
   assert_eq!(at(&scene, 0.25, &Variables::new()), RED);
   assert_eq!(at(&scene, 0.75, &Variables::new()), BLUE);
@@ -368,8 +368,6 @@ fn line(scene: &Scene, count: usize) -> Vec<Rgba<u8>> {
 fn random_color(cycle: Cycle) -> Scene {
   let spread = Spread::Color {
     hue: (0.0, 360.0),
-    brightness: (1.0, 1.0),
-    alpha: (1.0, 1.0),
   };
   let color = Prop::Random(Random {
     picks: vec![Pick::new(0.0)],

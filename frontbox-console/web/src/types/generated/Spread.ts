@@ -4,4 +4,4 @@
  * The range a [`Random`] picks from. Each pair is `(min, max)`. A spread that doesn't match the prop's type gives the
  * type's default.
  */
-export type Spread = { "Float": [number, number] } | { "Vec2": { x: [number, number], y: [number, number], } } | { "Color": { hue: [number, number], brightness: [number, number], alpha: [number, number], } };
+export type Spread = { "Float": [number, number] } | { "Vec2": { x: [number, number], y: [number, number], } } | { "Color": { hue: [number, number], } };

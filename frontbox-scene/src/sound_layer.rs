@@ -1,11 +1,11 @@
 use frontbox_gfx::animation::Cycle;
-use frontbox_gfx::scene::{LayerFrame, Prop, SceneError, Timing};
+use frontbox_gfx::scene::{SceneError, Timing};
 use serde::{Deserialize, Serialize};
 
 /// A sound played once in each cycle of a scene. `SoundSystem` plays it when the playback's clock passes its start, and
 /// once started it plays to its end, or to `end` if that comes first, even if the playback stops.
 ///
-/// In RON: `Sound(sound: "sounds/zap.mp3", volume: Fixed(1.0), start: 0.5, skip: 0.1, end: 1.2)`. With no `start`, it
+/// In RON: `Sound(sound: "sounds/zap.mp3", volume: 0.8, start: 0.5, skip: 0.1, end: 1.2)`. With no `start`, it
 /// plays at the start of the cycle, and with no `skip`, from the beginning of the sound.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,10 +15,11 @@ pub struct SoundLayer {
   pub name: Option<String>,
   /// The sound, by its name in the content folder
   pub sound: String,
-  /// How loud it plays, taken when it starts: 1.0 is as recorded, 0.0 silent
-  #[serde(default = "full_volume")]
-  #[cfg_attr(feature = "ts", ts(as = "Option<Prop<f32>>", optional))]
-  pub volume: Prop<f32>,
+  /// How loud it plays: 1.0 is as recorded, 0.0 silent. A number rather than a [`Prop`](frontbox_gfx::scene::Prop),
+  /// as a sound's volume is set when it starts and can't change while it plays.
+  #[serde(default = "full_volume", skip_serializing_if = "is_full_volume")]
+  #[cfg_attr(feature = "ts", ts(as = "Option<f32>", optional))]
+  pub volume: f32,
   /// Seconds into each cycle that it starts
   #[serde(default)]
   pub start: f32,
@@ -51,8 +52,8 @@ impl SoundLayer {
     self
   }
 
-  pub fn volume(mut self, volume: impl Into<Prop<f32>>) -> Self {
-    self.volume = volume.into();
+  pub fn volume(mut self, volume: f32) -> Self {
+    self.volume = volume;
     self
   }
 
@@ -82,10 +83,10 @@ impl SoundLayer {
     }
   }
 
-  /// Errors for a start outside a cycle, an end before it, or less than nothing skipped, and for a volume or a start
-  /// after the top in a static scene
+  /// Errors for a start outside a cycle, an end before it, or less than nothing skipped, and for a start after the top
+  /// in a static scene
   pub fn check(&self, index: usize, timing: Option<Timing>) -> Result<(), SceneError> {
-    if timing.is_none() && (self.volume.is_animated() || self.start != 0.0) {
+    if timing.is_none() && self.start != 0.0 {
       return Err(SceneError::NoTiming {
         layer: self.label(index),
       });
@@ -125,11 +126,6 @@ impl SoundLayer {
   pub fn length(&self) -> Option<f32> {
     self.end.map(|end| end - self.start)
   }
-
-  /// How loud it plays starting in `frame`
-  pub fn volume_at(&self, frame: &LayerFrame) -> f32 {
-    self.volume.at(frame).max(0.0)
-  }
 }
 
 /// A sound starting, from [`Scene::sounds_started`](crate::Scene::sounds_started)
@@ -147,8 +143,12 @@ pub struct SoundStart<'a> {
   pub length: Option<f32>,
 }
 
-fn full_volume() -> Prop<f32> {
-  Prop::Fixed(1.0)
+fn full_volume() -> f32 {
+  1.0
+}
+
+fn is_full_volume(volume: &f32) -> bool {
+  *volume == 1.0
 }
 
 fn is_zero(seconds: &f32) -> bool {
@@ -210,6 +210,26 @@ mod tests {
   fn a_stall_plays_what_it_passed_once() {
     let (layer, timing) = (layer(), Some(Timing::new(1.0, Cycle::Forever)));
     assert_eq!(layer.started(timing, Some(0.5), 3.2), Some(2.4));
+  }
+
+  #[test]
+  fn it_round_trips_through_ron_with_full_volume_left_out() {
+    let volumes = |scene: &crate::Scene| {
+      scene
+        .layers
+        .iter()
+        .filter_map(crate::SceneLayer::as_sound)
+        .map(|layer| layer.volume)
+        .collect::<Vec<_>>()
+    };
+    let scene = crate::Scene::new(vec![
+      SoundLayer::new("a.wav").volume(0.5).into(),
+      SoundLayer::new("b.wav").into(),
+    ]);
+    let written = scene.save().unwrap();
+    assert_eq!(written.matches("volume").count(), 1, "{written}");
+    assert!(written.contains("volume: 0.5"), "{written}");
+    assert_eq!(volumes(&crate::Scene::load(&written).unwrap()), [0.5, 1.0]);
   }
 
   #[test]

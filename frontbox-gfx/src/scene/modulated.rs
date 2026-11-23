@@ -99,21 +99,21 @@ impl Modulator {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Envelope {
-  pub attack: EnvelopeCurve,
+  pub attack: Curve,
   #[serde(default, skip_serializing_if = "Option::is_none")]
   #[cfg_attr(feature = "ts", ts(optional))]
-  pub decay: Option<EnvelopeCurve>,
+  pub decay: Option<Curve>,
 }
 
 impl Envelope {
-  pub fn new(attack: EnvelopeCurve) -> Self {
+  pub fn new(attack: Curve) -> Self {
     Self {
       attack,
       decay: None,
     }
   }
 
-  pub fn decay(self, decay: EnvelopeCurve) -> Self {
+  pub fn decay(self, decay: Curve) -> Self {
     Self {
       decay: Some(decay),
       ..self
@@ -127,38 +127,6 @@ impl Envelope {
       Some(_) if position < 0.5 => self.attack.sample(position * 2.0),
       Some(decay) => decay.sample(position * 2.0 - 1.0),
     }
-  }
-}
-
-/// A curve from 0 to 1, or played backwards from 1 to 0
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct EnvelopeCurve {
-  pub curve: Curve,
-  #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-  #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
-  pub reversed: bool,
-}
-
-impl EnvelopeCurve {
-  pub fn new(curve: Curve) -> Self {
-    Self {
-      curve,
-      reversed: false,
-    }
-  }
-
-  pub fn reversed(self) -> Self {
-    Self {
-      reversed: true,
-      ..self
-    }
-  }
-
-  fn sample(&self, phase: f32) -> f32 {
-    self
-      .curve
-      .sample(if self.reversed { 1.0 - phase } else { phase })
   }
 }
 
@@ -189,15 +157,15 @@ mod tests {
   }
 
   fn rising() -> Envelope {
-    Envelope::new(EnvelopeCurve::new(Curve::Linear))
+    Envelope::new(Curve::Linear)
   }
 
   fn falling() -> Envelope {
-    Envelope::new(EnvelopeCurve::new(Curve::Linear).reversed())
+    Envelope::new(Curve::Linear.reverse())
   }
 
   fn up_and_down() -> Envelope {
-    rising().decay(EnvelopeCurve::new(Curve::Linear).reversed())
+    rising().decay(Curve::Linear.reverse())
   }
 
   /// Its value at a moment of a scene 4 seconds long that loops forever
@@ -222,7 +190,7 @@ mod tests {
   fn an_attack_alone_takes_the_whole_wave() {
     assert_eq!(samples(rising()), [10.0, 12.5, 15.0, 17.5]);
     assert_eq!(
-      samples(Envelope::new(EnvelopeCurve::new(Curve::EaseIn))),
+      samples(Envelope::new(Curve::EaseIn)),
       [10.0, 10.625, 12.5, 15.625]
     );
   }
@@ -235,7 +203,7 @@ mod tests {
   #[test]
   fn with_a_decay_each_takes_half_the_wave() {
     assert_eq!(samples(up_and_down()), [10.0, 15.0, 20.0, 15.0]);
-    let falling_then_easing_in = falling().decay(EnvelopeCurve::new(Curve::EaseIn));
+    let falling_then_easing_in = falling().decay(Curve::EaseIn);
     assert_eq!(samples(falling_then_easing_in), [20.0, 15.0, 10.0, 12.5]);
   }
 
@@ -363,15 +331,13 @@ mod tests {
 
     let spread = Spread::Color {
       hue: (0.0, 240.0),
-      brightness: (1.0, 1.0),
-      alpha: (0.0, 1.0),
     };
     let color: Color = Modulated {
       spread,
       ..modulated()
     }
     .resolve(&env);
-    assert_eq!(color.0, Rgba([0, 255, 0, 128]));
+    assert_eq!(color.0, Rgba([0, 255, 0, 255]));
   }
 
   #[test]
