@@ -329,9 +329,7 @@ mod tests {
     .resolve(&env);
     assert_eq!(point, Vec2::new(5.0, 5.0));
 
-    let spread = Spread::Color {
-      hue: (0.0, 240.0),
-    };
+    let spread = Spread::Color { hue: (0.0, 240.0) };
     let color: Color = Modulated {
       spread,
       ..modulated()

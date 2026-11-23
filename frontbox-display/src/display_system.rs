@@ -140,6 +140,8 @@ struct Display {
   samples: Vec<Sample>,
   /// Drawn into each frame, so a frame's layers don't need a buffer of their own
   pixels: Vec<Rgba<u8>>,
+  /// Where a scene's layers at one z are drawn first when one of them is a mask, so it only masks that scene's layers
+  scene_pixels: Vec<Rgba<u8>>,
   /// The last frame sent, so an unchanged one isn't sent again. Empty until the first.
   last_frame: Vec<Rgb<u8>>,
   device: mpsc::Sender<Vec<Rgb<u8>>>,
@@ -177,6 +179,7 @@ impl Display {
       size,
       samples,
       pixels: vec![Rgba([0, 0, 0, 0]); size.pixels()],
+      scene_pixels: vec![Rgba([0, 0, 0, 0]); size.pixels()],
       last_frame: Vec::new(),
       device: tx,
       mirrors,
@@ -187,13 +190,19 @@ impl Display {
   fn draw(&mut self, layers: &[(&Playback, &DisplayLayer)]) -> Vec<Rgb<u8>> {
     self.pixels.fill(Rgba([0, 0, 0, 0]));
     let size = Vec2::new(self.size.width as f32, self.size.height as f32);
-    let radius = self.samples.first().map_or(0.0, |at| at.radius);
-    for (playback, layer) in layers {
-      let moment = playback.moment();
-      let frame = playback.scene().frame(&moment, Surface::Area, size, None);
-      let prepared = layer.layer.prepare(&frame, radius);
-      for (pixel, at) in self.pixels.iter_mut().zip(&self.samples) {
-        *pixel = prepared.sample(at).composite_over(*pixel);
+    let same_scene_and_z = |(a, x): &(&Playback, &DisplayLayer),
+                            (b, y): &(&Playback, &DisplayLayer)| {
+      std::ptr::eq(*a, *b) && x.z == y.z
+    };
+    for run in layers.chunk_by(same_scene_and_z) {
+      if run.iter().any(|(_, layer)| layer.layer.mask) {
+        self.scene_pixels.fill(Rgba([0, 0, 0, 0]));
+        draw_layers(run, &self.samples, size, &mut self.scene_pixels);
+        for (pixel, color) in self.pixels.iter_mut().zip(&self.scene_pixels) {
+          *pixel = color.composite_over(*pixel);
+        }
+      } else {
+        draw_layers(run, &self.samples, size, &mut self.pixels);
       }
     }
     let over_black = self
@@ -217,6 +226,24 @@ impl Display {
     // fails once the device's thread has gone, or on a virtual platform where it never started
     let _ = self.device.send(frame.clone());
     self.last_frame = frame;
+  }
+}
+
+/// Draws `layers` over `pixels`, each sampled at its place in `samples`
+fn draw_layers(
+  layers: &[(&Playback, &DisplayLayer)],
+  samples: &[Sample],
+  size: Vec2,
+  pixels: &mut [Rgba<u8>],
+) {
+  let radius = samples.first().map_or(0.0, |at| at.radius);
+  for (playback, layer) in layers {
+    let moment = playback.moment();
+    let frame = playback.scene().frame(&moment, Surface::Area, size, None);
+    let prepared = layer.layer.prepare(&frame, radius);
+    for (pixel, at) in pixels.iter_mut().zip(samples) {
+      *pixel = prepared.composite(at, *pixel);
+    }
   }
 }
 
@@ -365,6 +392,33 @@ mod tests {
     play(&context, &solid("Dmd", 0, (0, 0, 255)));
     render(&context);
     assert_eq!(recorder.frames(), [vec![BLUE; 8]]);
+  }
+
+  /// A mask on the whole display that hides everything below it
+  const HIDE_ALL: &str =
+    r#"Display(display: "Dmd", layer: (mask: true, fill: (base: Solid(Fixed(0, 0, 0, 0)))))"#;
+
+  #[test]
+  fn a_mask_masks_its_scenes_layers_below_it() {
+    let (context, recorder) = recorded();
+    play(
+      &context,
+      &format!("{}, {HIDE_ALL}", solid("Dmd", 0, (255, 0, 0))),
+    );
+    render(&context);
+    assert_eq!(recorder.frames(), [vec![BLACK; 8]]);
+  }
+
+  #[test]
+  fn a_mask_leaves_other_scenes_layers() {
+    let (context, recorder) = recorded();
+    play(&context, &solid("Dmd", 0, (255, 0, 0)));
+    play(
+      &context,
+      &format!("{}, {HIDE_ALL}", solid("Dmd", 0, (0, 0, 255))),
+    );
+    render(&context);
+    assert_eq!(recorder.frames(), [vec![RED; 8]]);
   }
 
   #[test]

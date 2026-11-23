@@ -6,7 +6,6 @@ import type { Curve } from '../../types/generated/Curve'
 import type { ImageInfo } from '../../types/generated/ImageInfo'
 import type { Key } from '../../types/generated/Key'
 import type { Layer } from '../../types/generated/Layer'
-import type { Mask } from '../../types/generated/Mask'
 import type { NamedValue } from '../../types/generated/NamedValue'
 import type { Modulator } from '../../types/generated/Modulator'
 import type { NodeRef } from '../../types/generated/NodeRef'
@@ -534,30 +533,27 @@ export function lightsCase(scene: Scene) {
 
 type PropLens = Lens<Prop<SceneValue>>
 
-/** The layer open in the config, and whether it's the layer's mask being edited rather than the layer */
-export type Selection = { layer: number; mask: boolean }
+/** The layer open in the config */
+export type Selection = { layer: number }
 
 /** The region of what's selected, if it has one */
-export function selectedShape(scene: Scene | null | undefined, { layer, mask }: Selection) {
-  const current = scene?.layers[layer]
-  return (mask ? current?.mask : current)?.region
+export function selectedShape(scene: Scene | null | undefined, { layer }: Selection) {
+  return scene?.layers[layer]?.region
 }
 
 /** Where to change the region of what's selected, which has to have one */
-export function selectedShapeLens(scene: Lens<Scene>, { layer, mask }: Selection) {
-  const lens = item(field(scene, 'layers'), layer)
-  return (mask ? field(field(lens, 'mask') as Lens<Mask>, 'region') : field(lens, 'region')) as Lens<Shape>
+export function selectedShapeLens(scene: Lens<Scene>, { layer }: Selection) {
+  return field(item(field(scene, 'layers'), layer), 'region') as Lens<Shape>
 }
 
-/** Every prop in a scene: where it is, which layer it's in and whether that's in its mask, what to call it, and the ranges its sliders use */
+/** Every prop in a scene: where it is, which layer it's in, what to call it, and the ranges its sliders use */
 function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
-  const uses: { lens: PropLens; layer: number | null; mask: boolean; label: string; ranges: Ranges }[] = []
+  const uses: { lens: PropLens; layer: number | null; label: string; ranges: Ranges }[] = []
   // `null` for a sound layer, which isn't among the drawn layers
   let layerIndex: number | null = 0
-  let inMask = false
   let surface: Surface = null
   const use = (lens: unknown, label: string, ranges: Ranges) => {
-    uses.push({ lens: lens as PropLens, layer: layerIndex, mask: inMask, label, ranges })
+    uses.push({ lens: lens as PropLens, layer: layerIndex, label, ranges })
     const prop = (lens as PropLens).get()
     if ('Sweep' in prop) {
       const path = `${label} · Path`
@@ -656,9 +652,8 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
   }
 
   const layers = field(scene, 'layers')
-  layers.get().forEach(({ region, mask, graph: layerGraph }, index) => {
+  layers.get().forEach(({ region, graph: layerGraph }, index) => {
     layerIndex = index
-    inMask = false
     surface = surfaces(layers.get()[index])
     const layer = item(layers, index)
     const label = layerLabel(layers.get()[index], index)
@@ -667,18 +662,9 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
     fill(field(layer, 'fill'), label)
     if (region) shape(field(layer, 'region') as Lens<Shape>, label, `${label} · Region`)
     if (layerGraph) graph(field(layer, 'graph') as Lens<GraphMask>, `${label} · Graph`)
-
-    if (mask) {
-      inMask = true
-      const lens = field(layer, 'mask') as Lens<Mask>
-      const maskLabel = `${label} · Mask`
-      fill(field(lens, 'fill'), maskLabel)
-      if (mask.region) shape(field(lens, 'region') as Lens<Shape>, maskLabel, `${maskLabel} · Region`)
-    }
   })
 
   layerIndex = null
-  inMask = false
 
   const values = field(scene, 'values') as Lens<Record<string, NamedValue>>
   for (const [name, value] of Object.entries(values.get() ?? {})) {
@@ -726,7 +712,7 @@ function referencedVariables(scene: Scene) {
 }
 
 /** A prop on the timeline. `layer` is `null` for a sound layer's. */
-export type SceneTrack = { prop: PropLens; layer: number | null; mask: boolean; label: string; ranges: Ranges }
+export type SceneTrack = { prop: PropLens; layer: number | null; label: string; ranges: Ranges }
 
 /** A traversal on the timeline: its layer, and its place among the layer's traversals */
 export type SceneTraversal = { traversal: Lens<Traversal>; layer: number; index: number; label: string }
@@ -754,9 +740,9 @@ export function traversalLength(traversal: Traversal, scene: Scene, measured: nu
 
 /** Every prop in a scene that changes along the timeline */
 export function sceneTracks(scene: Lens<Scene>, surfaces?: LayerSurfaces): SceneTrack[] {
-  return propUses(scene, surfaces).flatMap(({ lens, layer, mask, label, ranges }) => {
+  return propUses(scene, surfaces).flatMap(({ lens, layer, label, ranges }) => {
     const prop = lens.get()
-    return 'Keyframes' in prop || 'Random' in prop || 'Modulated' in prop ? [{ prop: lens, layer, mask, label, ranges }] : []
+    return 'Keyframes' in prop || 'Random' in prop || 'Modulated' in prop ? [{ prop: lens, layer, label, ranges }] : []
   })
 }
 

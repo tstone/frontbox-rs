@@ -94,13 +94,13 @@ fn layers() -> Vec<(&'static str, Layer)> {
     ),
     ("image", Layer::new(Fill::new(FillNode::image("checkers")))),
     (
-      "masked",
-      Layer::new(gradient(GradientStyle::Conical)).mask(
-        Mask::new(Fill::new(FillNode::Solid(WHITE.into()))).region(
+      "mask",
+      Layer::new(Fill::new(FillNode::Solid(WHITE.into())))
+        .region(
           Shape::new(ShapeNode::circle(14.0))
             .transform(Transform::Translate(Vec2::new(64.0, 16.0).into())),
-        ),
-      ),
+        )
+        .mask(),
     ),
     (
       "adjusted",

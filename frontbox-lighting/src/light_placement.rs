@@ -74,7 +74,8 @@ impl LightPlacement {
   }
 
   /// The color of each light a layer lands on, by z from the bottom. On one z the layers are drawn bottom to top in the
-  /// scene's order. Layers with a graph use the visits from the last [`Self::update_visits`].
+  /// scene's order, and a mask masks the layers below it on the lights it lands on, leaving other lights as they are.
+  /// Layers with a graph use the visits from the last [`Self::update_visits`].
   pub fn colors(&self, scene: &Scene, moment: &Moment) -> Vec<(i8, &PlacedLight, Rgba<u8>)> {
     let mut by_z: BTreeMap<i8, HashMap<&LightAddress, (&PlacedLight, Rgba<u8>)>> = BTreeMap::new();
     for placed in &self.layers {
@@ -84,11 +85,10 @@ impl LightPlacement {
       let layer = layer.prepare(&placed.frame(scene, moment), first.at.radius);
       let colors = by_z.entry(placed.z).or_default();
       for light in &placed.placed {
-        let color = layer.sample(&light.at);
         let entry = colors
           .entry(&light.address)
           .or_insert((light, Rgba([0, 0, 0, 0])));
-        entry.1 = color.composite_over(entry.1);
+        entry.1 = layer.composite(&light.at, entry.1);
       }
     }
     by_z

@@ -477,9 +477,7 @@ mod tests {
     let FillNode::Solid(Prop::Modulated(modulated)) = &loaded.layers[0].fill.base else {
       panic!("{written}");
     };
-    let spread = Spread::Color {
-      hue: (0.0, 120.0),
-    };
+    let spread = Spread::Color { hue: (0.0, 120.0) };
     assert_eq!(
       (modulated.modulator.as_str(), &modulated.spread),
       ("slow", &spread)
@@ -818,15 +816,13 @@ mod tests {
     let fill = || Fill::new(FillNode::Solid(Color(Rgba([0, 0, 0, 255])).into()));
     let scene = Scene::new(
       Surface::Area,
-      vec![Layer::new(fill()).mask(Mask::new(fill()).inverted())],
+      vec![Layer::new(fill()), Layer::new(fill()).inverted_mask()],
     );
-    let read = load(&save(&scene).unwrap()).unwrap();
-    assert!(
-      read.layers[0]
-        .mask
-        .as_ref()
-        .is_some_and(|mask| mask.invert && mask.region.is_none())
-    );
+    let saved = save(&scene).unwrap();
+    let read = load(&saved).unwrap();
+    assert!(!read.layers[0].mask && !read.layers[0].invert);
+    assert!(read.layers[1].mask && read.layers[1].invert);
+    assert_eq!(sample_grid(&read), sample_grid(&scene));
   }
 
   /// A layer on a graph using every algorithm, with responses to two of them

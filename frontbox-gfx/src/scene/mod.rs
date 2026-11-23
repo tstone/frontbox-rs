@@ -38,10 +38,9 @@
 //! # assert_eq!(colors[7], Rgba::blue());
 //! ```
 //!
-//! - [`Layer`] -- A fill in a shape, sampled on its own, given a [`LayerFrame`]
+//! - [`Layer`] -- A fill in a shape, or a mask over the layers below it, sampled on its own, given a [`LayerFrame`]
 //! - [`PreparedLayer`] -- A layer resolved once for a frame, for sampling many points. [`Layer::sample_grid`] uses one
 //!   to draw a grid, such as a display's pixels.
-//! - [`Mask`] -- Where a layer shows, apart from what its shape covers
 //! - [`GraphMask`], [`Graph`] -- Limits a layer to the nodes of a graph built from the device's points, with traversals
 //!   over it that [`Prop::Visit`] responds to
 //! - [`Surface`] -- Whether the scene is drawn along a 1D line of points or over a 2D area
@@ -72,7 +71,6 @@ mod keyframes;
 mod layer;
 #[cfg(test)]
 mod layer_tests;
-mod mask;
 mod modulated;
 mod named_value;
 mod node;
@@ -108,7 +106,6 @@ pub use images::*;
 pub use inputs::*;
 pub use keyframes::*;
 pub use layer::*;
-pub use mask::*;
 pub use modulated::*;
 pub use named_value::*;
 pub use node::*;

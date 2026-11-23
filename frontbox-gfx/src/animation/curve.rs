@@ -343,8 +343,14 @@ mod tests {
 
   #[test]
   fn noise_is_the_same_for_a_seed_and_different_between_seeds() {
-    assert_eq!(Curve::Noise(16, 7).sample(0.3), Curve::Noise(16, 7).sample(0.3));
-    assert_ne!(Curve::Noise(16, 7).sample(0.3), Curve::Noise(16, 8).sample(0.3));
+    assert_eq!(
+      Curve::Noise(16, 7).sample(0.3),
+      Curve::Noise(16, 7).sample(0.3)
+    );
+    assert_ne!(
+      Curve::Noise(16, 7).sample(0.3),
+      Curve::Noise(16, 8).sample(0.3)
+    );
     // the editor hashes the same way, so these are the heights to check its copy against
     assert_eq!(noise_height(0, 0), 0.0);
     assert_eq!(noise_height(1, 0), 0.40834907);
@@ -355,7 +361,10 @@ mod tests {
   fn hold_freezes_random_slots_and_catches_up_after() {
     let held = Curve::Linear.hold(8, 5);
     let frozen: Vec<bool> = (0..8u32).map(|slot| noise_height(slot, 5) < 0.5).collect();
-    assert!(frozen.contains(&true) && frozen.contains(&false), "{frozen:?}");
+    assert!(
+      frozen.contains(&true) && frozen.contains(&false),
+      "{frozen:?}"
+    );
     for (slot, frozen) in frozen.into_iter().enumerate() {
       let start = slot as f32 / 8.0;
       let middle = start + 1.0 / 16.0;

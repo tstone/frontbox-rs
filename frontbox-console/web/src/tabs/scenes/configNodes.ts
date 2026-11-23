@@ -4,7 +4,6 @@ import type { ColorAdjust } from '../../types/generated/ColorAdjust'
 import type { GraphMask } from '../../types/generated/GraphMask'
 import type { Layer } from '../../types/generated/Layer'
 import type { LightQ } from '../../types/generated/LightQ'
-import type { Mask } from '../../types/generated/Mask'
 import type { Modulated } from '../../types/generated/Modulated'
 import type { NodeRef } from '../../types/generated/NodeRef'
 import type { Prop } from '../../types/generated/Prop'
@@ -103,7 +102,8 @@ export type NodeData =
   | { kind: 'path'; lens: Lens<Shape> }
   | { kind: 'fill'; lens: Lens<Fill> }
   | { kind: 'stops'; lens: Lens<Stop[]> }
-  | { kind: 'mask'; lens: Lens<Mask | undefined> }
+  /** Whether a layer is a mask over the layers below it, and which side of it they show on */
+  | { kind: 'mask'; lens: Lens<SceneLayer> }
   /** A fit transform, which picks its traversal in its row. Other transforms are props. */
   | { kind: 'fit'; lens: Lens<Transform> }
   /** A scale, mirror, revolve, bisect, or shift, which has its props under it */
@@ -140,7 +140,7 @@ export type PropSpec = {
   /** For a prop with nothing to take a value from */
   fallback: SceneValue
   ranges: Ranges
-  /** For a scale's anchor in a layer's or mask's region: the shape, and where the scale is in its transforms */
+  /** For a scale's anchor in a layer's region: the shape, and where the scale is in its transforms */
   anchorOf?: { shape: Lens<Shape>; index: number }
 }
 
@@ -232,17 +232,17 @@ function layerNodes(scene: Lens<Scene>, surfaces: LayerSurfaces): ConfigNode[] {
   ]
 }
 
-/** Which layer, or its mask, a node is in, which is what's selected in the preview while it is */
+/** Which layer a node is in, which is what's selected in the preview while it is */
 export function selectionOf(id: string | null): Selection | null {
-  const match = id?.match(/^layers\/(\d+)(\/mask(?:\/|$))?/)
-  return match ? { layer: Number(match[1]), mask: match[2] !== undefined } : null
+  const match = id?.match(/^layers\/(\d+)/)
+  return match ? { layer: Number(match[1]) } : null
 }
 
-export function selectionNode({ layer, mask }: Selection) {
-  return `layers/${layer}${mask ? '/mask' : ''}`
+export function selectionNode({ layer }: Selection) {
+  return `layers/${layer}`
 }
 
-/** Which of a layer's or mask's region's transforms a node is, or is under. `null` for a node outside them. */
+/** Which of a layer's region's transforms a node is, or is under. `null` for a node outside them. */
 export function openTransform(id: string | null, of: Selection): number | null {
   const prefix = `${selectionNode(of)}/region/transform/`
   if (!id?.startsWith(prefix)) return null
@@ -305,13 +305,12 @@ function layerChildren(id: string, lens: Lens<SceneLayer>, surface: Surface): Co
   // a sequence's lights are already the ones it shows on, so it only has a region its file gave it, to be removed
   const regions = light && layer.surface === 'Sequence' && !layer.region ? [] : [regionNode(`${id}/region`, field(lens, 'region'), surface, lens)]
   const fill = fillNode(`${id}/fill`, field(lens, 'fill'), surface)
-  const mask = maskNode(`${id}/mask`, field(lens, 'mask'), surface)
+  const mask: ConfigNode = { id: `${id}/mask`, label: 'Mask', kind: 'mask', lens, value: layer.mask }
   const visible = propNode(`${id}/visible`, 'Visible', { lens: layerVisible(lens) as Lens<Prop<SceneValue>>, variableName: 'visible', fallback: true, ranges: both(UNIT) }, surface)
-  // on a light layer the mask comes first, as it's over everything else the layer is
-  return light ? [visible, mask, ...place, ...regions, fill] : [visible, ...place, ...regions, fill, mask]
+  return [visible, mask, ...place, ...regions, fill]
 }
 
-/** A mask's region, or a layer's, which can be its graph instead */
+/** A layer's region, which can be its graph instead */
 function regionNode(id: string, lens: Lens<Shape | undefined>, surface: Surface, layer?: Lens<SceneLayer>): ConfigNode {
   const graph = layer?.get().graph
   if (layer && graph) {
@@ -485,22 +484,6 @@ function stopsNode(id: string, lens: Lens<Stop[]>, surface: Surface): ConfigNode
     return { ...propNode(`${id}/${index}`, `Stop ${index + 1}`, { lens: color, variableName: 'stop_color', fallback: [255, 255, 255, 255], ranges: both(UNIT) }, surface), place }
   })
   return branch({ id, label: 'Stops', kind: 'stops', lens, value: lens.get(), children })
-}
-
-/** With no mask there's nothing under it, and its row has a button to add one */
-function maskNode(id: string, lens: Lens<Mask | undefined>, surface: Surface): ConfigNode {
-  const mask = lens.get()
-  if (!mask) return { id, label: 'Mask', kind: 'mask', lens, value: undefined }
-  const present = lens as Lens<Mask>
-  return branch({
-    id,
-    label: 'Mask',
-    kind: 'mask',
-    lens,
-    value: mask,
-    fields: true,
-    children: [regionNode(`${id}/region`, field(present, 'region'), surface), fillNode(`${id}/fill`, field(present, 'fill'), surface)],
-  })
 }
 
 function traversalsNode(id: string, lens: Lens<Traversal[]>, layer: Lens<SceneLayer>, surface: Surface): ConfigNode {

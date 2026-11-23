@@ -164,7 +164,7 @@ export default function SceneEditor(props: {
     setSnapState({ ...snap(), ...change })
     writeSnap(snap())
   }
-  const selection = createSignal<Selection | null>({ layer: 0, mask: false })
+  const selection = createSignal<Selection | null>({ layer: 0 })
   // the sidebar shows the selected node's properties, or the scene as RON
   const [showingCode, setShowingCode] = createSignal(false)
   // what's on show, which stays put while the source doesn't parse
@@ -362,7 +362,7 @@ export default function SceneEditor(props: {
     history.clear()
     batch(() => {
       setConfirming(null)
-      selection[1]({ layer: 0, mask: false })
+      selection[1]({ layer: 0 })
       setRon(saved())
     })
     send({ Ron: saved() })
@@ -535,7 +535,7 @@ export default function SceneEditor(props: {
   const editText = (index: number) => {
     const was = editableText(editing.get(), editing.get().layers[index])
     if (was === null) return
-    selection[1]({ layer: index, mask: false })
+    selection[1]({ layer: index })
     setEditingText({ index, was })
   }
   const finishText = (keep: boolean) => {
@@ -580,23 +580,13 @@ export default function SceneEditor(props: {
   })
 
   /**
-   * Takes out what's selected, as its Remove button would: a layer, a sound, or anything else in a list, or a mask.
-   * Returns whether there was something to take out.
+   * Takes out what's selected, as its Remove button would: a layer, a sound, or anything else in a list. Returns
+   * whether there was something to take out.
    */
   const removeSelected = () => {
     const id = tree.selected()
     const node = id === null ? undefined : tree.find(id)
     if (!node) return false
-    const mask = is(node, 'mask')
-    if (mask) {
-      if (mask.lens.get() === undefined) return false
-      // what's selected moves to the layer the mask was on
-      batch(() => {
-        mask.lens.set(undefined)
-        tree.select(node.id.slice(0, node.id.lastIndexOf('/')))
-      })
-      return true
-    }
     if (!node.place || node.place.canRemove === false) return false
     tree.remove(node.place)
     return true
@@ -628,7 +618,7 @@ export default function SceneEditor(props: {
     return layer.display === viewDisplay(shown)
   }
 
-  /** The open layer or mask, if its layer is on what's on show */
+  /** The open layer, if it's on what's on show */
   const openOnView = () => {
     const open = selection[0]()
     const layer = open && scene()?.layers[open.layer]
@@ -665,15 +655,14 @@ export default function SceneEditor(props: {
     return color ? cssColor(color) : null
   }
 
-  /** Regions that aren't drawn over the preview, by layer and whether it's the layer's or its mask's */
-  const [hiddenRegions, setHiddenRegions] = createSignal<ReadonlySet<string>>(new Set())
-  const regionKey = ({ layer, mask }: Selection) => `${layer}${mask ? ' mask' : ''}`
+  /** Layers whose regions aren't drawn over the preview */
+  const [hiddenRegions, setHiddenRegions] = createSignal<ReadonlySet<number>>(new Set())
   const regionVisibility: RegionVisibility = {
-    shown: (of) => !hiddenRegions().has(regionKey(of)),
+    shown: (of) => !hiddenRegions().has(of.layer),
     show(of, shown) {
       const next = new Set(hiddenRegions())
-      if (shown) next.delete(regionKey(of))
-      else next.add(regionKey(of))
+      if (shown) next.delete(of.layer)
+      else next.add(of.layer)
       setHiddenRegions(next)
     },
   }
@@ -683,13 +672,13 @@ export default function SceneEditor(props: {
     return open === null || regionVisibility.shown(open)
   }
 
-  /** Where the open layer or mask is drawn, in scene units. Left out while playing, where it's the scene that's being watched. */
+  /** Where the open layer is drawn, in scene units. Left out while playing, where it's the scene that's being watched. */
   const outline = (): Vec2[][] => {
     const open = openOnView()
     const rendered = drawn()
     if (playback.playing() || open === null || !rendered || !openShown()) return []
     // one loop for each copy of its shape
-    return (open.mask ? rendered.mask_outlines : rendered.outlines)[open.layer] ?? []
+    return rendered.outlines[open.layer] ?? []
   }
 
   /**
@@ -701,7 +690,7 @@ export default function SceneEditor(props: {
     const open = selected()
     const rendered = drawn()
     if (open === null || !rendered || !openShown()) return null
-    return (open.mask ? rendered.mask_shapes : rendered.shapes)[open.layer] ?? null
+    return rendered.shapes[open.layer] ?? null
   }
   /** Which of the selected shape's transforms is selected in the tree, if any */
   const editedTransform = () => {
@@ -726,7 +715,7 @@ export default function SceneEditor(props: {
       return
     }
     const under = point && layerUnder(scene()!, drawn()!.outlines, point, onView, layerSurface)
-    if (under !== null) setOpen({ layer: under, mask: false })
+    if (under !== null) setOpen({ layer: under })
     else if (hasShape(open())) setOpen(null)
   }
 
@@ -734,7 +723,7 @@ export default function SceneEditor(props: {
   const openMenuAt = (point: Vec2 | null, x: number, y: number) => {
     if (playback.playing() || error() !== null || !drawn() || !point) return
     const under = layerUnder(scene()!, drawn()!.outlines, point, onView, layerSurface)
-    if (under !== null) layerMenu.open(selectionNode({ layer: under, mask: false }), x, y)
+    if (under !== null) layerMenu.open(selectionNode({ layer: under }), x, y)
   }
 
   /** Opens the open layer's menu for a right-click on one of its handles, which are over the preview. Returns whether it was on one. */
@@ -742,7 +731,7 @@ export default function SceneEditor(props: {
     const open = selected()
     if (!(e.target instanceof Element && e.target.closest('.scene-handles')) || open === null) return false
     e.preventDefault()
-    if (!playback.playing()) layerMenu.open(selectionNode({ layer: open.layer, mask: false }), e.clientX, e.clientY)
+    if (!playback.playing()) layerMenu.open(selectionNode({ layer: open.layer }), e.clientX, e.clientY)
     return true
   }
 
@@ -753,7 +742,7 @@ export default function SceneEditor(props: {
     const ready = point !== null && !playback.playing() && error() === null && drawn() && drawing() === null && nodePicking.choosing[0]() === null
     const under = ready ? layerUnder(scene()!, drawn()!.outlines, point, onView, layerSurface) : null
     const open = selected()
-    setHovered(under !== null && !(open?.layer === under && !open.mask) ? under : null)
+    setHovered(under !== null && open?.layer !== under ? under : null)
     return hovered() !== null
   }
   /** A layer's outline in the preview: its shape's, or the edge of what it's on for one that covers all of it */
@@ -770,7 +759,7 @@ export default function SceneEditor(props: {
   // a layer that covers all of what it's on has no handles, so it's outlined to show it's the one selected
   const selectedFull = () => {
     const open = selected()
-    const layer = open && !open.mask ? scene()?.layers[open.layer] : undefined
+    const layer = open ? scene()?.layers[open.layer] : undefined
     return layer && fullOutline(layer, layerSurface(layer)) ? outlineOf(open!.layer) : null
   }
 
@@ -871,16 +860,14 @@ export default function SceneEditor(props: {
     },
   }
 
-  /** Each layer's and mask's region as the machine last drew it, found by the shape itself */
+  /** Each layer's region as the machine last drew it, found by the shape itself */
   const shapePoses: ShapePoses = {
     of: (shape) => {
       const rendered = drawn()
       const layers = scene()?.layers ?? []
       if (!rendered) return null
       const index = layers.findIndex((layer) => layer.region === shape)
-      if (index >= 0) return rendered.shapes[index] ?? null
-      const masked = layers.findIndex((layer) => layer.mask?.region === shape)
-      return masked >= 0 ? (rendered.mask_shapes[masked] ?? null) : null
+      return index >= 0 ? (rendered.shapes[index] ?? null) : null
     },
     time: playback.position,
   }

@@ -5,12 +5,11 @@ use serde::{Deserialize, Serialize};
 use crate::color::RgbaColor;
 use crate::layout::Grid;
 use crate::scene::{
-  Bounds, Cover, Env, Fill, Graph, GraphMask, Inputs, LayerFrame, Mask, PreparedFill, PreparedMask,
-  PreparedShape, Prop, Sample, SceneError, Shape, ShapePose, Speed, Surface, Timing, Transform,
-  Visits,
+  Bounds, Cover, Env, Fill, Graph, GraphMask, Inputs, LayerFrame, PreparedFill, PreparedShape,
+  Prop, Sample, SceneError, Shape, ShapePose, Speed, Surface, Timing, Transform, Visits,
 };
 
-/// A fill drawn in a region
+/// A fill drawn in a region, or a mask over the layers below it
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Layer {
@@ -33,10 +32,15 @@ pub struct Layer {
   #[serde(default, alias = "shape", skip_serializing_if = "Option::is_none")]
   #[cfg_attr(feature = "ts", ts(optional))]
   pub region: Option<Shape>,
-  /// `None` shows the whole layer
-  #[serde(default, skip_serializing_if = "Option::is_none")]
-  #[cfg_attr(feature = "ts", ts(optional))]
-  pub mask: Option<Mask>,
+  /// Draws nothing, and instead limits where the layers below it show: their alpha is multiplied by this layer's (its
+  /// fill's alpha, where its region covers). The scene decides which layers are below it.
+  #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+  #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+  pub mask: bool,
+  /// For a mask, shows the layers below outside it rather than inside it
+  #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+  #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+  pub invert: bool,
   /// Limits the layer to a graph's nodes, with traversals over it. `None` draws at every sample.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   #[cfg_attr(feature = "ts", ts(optional))]
@@ -51,7 +55,8 @@ impl Layer {
       visible: always_visible(),
       fill,
       region: None,
-      mask: None,
+      mask: false,
+      invert: false,
       graph: None,
     }
   }
@@ -76,8 +81,16 @@ impl Layer {
     self
   }
 
-  pub fn mask(mut self, mask: Mask) -> Self {
-    self.mask = Some(mask);
+  /// Makes it a mask over the layers below it
+  pub fn mask(mut self) -> Self {
+    self.mask = true;
+    self
+  }
+
+  /// Makes it a mask that shows the layers below outside it
+  pub fn inverted_mask(mut self) -> Self {
+    self.mask = true;
+    self.invert = true;
     self
   }
 
@@ -99,7 +112,6 @@ impl Layer {
     self.fill.is_animated()
       || self.visible.is_animated()
       || self.region.as_ref().is_some_and(Shape::is_animated)
-      || self.mask.as_ref().is_some_and(Mask::is_animated)
       || self.graph.as_ref().is_some_and(GraphMask::is_animated)
   }
 
@@ -111,29 +123,22 @@ impl Layer {
       .region
       .iter()
       .for_each(|region| region.read_inputs(inputs));
-    self.mask.iter().for_each(|mask| mask.read_inputs(inputs));
     self
       .graph
       .iter()
       .for_each(|graph| graph.read_inputs(inputs));
   }
 
-  /// Names of the images the layer and its mask use
+  /// Names of the images the layer uses
   pub fn image_names(&self) -> impl Iterator<Item = &str> {
-    let masked = self
-      .mask
-      .as_ref()
-      .and_then(|mask| mask.fill.base.image_name());
-    self.fill.base.image_name().into_iter().chain(masked)
+    self.fill.base.image_name().into_iter()
   }
 
-  /// Names of the fonts the layer's region and its mask's region use
+  /// Names of the fonts the layer's region uses
   pub fn font_names(&self) -> impl Iterator<Item = &str> {
-    let masked = self.mask.as_ref().and_then(|mask| mask.region.as_ref());
     self
       .region
       .iter()
-      .chain(masked)
       .filter_map(|shape| shape.base.font_name())
   }
 
@@ -167,8 +172,9 @@ impl Layer {
     Ok(())
   }
 
-  /// The color at a sample. A hidden layer, or one that isn't visible, draws nothing. Without a shape it's clipped to the viewport; a shape can
-  /// extend past it.
+  /// The color at a sample. A hidden layer, or one that isn't visible, draws nothing. Without a shape it's clipped to the
+  /// viewport; a shape can extend past it. A mask's color is what it masks by, in its alpha; to draw any layer, mask or
+  /// not, use [`PreparedLayer::composite`].
   ///
   /// To sample many points in one frame, [`Self::prepare`] once and sample that.
   pub fn sample(&self, at: &Sample, frame: &LayerFrame) -> Rgba<u8> {
@@ -203,7 +209,7 @@ impl Layer {
     };
     let layer = self.prepare(frame, first.radius);
     for (pixel, at) in pixels.iter_mut().zip(samples) {
-      *pixel = layer.sample(&at).composite_over(*pixel);
+      *pixel = layer.composite(&at, *pixel);
     }
   }
 
@@ -234,20 +240,6 @@ impl Layer {
   pub fn shape_pose(&self, frame: &LayerFrame) -> Option<ShapePose> {
     self.region.as_ref()?.pose(&env(frame))
   }
-
-  /// Like [`Self::outline`], for the layer's mask. None with no mask.
-  pub fn mask_outline(&self, frame: &LayerFrame) -> Vec<Vec<Vec2>> {
-    let env = env(frame);
-    self
-      .mask
-      .as_ref()
-      .map_or_else(Vec::new, |mask| mask.outline(env.viewport, &env))
-  }
-
-  /// Like [`Self::shape_pose`], for the mask's shape
-  pub fn mask_pose(&self, frame: &LayerFrame) -> Option<ShapePose> {
-    self.mask.as_ref()?.region.as_ref()?.pose(&env(frame))
-  }
 }
 
 /// A [`Layer`] resolved for one frame, from [`Layer::prepare`]
@@ -266,15 +258,43 @@ impl PreparedLayer<'_> {
   /// The color at a sample, as [`Layer::sample`] gives it. A sample of a radius other than the one prepared for is
   /// drawn too, but slower.
   pub fn sample(&self, at: &Sample) -> Rgba<u8> {
-    if self.layer.hidden || (self.layer.graph.is_some() && at.node.is_none()) {
-      return Rgba([0, 0, 0, 0]);
+    self.drawn_at(at).unwrap_or(Rgba([0, 0, 0, 0]))
+  }
+
+  /// `below` with the layer drawn over it: its color composited over, or for a mask, `below` faded by the mask. A layer
+  /// that isn't drawn leaves `below` as it is, so a hidden mask masks nothing.
+  pub fn composite(&self, at: &Sample, below: Rgba<u8>) -> Rgba<u8> {
+    match self.drawn_at(at) {
+      None => below,
+      Some(color) if self.layer.mask => {
+        let opacity = color[3] as f32 / 255.0;
+        let amount = if self.layer.invert {
+          1.0 - opacity
+        } else {
+          opacity
+        };
+        let mut below = below;
+        below[3] = (below[3] as f32 * amount).round() as u8;
+        below
+      }
+      Some(color) => color.composite_over(below),
+    }
+  }
+
+  /// The color at a sample, or `None` where the layer isn't drawn at all
+  fn drawn_at(&self, at: &Sample) -> Option<Rgba<u8>> {
+    if self.layer.hidden {
+      return None;
+    }
+    if self.layer.graph.is_some() && at.node.is_none() {
+      return Some(Rgba([0, 0, 0, 0]));
     }
     let by_node = self.layer.graph.is_some() && self.frame.visits.is_some();
     if !by_node && !self.shown {
-      return Rgba([0, 0, 0, 0]);
+      return None;
     }
     match &self.drawn {
-      Some(drawn) if at.radius == self.radius => drawn.sample(at),
+      Some(drawn) if at.radius == self.radius => Some(drawn.sample(at)),
       _ => {
         let visits = self
           .frame
@@ -287,9 +307,9 @@ impl PreparedLayer<'_> {
           ..env(&self.frame)
         };
         if by_node && !self.layer.visible.resolve(&env) {
-          return Rgba([0, 0, 0, 0]);
+          return None;
         }
-        Drawn::new(self.layer, at.radius, &env).sample(at)
+        Some(Drawn::new(self.layer, at.radius, &env).sample(at))
       }
     }
   }
@@ -299,7 +319,6 @@ impl PreparedLayer<'_> {
 struct Drawn<'a> {
   /// `None` if the region is collapsed
   fill: Option<PreparedArea<'a>>,
-  mask: Option<PreparedMask<'a>>,
 }
 
 impl<'a> Drawn<'a> {
@@ -312,22 +331,14 @@ impl<'a> Drawn<'a> {
         radius,
         env,
       ),
-      mask: layer
-        .mask
-        .as_ref()
-        .map(|mask| mask.prepare(env.viewport, radius, env)),
     }
   }
 
   fn sample(&self, at: &Sample) -> Rgba<u8> {
-    let Some(fill) = &self.fill else {
-      return Rgba([0, 0, 0, 0]);
-    };
-    let mut color = fill.color(at);
-    if let Some(mask) = self.mask.as_ref().filter(|_| color[3] > 0) {
-      color[3] = (color[3] as f32 * mask.amount(at)).round() as u8;
-    }
-    color
+    self
+      .fill
+      .as_ref()
+      .map_or(Rgba([0, 0, 0, 0]), |fill| fill.color(at))
   }
 }
 

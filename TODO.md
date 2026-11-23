@@ -30,6 +30,24 @@
 
 ### Scenes/Editor
 
+- Groups and mask layers, replacing `Layer::mask` and the `Mask` type:
+  - Any layer can be a mask (`mask: bool`, `invert: bool`). It draws nothing; its alpha (fill × region coverage)
+    multiplies the alpha of everything below it, or `1 - alpha` inverted. Per sample that's destination-in on the
+    color built up so far, so no buffers.
+  - "Below" stops at the bottom of its group. A mask at the root affects everything below it in the scene; one in a
+    group affects only layers in that group. Groups are the only way to limit a mask's reach.
+  - A mask only affects layers in its own scene, never other scenes playing at the same time.
+  - A mask only affects like layers: a light mask masks light layers, a display mask masks layers on its display.
+    Light masks also only reach layers at their z. Undecided: on lights below that the mask doesn't land on, it either
+    leaves them alone or hides them.
+  - A hidden or `visible: false` mask has no effect.
+  - Masks are ordinary layers, so they get `graph`, keyframes, etc. for free, and two masks stack as an intersection.
+  - `SceneLayer::Group { name, hidden, visible, layers }`. Rendering becomes recursive (a group composites its own
+    layers, applying its masks, then lands on what's below), so write that once in a shared scene sampler rather than
+    in each of the bottom-up loops in `test_scene.rs`, `scene_render.rs` and `layered_light_manager.rs`. Graph visits
+    are keyed by layer index today, so they need a path or a flattened index.
+  - Migration: each `Layer { mask: Some(m) }` becomes a group of that layer with a mask layer from `m` above it, or no
+    group if it's already the bottom-most like layer at its z.
 - Noise and noise masks: `FillNode::Noise`, plus a threshold `ColorAdjust` for noise masks
 - Plug in custom shapes or graphics with their own settings (e.g. a kinematics/skeleton extension)
 - Outer glow/drop shadow on regions (Adjust?)
@@ -51,7 +69,6 @@
 - Scene transitions (cut, cross-fade, wipe, push) between two playbacks. First version drives opacity or a mask on both; with nested scenes, a transition is a scene with two slots.
 - Live reload of scenes and fonts, as `Content` already does for images.
 - Golden-image tests: render a scene at a time to PNG and compare with a stored one.
-- Probably need groups, and mask becomes something applied to a group
 
 ### gfx
 
@@ -61,7 +78,6 @@
 - Float color: sample in `f32` premultiplied, convert once at the device edge (where LED gamma and per-strip calibration go). Fixes dark fringes fading to transparent and precision loss in `ColorAdjust` chains.
 - Strokes on `Polyline`/`Bezier`: give their edge an unsigned distance to the line.
 - `ShapeAdjust::Feather(width)` for soft edges.
-- Name `(fill, region)` as one type shared by `Layer` and `Mask`: collapses `outlines`/`mask_outlines` and  `shapes`/`mask_shapes`, allows `mask: Vec<...>` and masks with a `graph`.
 - `Stop::at` as a `Prop<f32>`.
 - Per-point phase for `Modulated`: a prop source that reads the point's position or `Sequence` index.
 - One internal walker over every `Prop`, replacing the hand-written `is_animated`, `read_inputs`, `image_names`,  `font_names`, and `check` walks.

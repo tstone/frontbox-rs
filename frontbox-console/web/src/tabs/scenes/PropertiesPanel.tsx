@@ -17,7 +17,6 @@ import type { GradientStyle } from '../../types/generated/GradientStyle'
 import type { FillNode } from '../../types/generated/FillNode'
 import type { ImageInfo } from '../../types/generated/ImageInfo'
 import type { ImageSize } from '../../types/generated/ImageSize'
-import type { Mask } from '../../types/generated/Mask'
 import type { NodeRef } from '../../types/generated/NodeRef'
 import type { NumberFormat } from '../../types/generated/NumberFormat'
 import type { Prop } from '../../types/generated/Prop'
@@ -214,9 +213,11 @@ const NODE_OPTIONS: { value: 'Name' | 'Nearest'; label: string }[] = [
   { value: 'Name', label: 'Light' },
   { value: 'Nearest', label: 'Nearest to a position' },
 ]
-const MASK_SHOWS_OPTIONS: { value: 'Inside' | 'Outside'; label: string }[] = [
-  { value: 'Outside', label: 'Outside the mask' },
-  { value: 'Inside', label: 'Inside the mask' },
+/** Whether a layer is a mask, and which side of it the layers below are hidden on */
+const MASK_OPTIONS: { value: 'Off' | 'Outside' | 'Inside'; label: string }[] = [
+  { value: 'Off', label: 'Off' },
+  { value: 'Outside', label: 'Hides outside' },
+  { value: 'Inside', label: 'Hides inside' },
 ]
 const ADJUST_OPTIONS = (Object.keys(ADJUSTS) as AdjustKind[]).map((value) => ({ value, label: ADJUSTS[value].label }))
 /** Only for a shape that's drawn, rather than a sweep's path */
@@ -522,18 +523,18 @@ function NodeScope(props: { id: string; children: JSX.Element }) {
 
 /**
  * A node's heading, its control and fields, a layer's settings, then the values under it and a button for adding a
- * modifier. A layer or a mask is one thing with its shape and its fill, which are parts of its properties rather than
- * nodes of their own.
+ * modifier. A layer is one thing with its shape and its fill, which are parts of its properties rather than nodes of
+ * their own.
  */
 function NodeProperties(props: { node: ConfigNode }) {
   return (
-    <Show when={props.node.kind === 'layer' || (props.node.kind === 'mask' && props.node.value !== undefined)} fallback={<OwnProperties node={props.node} />}>
+    <Show when={props.node.kind === 'layer'} fallback={<OwnProperties node={props.node} />}>
       <PartsProperties node={props.node} />
     </Show>
   )
 }
 
-/** A layer's or a mask's settings and values, then its shape and its fill */
+/** A layer's settings and values, then its shape and its fill */
 function PartsProperties(props: { node: ConfigNode }) {
   const children = () => props.node.children ?? []
   const settings = () => children().filter((child) => SETTING_KINDS.includes(child.kind))
@@ -742,7 +743,7 @@ function NodeControl(props: { node: ConfigNode }) {
       <Match when={is(props.node, 'region') || is(props.node, 'path')}>{(region) => <ShapeKindPicker node={region()} />}</Match>
       <Match when={is(props.node, 'fill')}>{(fill) => <FillKindPicker node={fill()} />}</Match>
       <Match when={is(props.node, 'stops')}>{(stops) => <AddStop node={stops()} />}</Match>
-      <Match when={is(props.node, 'mask')}>{(mask) => <MaskButton node={mask()} />}</Match>
+      <Match when={is(props.node, 'mask')}>{(mask) => <MaskPicker lens={mask().lens} />}</Match>
       <Match when={is(props.node, 'fit')}>{(fit) => <FitPicker node={fit()} />}</Match>
       <Match when={is(props.node, 'points')}>{(points) => <AddPoint node={points()} />}</Match>
       <Match when={is(props.node, 'traversals')}>{(traversals) => <AddTraversal node={traversals()} />}</Match>
@@ -938,7 +939,6 @@ function NodeFields(props: { node: ConfigNode }) {
         )}
       </Match>
       <Match when={is(props.node, 'fill')}>{(fill) => <FillFields lens={fill().lens} />}</Match>
-      <Match when={is(props.node, 'mask')}>{(mask) => <MaskFields lens={mask().lens as Lens<Mask>} />}</Match>
       <Match when={is(props.node, 'stroke')}>{(stroke) => <StrokeFields node={stroke()} />}</Match>
       <Match when={is(props.node, 'traversal')}>{(traversal) => <TraversalFields lens={traversal().lens} layer={traversal().layer} />}</Match>
       <Match when={is(props.node, 'node-ref')}>{(ref) => <NodeRefFields label={ref().label} lens={ref().lens} />}</Match>
@@ -1055,44 +1055,26 @@ function FitTimelineButton(props: { length: number; onFit?: () => void }) {
   )
 }
 
-/** Adds a mask, which cuts a region out of the layer, as with no region a mask with the layer outside it hides all of it. Or takes it away. */
-function MaskButton(props: { node: Extract<ConfigNode, { kind: 'mask' }> }) {
-  const tree = useContext(ConfigTreeContext)!
-  const surface = useContext(SurfaceContext)!
-  const add = () =>
-    batch(() => {
-      props.node.lens.set({ fill: { base: { Solid: { Fixed: WHITE } } }, region: newShape('Circle', surface()), invert: true })
-      tree.select(props.node.id)
-      tree.expand(props.node.id)
-    })
+/**
+ * Makes a layer a mask over the layers below it, or a layer again. A mask hides them where its fill is clear or its
+ * region doesn't reach, or, inverted, where it's opaque.
+ */
+function MaskPicker(props: { lens: Lens<SceneLayer> }) {
+  const value = () => {
+    const layer = props.lens.get()
+    if (!layer.mask) return 'Off'
+    return layer.invert ? 'Inside' : 'Outside'
+  }
   return (
-    <Controls>
-      <Show
-        when={props.node.lens.get()}
-        fallback={
-          <button type="button" class="scene-button" onClick={add}>
-            Add mask
-          </button>
-        }
-      >
-        <button type="button" class="scene-button" onClick={() => props.node.lens.set(undefined)}>
-          Remove mask
-        </button>
-      </Show>
-    </Controls>
-  )
-}
-
-function MaskFields(props: { lens: Lens<Mask> }) {
-  return (
-    <FieldRow label="Show layer">
-      <Dropdown
-        label="Show layer"
-        options={MASK_SHOWS_OPTIONS}
-        value={props.lens.get().invert ? 'Outside' : 'Inside'}
-        onChange={(value) => field(props.lens, 'invert').set(value === 'Outside' || undefined)}
-      />
-    </FieldRow>
+    <Dropdown
+      label="Mask"
+      options={MASK_OPTIONS}
+      value={value()}
+      onChange={(value) => {
+        const { mask: _mask, invert: _invert, ...layer } = props.lens.get()
+        props.lens.set(value === 'Off' ? layer : { ...layer, mask: true, ...(value === 'Inside' ? { invert: true } : {}) })
+      }}
+    />
   )
 }
 
@@ -1697,7 +1679,7 @@ function regionKind(lens: Lens<Shape | undefined>, layer?: Lens<SceneLayer>): Re
 }
 
 /**
- * Picks what a mask's region, a layer's, or a sweep's path is, which can't be left out. On a light scene, a layer's region
+ * Picks what a layer's region or a sweep's path is, which can't be left out. On a light scene, a layer's region
  * can also be its graph. In the file the two are separate, and a layer could have both, but the graph already says which
  * lights it shows on. A region has its outline in the preview, which can be hidden.
  */

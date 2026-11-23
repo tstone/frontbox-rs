@@ -366,9 +366,7 @@ fn line(scene: &Scene, count: usize) -> Vec<Rgba<u8>> {
 
 /// A scene a second long whose color is picked at the start of each cycle
 fn random_color(cycle: Cycle) -> Scene {
-  let spread = Spread::Color {
-    hue: (0.0, 360.0),
-  };
+  let spread = Spread::Color { hue: (0.0, 360.0) };
   let color = Prop::Random(Random {
     picks: vec![Pick::new(0.0)],
     spread,
@@ -738,60 +736,107 @@ fn middle_circle() -> Shape {
     .transform(Transform::Translate(Vec2::new(50.0, 25.0).into()))
 }
 
-/// A red layer over a dark one, with a mask on the red
-fn masked(mask: Mask) -> Scene {
+/// A red layer over a dark one, with `mask` above both
+fn masked(mask: Layer) -> Scene {
   Scene::new(
     Surface::Area,
-    vec![Layer::new(solid(DARK)), Layer::new(solid(RED)).mask(mask)],
+    vec![Layer::new(solid(DARK)), Layer::new(solid(RED)), mask],
   )
 }
 
-#[test]
-fn a_mask_shows_its_layer_only_inside_it_and_leaves_the_layer_below() {
-  let scene = masked(Mask::new(solid(BLUE)).region(middle_circle()));
-  assert_eq!(sample(&scene, 50.0, 25.0, 0.5), RED);
-  assert_eq!(sample(&scene, 5.0, 5.0, 0.5), DARK);
+/// A mask in the middle circle
+fn circle_mask() -> Layer {
+  Layer::new(solid(BLUE)).region(middle_circle()).mask()
 }
 
 #[test]
-fn an_inverted_mask_shows_its_layer_only_outside_it() {
-  let scene = masked(Mask::new(solid(BLUE)).region(middle_circle()).inverted());
-  assert_eq!(sample(&scene, 50.0, 25.0, 0.5), DARK);
+fn a_mask_shows_every_layer_below_it_only_inside_it() {
+  let scene = masked(circle_mask());
+  assert_eq!(sample(&scene, 50.0, 25.0, 0.5), RED);
+  assert_eq!(sample(&scene, 5.0, 5.0, 0.5)[3], 0);
+}
+
+#[test]
+fn a_mask_leaves_the_layers_above_it() {
+  let corner =
+    Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Vec2::new(5.0, 5.0).into()));
+  let scene = Scene::new(
+    Surface::Area,
+    vec![
+      Layer::new(solid(RED)),
+      circle_mask(),
+      Layer::new(solid(BLUE)).region(corner),
+    ],
+  );
+  assert_eq!(sample(&scene, 50.0, 25.0, 0.5), RED);
+  assert_eq!(sample(&scene, 5.0, 5.0, 0.5), BLUE);
+  assert_eq!(sample(&scene, 90.0, 25.0, 0.5)[3], 0);
+}
+
+#[test]
+fn a_mask_draws_none_of_its_own_color() {
+  let scene = Scene::new(Surface::Area, vec![circle_mask()]);
+  assert_eq!(sample(&scene, 50.0, 25.0, 0.5)[3], 0);
+}
+
+#[test]
+fn an_inverted_mask_shows_the_layers_below_only_outside_it() {
+  let scene = masked(
+    Layer::new(solid(BLUE))
+      .region(middle_circle())
+      .inverted_mask(),
+  );
+  assert_eq!(sample(&scene, 50.0, 25.0, 0.5)[3], 0);
   assert_eq!(sample(&scene, 5.0, 5.0, 0.5), RED);
 }
 
 #[test]
 fn a_mask_with_no_shape_covers_the_viewport() {
-  assert_eq!(sample(&masked(Mask::new(solid(BLUE))), 5.0, 5.0, 0.5), RED);
   assert_eq!(
-    sample(&masked(Mask::new(solid(BLUE)).inverted()), 5.0, 5.0, 0.5),
-    DARK
+    sample(&masked(Layer::new(solid(BLUE)).mask()), 5.0, 5.0, 0.5),
+    RED
+  );
+  assert_eq!(
+    sample(
+      &masked(Layer::new(solid(BLUE)).inverted_mask()),
+      5.0,
+      5.0,
+      0.5
+    )[3],
+    0
   );
 }
 
 #[test]
-fn a_mask_fades_its_layer_by_its_own_opacity() {
+fn a_mask_fades_the_layers_below_by_its_own_opacity() {
   let half = solid(BLUE).adjust(ColorAdjust::Opacity(0.5.into()));
-  let scene = Scene::new(
-    Surface::Area,
-    vec![Layer::new(solid(RED)).mask(Mask::new(half))],
-  );
-  let alpha = sample(&scene, 50.0, 25.0, 0.5)[3];
+  let alpha = sample(&masked(Layer::new(half).mask()), 50.0, 25.0, 0.5)[3];
   assert!((alpha as i16 - 128).abs() <= 1, "{alpha}");
 }
 
 #[test]
-fn a_mask_stays_put_as_its_layer_moves() {
-  let moved = middle_circle().transform(Transform::Translate(Vec2::new(20.0, 0.0).into()));
-  let mask = Mask::new(solid(BLUE)).region(middle_circle());
-  let scene = Scene::new(
-    Surface::Area,
-    vec![Layer::new(solid(RED)).region(moved).mask(mask)],
-  );
-  // in both, in the layer alone, and in the mask alone
+fn masks_one_over_another_show_where_both_do() {
+  let right = Shape::new(ShapeNode::Rect {
+    width: 50.0.into(),
+    height: 50.0.into(),
+  })
+  .transform(Transform::Translate(Vec2::new(75.0, 25.0).into()));
+  let mut scene = masked(circle_mask());
+  scene
+    .layers
+    .push(Layer::new(solid(BLUE)).region(right).mask());
   assert_eq!(sample(&scene, 60.0, 25.0, 0.5), RED);
-  assert_eq!(sample(&scene, 85.0, 25.0, 0.5)[3], 0);
-  assert_eq!(sample(&scene, 35.0, 25.0, 0.5)[3], 0);
+  assert_eq!(sample(&scene, 40.0, 25.0, 0.5)[3], 0);
+  assert_eq!(sample(&scene, 90.0, 25.0, 0.5)[3], 0);
+}
+
+#[test]
+fn a_mask_that_isnt_drawn_masks_nothing() {
+  assert_eq!(sample(&masked(circle_mask().hidden()), 5.0, 5.0, 0.5), RED);
+  assert_eq!(
+    sample(&masked(circle_mask().visible(false)), 5.0, 5.0, 0.5),
+    RED
+  );
 }
 
 #[test]
@@ -801,8 +846,8 @@ fn an_animated_mask_needs_a_timing() {
     cycle: Cycle::Once,
   })));
   assert_eq!(
-    masked(Mask::new(changing)).check(),
-    Err(no_timing("layer 2"))
+    masked(Layer::new(changing).mask()).check(),
+    Err(no_timing("layer 3"))
   );
 }
 
@@ -813,31 +858,8 @@ fn a_masks_image_is_one_the_scene_draws() {
     frame: None,
     size: ImageSize::Stretch,
   });
-  let scene = masked(Mask::new(image));
+  let scene = masked(Layer::new(image).mask());
   assert_eq!(scene.image_names().collect::<Vec<_>>(), ["stencil.png"]);
-}
-
-#[test]
-fn a_masks_outline_and_pose_line_up_with_the_layers() {
-  let scene = masked(Mask::new(solid(BLUE)).region(middle_circle()));
-  let variables = Variables::new();
-  let frame = LayerFrame {
-    time: 0.0,
-    playback_seed: 0,
-    variables: &variables,
-    assets: Assets::none(),
-    size: SIZE,
-    surface: Surface::Area,
-    visits: None,
-    timing: None,
-    defaults: no_variables(),
-    values: no_values(),
-    modulators: no_modulators(),
-  };
-  assert!(scene.mask_outlines(&frame)[0].is_empty());
-  assert!(!scene.mask_outlines(&frame)[1].is_empty());
-  assert!(scene.mask_poses(&frame)[0].is_none());
-  assert!(scene.mask_poses(&frame)[1].is_some());
 }
 
 #[test]
@@ -1947,19 +1969,9 @@ fn text_in_a_font_thats_not_loaded_draws_nothing() {
 }
 
 #[test]
-fn a_layer_names_the_fonts_its_region_and_its_masks_use() {
-  let layer = Layer::new(solid(RED))
-    .region(text("A", 8.0))
-    .mask(Mask::new(solid(RED)).region(Shape::new(ShapeNode::text(
-      "B",
-      "other.ttf",
-      8.0,
-      Vec2::splat(8.0),
-    ))));
-  assert_eq!(
-    layer.font_names().collect::<Vec<_>>(),
-    ["pixel.ttf", "other.ttf"]
-  );
+fn a_layer_names_the_fonts_its_region_uses() {
+  let layer = Layer::new(solid(RED)).region(text("A", 8.0));
+  assert_eq!(layer.font_names().collect::<Vec<_>>(), ["pixel.ttf"]);
 }
 
 #[test]

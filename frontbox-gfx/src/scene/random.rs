@@ -238,7 +238,9 @@ pub enum Spread {
   /// Fully saturated, fully bright, opaque colors by hue, in degrees. Hue can wrap past 360, so `(330.0, 390.0)` covers
   /// the reds on both sides of 0. How bright or see-through they are is up to the `Brightness` and `Opacity` adjusts,
   /// as only the hue varies here.
-  Color { hue: (f32, f32) },
+  Color {
+    hue: (f32, f32),
+  },
   /// One of these values, each as likely as the others. A wave steps through them in order, from its low point to its
   /// high point. A value the prop's type can't read gives the type's default, as a variable of the wrong type does.
   ///

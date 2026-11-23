@@ -210,10 +210,6 @@ pub struct RenderedScene {
   pub outlines: Vec<Vec<Vec<[f32; 2]>>>,
   /// Each layer's shape as it stands, for the editor's handles. `None` for a layer without one.
   pub shapes: Vec<Option<RenderedShape>>,
-  /// Where each layer's mask is drawn. Empty for a layer without one.
-  pub mask_outlines: Vec<Vec<Vec<[f32; 2]>>>,
-  /// Each layer's mask's shape as it stands. `None` for a layer without one.
-  pub mask_shapes: Vec<Option<RenderedShape>>,
   /// What each light the scene lands on would show, by name. Unlike colors from the machine these are in red, green, blue
   /// order, however the LED is wired.
   pub light_colors: BTreeMap<String, Rgb>,

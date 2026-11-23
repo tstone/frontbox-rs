@@ -101,7 +101,7 @@ export default function ShapeHandles(props: { space: PreviewSpace; selection: Se
     const group = groupOverlay(orEmpty(field(shape, 'transform')), pose, write, props.outlines, grid)
     // a sequence's shapes are along a line, which has no area to turn, scale, or round
     const layer = scene.get().layers[selection.layer]
-    const flat = !selection.mask && layer?.display === undefined && layer?.surface === 'Sequence'
+    const flat = layer?.display === undefined && layer?.surface === 'Sequence'
     const open = props.openTransform
     const corner = flat || isOpen(shape.get().base) ? [] : cornerHandles(shape, pose, write, cornerMode(), nextMode, scene.get(), open)
     // a line's over the shape's own, as its center can sit where the shape's moved from. A path's on top of both, as

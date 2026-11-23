@@ -325,21 +325,21 @@ const MODIFIER_SECTIONS: { label: string; icon: typeof icons.Circle; buttons: Mo
   { label: 'More adjustments', icon: icons.SlidersHorizontal, buttons: ['Opacity', 'Brightness'], menu: [['HueShift', 'Contrast']] },
 ]
 
-/** A layer, or a layer's mask, by its id */
-const MODIFIED = /^layers\/\d+(\/mask)?$/
+/** A layer, by its id */
+const MODIFIED = /^layers\/\d+$/
 
 /**
- * Where modifiers go for what's selected, in the layer or mask it's in. Transforms go in the nearest shape or fill
- * that has them, and on a layer, a mask or an adjust, in its region, or its fill where it has no region. Adjusts go where the
- * transforms do when that's a fill, or else in the layer's or mask's fill. `traversals` are the layer's, which a
- * traversal's own props can't use.
+ * Where modifiers go for what's selected, in the layer it's in. Transforms go in the nearest shape or fill that has
+ * them, and on a layer or an adjust, in its region, or its fill where it has no region. Adjusts go where the transforms
+ * do when that's a fill, or else in the layer's fill. `traversals` are the layer's, which a traversal's own props can't
+ * use.
  */
 function modifierTargets(tree: ConfigTree, id: string | null) {
   if (id === null) return null
   const chain = ancestry(id).reverse()
   const owner = chain.find((up) => MODIFIED.test(up))
   if (owner === undefined) return null
-  const layerNode = tree.find(owner.replace(/\/mask$/, ''))
+  const layerNode = tree.find(owner)
   if (layerNode?.kind !== 'layer') return null
   const modifiers = (at: string) => {
     const node = tree.find(`${at}/modifiers`)

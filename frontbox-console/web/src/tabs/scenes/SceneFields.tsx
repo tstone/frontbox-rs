@@ -48,7 +48,7 @@ export type NodePicking = {
 export const NodePickingContext = createContext<NodePicking>()
 
 /**
- * Whether a layer's or mask's region, or its graph, is drawn over the preview while it's selected. Only for the editing,
+ * Whether a layer's region, or its graph, is drawn over the preview while it's selected. Only for the editing,
  * so it isn't part of the scene and hiding it changes nothing the scene shows.
  */
 export type RegionVisibility = { shown: (of: Selection) => boolean; show: (of: Selection, shown: boolean) => void }
@@ -56,7 +56,7 @@ export type RegionVisibility = { shown: (of: Selection) => boolean; show: (of: S
 export const RegionVisibilityContext = createContext<RegionVisibility>()
 
 /**
- * Where a layer's or mask's region stands as the machine last drew it, at the playhead, for fields that need to know
+ * Where a layer's region stands as the machine last drew it, at the playhead, for fields that need to know
  * where the shape is. `of` is `null` for a shape that isn't a region, or that hasn't been drawn.
  */
 export type ShapePoses = { of: (shape: NonNullable<Layer['region']>) => RenderedShape | null; time: Accessor<number> }

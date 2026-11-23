@@ -2,14 +2,13 @@
 import type { ColorAdjust } from "./ColorAdjust";
 import type { FillNode } from "./FillNode";
 import type { GraphMask } from "./GraphMask";
-import type { Mask } from "./Mask";
 import type { Node } from "./Node";
 import type { Prop } from "./Prop";
 import type { ShapeAdjust } from "./ShapeAdjust";
 import type { ShapeNode } from "./ShapeNode";
 
 /**
- * A fill drawn in a region
+ * A fill drawn in a region, or a mask over the layers below it
  */
 export type Layer = { 
 /**
@@ -31,9 +30,14 @@ visible?: Prop<boolean>, fill: Node<FillNode, ColorAdjust>,
  */
 region?: Node<ShapeNode, ShapeAdjust>, 
 /**
- * `None` shows the whole layer
+ * Draws nothing, and instead limits where the layers below it show: their alpha is multiplied by this layer's (its
+ * fill's alpha, where its region covers). The scene decides which layers are below it.
  */
-mask?: Mask, 
+mask?: boolean, 
+/**
+ * For a mask, shows the layers below outside it rather than inside it
+ */
+invert?: boolean, 
 /**
  * Limits the layer to a graph's nodes, with traversals over it. `None` draws at every sample.
  */

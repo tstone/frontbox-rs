@@ -4,10 +4,8 @@ use glam::Vec2;
 use image::Rgba;
 use serde::{Deserialize, Serialize};
 
-use crate::color::RgbaColor;
 use crate::scene::{
-  Graph, Layer, LayerFrame, Modulators, Sample, SceneError, ShapePose, Surface, Timing, Variables,
-  Visits,
+  Graph, Layer, LayerFrame, Modulators, Sample, SceneError, Surface, Timing, Variables, Visits,
 };
 
 /// Layers sharing variables and timing, as a scene file holds them but with nothing about hardware
@@ -122,7 +120,7 @@ impl Scene {
   pub fn sample(&self, at: &Sample, frame: &LayerFrame) -> Rgba<u8> {
     let frame = self.seen(frame);
     self.layers.iter().fold(Rgba([0, 0, 0, 0]), |below, layer| {
-      layer.sample(at, &frame).composite_over(below)
+      layer.prepare(&frame, at.radius).composite(at, below)
     })
   }
 
@@ -144,15 +142,11 @@ impl Scene {
       .iter()
       .zip(visits)
       .fold(Rgba([0, 0, 0, 0]), |below, (layer, visits)| {
-        layer
-          .sample(
-            at,
-            &LayerFrame {
-              visits: Some(visits),
-              ..frame
-            },
-          )
-          .composite_over(below)
+        let frame = LayerFrame {
+          visits: Some(visits),
+          ..frame
+        };
+        layer.prepare(&frame, at.radius).composite(at, below)
       })
   }
 
@@ -162,24 +156,6 @@ impl Scene {
       .layers
       .iter()
       .map(|layer| layer.outline(&frame))
-      .collect()
-  }
-
-  pub fn mask_outlines(&self, frame: &LayerFrame) -> Vec<Vec<Vec<Vec2>>> {
-    let frame = self.seen(frame);
-    self
-      .layers
-      .iter()
-      .map(|layer| layer.mask_outline(&frame))
-      .collect()
-  }
-
-  pub fn mask_poses(&self, frame: &LayerFrame) -> Vec<Option<ShapePose>> {
-    let frame = self.seen(frame);
-    self
-      .layers
-      .iter()
-      .map(|layer| layer.mask_pose(&frame))
       .collect()
   }
 }

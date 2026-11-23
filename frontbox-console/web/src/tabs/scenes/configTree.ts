@@ -6,7 +6,7 @@ import { moved, removed, withTiming, type Lens, type Scene, type SceneLayer, typ
 
 /**
  * The scene's nodes, which one is selected, and which are open. The tree on the timeline and the properties panel
- * share one, and it keeps its ids in step as the lists in the scene change. Selecting a node selects the layer or mask
+ * share one, and it keeps its ids in step as the lists in the scene change. Selecting a node selects the layer
  * it's in for the preview, and a layer selected in the preview is selected here.
  */
 export type ConfigTree = {
@@ -54,10 +54,9 @@ const OWN_ROWS: NodeKind[] = ['layer', 'sound', 'traversal', 'path', 'copy', 'fi
 /**
  * Whether a node has a row in the tree. A layer is one row, with its shape, its fill and their settings in its
  * properties. What's set apart from those has a row under it: a modifier, a prop that changes along the timeline, a
- * traversal, a sweep's path, and a mask once there is one.
+ * traversal, and a sweep's path.
  */
 export function shownInTree(node: ConfigNode) {
-  if (node.kind === 'mask') return node.value !== undefined
   if (node.kind === 'prop') return (node.modifier !== undefined && !node.placement) || hasTrack(node.lens.get())
   return OWN_ROWS.includes(node.kind)
 }
@@ -177,7 +176,7 @@ export function createConfigTree(scene: Lens<Scene>, nodes: Accessor<ConfigNode[
 
   const addLayer = (layer: SceneLayer) => {
     const layers = scene.get().layers
-    const id = selectionNode({ layer: layers.length, mask: false })
+    const id = selectionNode({ layer: layers.length })
     batch(() => {
       scene.set({ ...scene.get(), layers: [...layers, layer] })
       select(id)
@@ -243,4 +242,4 @@ export function createConfigTree(scene: Lens<Scene>, nodes: Accessor<ConfigNode[
   }
 }
 
-const sameSelection = (a: Selection | null, b: Selection | null) => a?.layer === b?.layer && a?.mask === b?.mask
+const sameSelection = (a: Selection | null, b: Selection | null) => a?.layer === b?.layer

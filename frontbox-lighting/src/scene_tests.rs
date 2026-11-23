@@ -587,6 +587,48 @@ fn a_layer_that_misses_an_light_leaves_it_to_the_others_on_its_z() {
   assert_eq!(played(&context, &addresses, scene), vec![Some(Rgba::red())]);
 }
 
+/// A mask on `lights` that hides the layers below it
+fn hide(lights: &str) -> LightLayer {
+  LightLayer::sequence(LightQ::name(lights), solid(Rgba([0, 0, 0, 0])).mask())
+}
+
+#[test]
+fn a_mask_masks_the_layers_below_only_on_the_lights_it_lands_on() {
+  let (context, addresses) = three_lights();
+  let scene = Scene::new(vec![
+    LightLayer::sequence(LightQ::names(vec!["light0", "light1"]), solid(Rgba::red())).into(),
+    hide("light0").into(),
+  ]);
+  assert_eq!(
+    played(&context, &addresses, scene),
+    vec![None, Some(Rgba::red()), None]
+  );
+}
+
+#[test]
+fn a_mask_leaves_layers_on_other_zs() {
+  let (context, addresses) = three_lights();
+  let scene = Scene::new(vec![
+    LightLayer::sequence(LightQ::name("light0"), solid(Rgba::red())).into(),
+    hide("light0").at_z(1).into(),
+  ]);
+  assert_eq!(played(&context, &addresses, scene)[0], Some(Rgba::red()));
+}
+
+#[test]
+fn a_mask_leaves_other_scenes_layers() {
+  let (context, addresses) = three_lights();
+  play(
+    &context,
+    PlayableScene::new(on(LightQ::name("light0"), solid(Rgba::red()))),
+  );
+  let masked = Scene::new(vec![
+    LightLayer::sequence(LightQ::name("light0"), solid(Rgba::blue())).into(),
+    hide("light0").into(),
+  ]);
+  assert_eq!(played(&context, &addresses, masked)[0], Some(Rgba::red()));
+}
+
 #[test]
 fn two_playbacks_of_one_system_on_one_z_are_drawn_in_the_order_they_started() {
   let (context, addresses) = placed_lights(&[at(2.0, 5.0), at(8.0, 5.0)]);

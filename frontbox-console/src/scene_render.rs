@@ -143,15 +143,6 @@ pub(crate) fn render_scene(
   let shapes = rendered_shapes(
     frames().map(|drawn| drawn.and_then(|(layer, frame)| layer.shape_pose(&frame))),
   );
-  let mask_outlines = frames()
-    .map(|drawn| {
-      drawn.map_or(Vec::new(), |(layer, frame)| {
-        rendered_outline(&layer.mask_outline(&frame))
-      })
-    })
-    .collect();
-  let mask_shapes =
-    rendered_shapes(frames().map(|drawn| drawn.and_then(|(layer, frame)| layer.mask_pose(&frame))));
   let light_colors = light_colors(
     &shown,
     &views,
@@ -171,8 +162,6 @@ pub(crate) fn render_scene(
     canvases,
     outlines,
     shapes,
-    mask_outlines,
-    mask_shapes,
     light_colors,
     graphs,
     reference_error,
@@ -626,34 +615,38 @@ impl Canvas {
       for (ours, mut layers) in rows.iter_mut().zip(theirs) {
         layers.append(ours);
         // stable, so on one z theirs stay under ours, and each scene's layers stay in its order
-        layers.sort_by_key(|(z, _, _)| *z);
+        layers.sort_by_key(|layer| layer.z);
         *ours = layers;
       }
     }
     rows.into_iter().flat_map(move |layers| {
       self.samples.iter().flat_map(move |at| {
-        let color = layers
-          .iter()
-          .fold(Rgba([0, 0, 0, 0]), |below, (_, layer, graph)| {
+        // each scene's layers on one z are drawn on their own first, so a mask only masks its own scene's
+        let runs = layers.chunk_by(|a, b| a.z == b.z && std::ptr::eq(a.scene, b.scene));
+        let color = runs.fold(Rgba([0, 0, 0, 0]), |below, run| {
+          let drawn = run.iter().fold(Rgba([0, 0, 0, 0]), |below, row_layer| {
             // the strip has as many points as asked for, not one per light, so each shows its nearest node
-            let at = graph
+            let at = row_layer
+              .graph
               .and_then(|graph| graph.nearest(at.pos))
               .map_or(*at, |node| at.at_node(node));
-            layer.sample(&at).composite_over(below)
+            row_layer.layer.composite(&at, below)
           });
+          drawn.composite_over(below)
+        });
         color.0
       })
     })
   }
 
-  /// The layers each row draws, bottom to top and ready to sample, with each one's z and the graph its points go to
+  /// The layers each row draws, bottom to top and ready to sample
   fn prepared<'a>(
     &self,
     scene: &'a Scene,
     views: &'a Views,
     moment: &'a Moment,
     radius: f32,
-  ) -> Vec<Vec<(i8, PreparedLayer<'a>, Option<&'a Arc<Graph>>)>> {
+  ) -> Vec<Vec<RowLayer<'a>>> {
     let rows = self.rows.iter().map(|row| {
       let layers = row.iter().filter_map(|&index| {
         let layer = &scene.layers[index];
@@ -661,12 +654,27 @@ impl Canvas {
           .layer()?
           .prepare(&views.frame(scene, index, moment), radius);
         let graph = views.placed(index).and_then(|placed| placed.graph.as_ref());
-        Some((layer.z().unwrap_or_default(), prepared, graph))
+        Some(RowLayer {
+          z: layer.z().unwrap_or_default(),
+          scene,
+          layer: prepared,
+          graph,
+        })
       });
       layers.collect()
     });
     rows.collect()
   }
+}
+
+/// A layer a row of a [`Canvas`] draws, ready to sample
+struct RowLayer<'a> {
+  z: i8,
+  /// The scene it's from
+  scene: &'a Scene,
+  layer: PreparedLayer<'a>,
+  /// The graph its points go to
+  graph: Option<&'a Arc<Graph>>,
 }
 
 /// Another scene's drawing of the same points as a [`Canvas`], to stack in among its layers
@@ -1903,13 +1911,11 @@ mod tests {
   fn a_render_shows_a_mask_and_says_where_it_is() {
     let source = r#"Scene(version: 2,
       layers: [
-        Display(display: "Dmd", layer: (fill: (base: Solid(Fixed(0, 0, 255, 255))))),
+        Display(display: "Dmd", layer: (fill: (base: Solid(Fixed(255, 0, 0, 255))))),
         Display(display: "Dmd", layer: (
-          fill: (base: Solid(Fixed(255, 0, 0, 255))),
-          mask: (
-            fill: (base: Solid(Fixed(0, 0, 0, 255))),
-            region: (base: Ellipse(rx: Fixed(0.5), ry: Fixed(0.5)), transform: [Scale(Fixed(4.0)), Translate(Fixed(5.0, 2.5))]),
-          ),
+          mask: true,
+          fill: (base: Solid(Fixed(0, 0, 0, 255))),
+          region: (base: Ellipse(rx: Fixed(0.5), ry: Fixed(0.5)), transform: [Scale(Fixed(4.0)), Translate(Fixed(5.0, 2.5))]),
         )),
       ],
     )"#;
@@ -1930,11 +1936,10 @@ mod tests {
     .unwrap();
     let pixel = |x: usize, y: usize| &only(&rendered).colors[(y * 10 + x) * 4..][..4];
     assert_eq!(pixel(5, 2), [255, 0, 0, 255]);
-    assert_eq!(pixel(0, 2), [0, 0, 255, 255]);
-    assert!(rendered.mask_shapes[0].is_none());
-    assert!(rendered.mask_shapes[1].is_some());
-    assert!(rendered.mask_outlines[0].is_empty());
-    assert!(!rendered.mask_outlines[1].is_empty());
+    assert_eq!(pixel(0, 2)[3], 0);
+    // a mask is placed like any other layer
+    assert!(rendered.shapes[1].is_some());
+    assert!(!rendered.outlines[1].is_empty());
   }
 
   #[test]
@@ -2523,6 +2528,18 @@ mod tests {
       &solid_display("0, 0, 255, 255"),
     );
     assert_eq!(colors, [255, 0, 0, 255, 255, 0, 0, 255]);
+  }
+
+  #[test]
+  fn a_scenes_mask_leaves_the_reference_scenes_layers() {
+    let masked = r#"Scene(version: 2, layers: [
+      Display(display: "Dmd", layer: (fill: (base: Solid(Fixed(255, 0, 0, 255))))),
+      Display(display: "Dmd", layer: (mask: true, fill: (base: Solid(Fixed(0, 0, 0, 0))))),
+    ])"#;
+    assert_eq!(
+      with_reference(masked, &solid_display("0, 0, 255, 255")),
+      [0, 0, 255, 255, 0, 0, 255, 255]
+    );
   }
 
   #[test]
