@@ -48,6 +48,7 @@ import {
   WANDER,
   EVOLUTION,
   NOISE_SCALE,
+  CELL_JITTER,
   type LayerSurfaces,
   type AdjustKind,
   type Lens,
@@ -448,7 +449,7 @@ function modifierNodes(id: string, transforms: Lens<Transform[]>, space: Transfo
 }
 
 /**
- * A solid's color, a gradient's stops, a noise's scale, evolution, and stops, an animated image's frame, or a sprite
+ * A solid's color, a gradient's stops, a noise's scale, evolution, and stops, cells' scale, jitter, evolution, and stops, an animated image's frame, or a sprite
  * sheet's sprite, then its transforms and adjusts
  */
 function fillNode(id: string, lens: Lens<Fill>, surface: Surface): ConfigNode {
@@ -465,6 +466,15 @@ function fillNode(id: string, lens: Lens<Fill>, surface: Surface): ConfigNode {
       propNode(`${id}/scale`, 'Scale', { lens: field(noise, 'scale') as Lens<Prop<SceneValue>>, variableName: 'noise_scale', fallback: 0.25, ranges: both(NOISE_SCALE) }, surface),
       propNode(`${id}/evolution`, 'Evolution', { lens: field(noise, 'evolution') as Lens<Prop<SceneValue>>, variableName: 'evolution', fallback: 0, ranges: both(EVOLUTION) }, surface),
       stopsNode(`${id}/stops`, field(noise, 'stops'), surface),
+    )
+  }
+  if ('Cells' in current) {
+    const cells = variant(base, 'Cells')
+    own.push(
+      propNode(`${id}/scale`, 'Scale', { lens: field(cells, 'scale') as Lens<Prop<SceneValue>>, variableName: 'cell_scale', fallback: 0.25, ranges: both(NOISE_SCALE) }, surface),
+      propNode(`${id}/jitter`, 'Jitter', { lens: field(cells, 'jitter') as Lens<Prop<SceneValue>>, variableName: 'jitter', fallback: 1, ranges: both(CELL_JITTER) }, surface),
+      propNode(`${id}/evolution`, 'Evolution', { lens: field(cells, 'evolution') as Lens<Prop<SceneValue>>, variableName: 'evolution', fallback: 0, ranges: both(EVOLUTION) }, surface),
+      stopsNode(`${id}/stops`, field(cells, 'stops'), surface),
     )
   }
   if ('Image' in current) {
@@ -487,7 +497,7 @@ function fillNode(id: string, lens: Lens<Fill>, surface: Surface): ConfigNode {
     kind: 'fill',
     lens,
     value: lens.get(),
-    fields: 'Image' in current || 'Spritesheet' in current || 'Noise' in current,
+    fields: 'Image' in current || 'Spritesheet' in current || 'Noise' in current || 'Cells' in current,
     children: [...own, ...modifierNodes(id, orEmpty(field(lens, 'transform')), 'fill', surface, orEmpty(field(lens, 'adjust')))],
   })
 }

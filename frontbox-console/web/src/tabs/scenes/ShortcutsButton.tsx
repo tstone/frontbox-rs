@@ -3,8 +3,11 @@ import { For } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import * as icons from '../../components/icons'
 
+const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform)
 /** Ctrl, or Command on a Mac */
-export const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl'
+export const MOD = IS_MAC ? '⌘' : 'Ctrl'
+/** The key that removes what's selected, as a Mac's keyboard labels it (its Backspace) */
+export const DELETE_KEY = IS_MAC ? '⌫' : 'Del'
 
 /** The scene editor's keyboard shortcuts, by what they're for */
 const SHORTCUTS: { title: string; items: { keys: string[]; does: string }[] }[] = [
@@ -21,7 +24,8 @@ const SHORTCUTS: { title: string; items: { keys: string[]; does: string }[] }[] 
       { keys: [MOD, 'S'], does: 'Save' },
       { keys: [MOD, 'Z'], does: 'Undo' },
       { keys: [MOD, 'Shift', 'Z'], does: 'Redo, as does ' + MOD + '+Y' },
-      { keys: ['Delete'], does: 'Remove what’s selected' },
+      // a Mac's Delete key is Backspace, so both are taken
+      { keys: ['Delete'], does: IS_MAC ? 'Remove what’s selected, after asking' : 'Remove what’s selected, after asking, as does Backspace' },
       { keys: ['Esc'], does: 'Select nothing' },
       { keys: ['Double-click a slider’s knob'], does: 'Put it back to its default' },
     ],

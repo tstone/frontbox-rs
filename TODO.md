@@ -30,10 +30,6 @@
 
 ### Scenes/Editor
 
-- `FillNode::Cells`: cellular (Worley) noise with a `jitter`, in two modes. Edges is a web of thin lines where cells
-  meet (cracks, scales), and Value is a flat random shade per cell (mosaic, stained glass). Both are looks noise can't
-  make on a DMD. Skip a Distance mode, as at DMD sizes it reads like Smooth noise. Not worth it for sparse LEDs, where
-  a light samples one point and the cell shapes are lost.
 - `Transform::Warp` on shapes: bend the outline by noise too, as fills already are. A shape's edges need cutting into short pieces first, or a rect barely bends.
 - Plug in custom shapes or graphics with their own settings (e.g. a kinematics/skeleton extension)
 - Outer glow/drop shadow on regions (Maybe a blur adjust instead?)

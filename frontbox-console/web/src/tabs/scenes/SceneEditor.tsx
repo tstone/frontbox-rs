@@ -398,7 +398,8 @@ export default function SceneEditor(props: {
         if (e.repeat) return
         if (playback.playing()) playback.stop()
         else if (scene()?.timing) playback.play()
-      } else if (e.key === 'Delete' && !typingIn(e.target) && !(e.target instanceof Element && e.target.closest('[role="dialog"]'))) {
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && drawing() === null && !typingIn(e.target) && !(e.target instanceof Element && e.target.closest('[role="dialog"], [role="alertdialog"], [role="menu"]'))) {
+        // a polygon being drawn takes Backspace for its last corner
         if (removeSelected()) e.preventDefault()
       } else if (e.key.toLowerCase() === 'k' && !e.ctrlKey && !e.metaKey && !e.altKey && !typingIn(e.target)) {
         if (keyAtPlayhead()) e.preventDefault()
@@ -580,16 +581,12 @@ export default function SceneEditor(props: {
   })
 
   /**
-   * Takes out what's selected, as its Remove button would: a layer, a sound, or anything else in a list. Returns
+   * Asks to take out what's selected, as its Remove button would: a layer, a sound, or anything else in a list. Returns
    * whether there was something to take out.
    */
   const removeSelected = () => {
     const id = tree.selected()
-    const node = id === null ? undefined : tree.find(id)
-    if (!node) return false
-    if (!node.place || node.place.canRemove === false) return false
-    tree.remove(node.place)
-    return true
+    return id !== null && layerMenu.remove(id)
   }
 
   /**

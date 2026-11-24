@@ -616,6 +616,12 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
       use(field(noise, 'scale'), `${label} · Scale`, both(NOISE_SCALE))
       use(field(noise, 'evolution'), `${label} · Evolution`, both(EVOLUTION))
       stops(field(noise, 'stops'), label)
+    } else if ('Cells' in current) {
+      const cells = variant(base, 'Cells')
+      use(field(cells, 'scale'), `${label} · Scale`, both(NOISE_SCALE))
+      use(field(cells, 'jitter'), `${label} · Jitter`, both(CELL_JITTER))
+      use(field(cells, 'evolution'), `${label} · Evolution`, both(EVOLUTION))
+      stops(field(cells, 'stops'), label)
     } else if ('Image' in current && current.Image.frame) {
       const frames = contentImageInfo(current.Image.name)?.frames
       use(field(variant(base, 'Image'), 'frame'), `${label} · Frame`, frameRanges(frames))
@@ -1081,6 +1087,8 @@ export const UNREFERENCED: Range = { min: -100, max: 100, step: 0.1, rest: 0 }
 const FILL_MOVE: Range = { min: -1, max: 1, step: 0.01, rest: 0 }
 const SCALE: Range = { min: 0, max: 16, step: 0.01, rest: 1 }
 /** A noise fill's largest blobs, as a share of its region's shorter side */
+/** How far cells' points stray from a grid */
+export const CELL_JITTER: Range = { min: 0, max: 1, step: 0.01, rest: 1 }
 export const NOISE_SCALE: Range = { min: 0.02, max: 2, step: 0.01, rest: 0.25 }
 /** A noise fill's evolution, which loops at every whole number */
 export const EVOLUTION: Range = { min: 0, max: 4, step: 0.01, spreadEnd: 1, rest: 0 }

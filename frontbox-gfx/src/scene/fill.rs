@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::animation::Lerp;
 use crate::scene::noise::{default_octaves, to_cells};
 use crate::scene::{
-  Color, ColorAdjust, Env, Inputs, Node, NoiseStyle, Picture, Prop, Transform, Warp, Wrap,
+  CellStyle, Color, ColorAdjust, Env, Inputs, Node, NoiseStyle, Picture, Prop, Transform, Warp,
+  Wrap,
 };
 
 /// The colors a layer is drawn with
@@ -117,6 +118,25 @@ pub enum FillNode {
     /// number, so animating it from 0 to a whole number over a loop repeats seamlessly; to a larger one changes faster.
     evolution: Prop<f32>,
     /// Picks a different noise for the same settings
+    #[serde(default)]
+    seed: u32,
+    /// In any order, as they're drawn by where they are at the time
+    stops: Vec<Stop>,
+  },
+  /// Cells around scattered points, like cracked mud or a mosaic, their value from 0 to 1 colored by `stops` like
+  /// noise's. Sized as noise is, by the region's shorter side.
+  Cells {
+    #[serde(default, skip_serializing_if = "CellStyle::is_edges")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<CellStyle>", optional))]
+    style: CellStyle,
+    /// How big a cell is on average, as a share of the region's shorter side: 0.25 fits about four across it
+    scale: Prop<f32>,
+    /// How far each cell's point strays from a grid, from 0 (a grid of squares) to 1 (fully random)
+    jitter: Prop<f32>,
+    /// Moves each cell's point around a small circle, so the cells shift and wobble. It comes back to where it started
+    /// at every whole number, as noise's does.
+    evolution: Prop<f32>,
+    /// Picks different cells for the same settings
     #[serde(default)]
     seed: u32,
     /// In any order, as they're drawn by where they are at the time
@@ -257,6 +277,18 @@ impl FillNode {
         stops,
         ..
       } => scale.is_animated() || evolution.is_animated() || stops.iter().any(Stop::is_animated),
+      Self::Cells {
+        scale,
+        jitter,
+        evolution,
+        stops,
+        ..
+      } => {
+        scale.is_animated()
+          || jitter.is_animated()
+          || evolution.is_animated()
+          || stops.iter().any(Stop::is_animated)
+      }
       Self::Image { frame, .. } => frame.as_ref().is_some_and(Prop::is_animated),
       Self::Spritesheet { sprite, .. } => sprite.as_ref().is_some_and(Prop::is_animated),
     }
@@ -273,6 +305,18 @@ impl FillNode {
         ..
       } => {
         scale.read_inputs(inputs);
+        evolution.read_inputs(inputs);
+        stops.iter().for_each(|stop| stop.read_inputs(inputs));
+      }
+      Self::Cells {
+        scale,
+        jitter,
+        evolution,
+        stops,
+        ..
+      } => {
+        scale.read_inputs(inputs);
+        jitter.read_inputs(inputs);
         evolution.read_inputs(inputs);
         stops.iter().for_each(|stop| stop.read_inputs(inputs));
       }
@@ -309,6 +353,21 @@ impl FillNode {
         style: *style,
         to_cells: to_cells(unit_box, scale.resolve(env)),
         octaves: *octaves,
+        evolution: evolution.resolve(env),
+        seed: *seed,
+        stops: resolve_stops(stops, env),
+      },
+      Self::Cells {
+        style,
+        scale,
+        jitter,
+        evolution,
+        seed,
+        stops,
+      } => ResolvedFillNode::Cells {
+        style: *style,
+        to_cells: to_cells(unit_box, scale.resolve(env)),
+        jitter: jitter.resolve(env),
         evolution: evolution.resolve(env),
         seed: *seed,
         stops: resolve_stops(stops, env),
@@ -398,6 +457,15 @@ enum ResolvedFillNode<'a> {
     seed: u32,
     stops: Vec<(f32, Rgba<u8>)>,
   },
+  /// As for `Noise`
+  Cells {
+    style: CellStyle,
+    to_cells: Vec2,
+    jitter: f32,
+    evolution: f32,
+    seed: u32,
+    stops: Vec<(f32, Rgba<u8>)>,
+  },
   /// `None` for an image that isn't loaded, which draws nothing. `scale` takes a point in the unit box to the image's
   /// own unit box.
   Image {
@@ -430,6 +498,17 @@ impl ResolvedFillNode<'_> {
       } => gradient(
         stops,
         style.sample(p * *to_cells, *evolution, *octaves, *seed),
+      ),
+      Self::Cells {
+        style,
+        to_cells,
+        jitter,
+        evolution,
+        seed,
+        stops,
+      } => gradient(
+        stops,
+        style.sample(p * *to_cells, *jitter, *evolution, *seed),
       ),
       Self::Image {
         picture,
@@ -720,6 +799,21 @@ mod tests {
         color_sized(&fill, Vec2::new(30.0, 30.0), Vec2::new(x, y)),
       );
     }
+  }
+
+  #[test]
+  fn cells_without_jitter_are_a_grid_colored_by_their_stops() {
+    let fill = Fill::new(FillNode::Cells {
+      style: CellStyle::Edges,
+      scale: 0.5.into(),
+      jitter: 0.0.into(),
+      evolution: 0.0.into(),
+      seed: 0,
+      stops: vec![Stop::new(0.0, Color(RED)), Stop::new(1.0, Color(BLUE))],
+    });
+    // two cells across a square region, so they meet down its middle and the middle of each is furthest from an edge
+    assert_eq!(color(&fill, 0.0, 0.25), BLUE);
+    assert_eq!(color(&fill, 0.25, 0.25), RED);
   }
 
   fn red_noise() -> Fill {

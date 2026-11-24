@@ -125,7 +125,7 @@ fn gradient(hash: u32, d: Vec3) -> f32 {
 }
 
 /// An integer hash of a lattice point, so the noise is the same everywhere it's drawn
-fn hash(x: i32, y: i32, z: i32, seed: u32) -> u32 {
+pub(crate) fn hash(x: i32, y: i32, z: i32, seed: u32) -> u32 {
   let mut h = seed.wrapping_mul(0x9e37_79b9);
   for part in [x, y, z] {
     h = (h ^ part as u32).wrapping_mul(0x7feb_352d);

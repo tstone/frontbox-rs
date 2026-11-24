@@ -2,9 +2,11 @@ import { Dialog } from '@ark-ui/solid/dialog'
 import { Menu } from '@ark-ui/solid/menu'
 import { createContext, createSignal, For, Show, type JSX } from 'solid-js'
 import { Portal } from 'solid-js/web'
+import ConfirmDialog from './ConfirmDialog'
 import { is, type ListPlace } from './configNodes'
 import type { ConfigTree } from './configTree'
 import { displayNames, planeNames } from './LayerPlace'
+import { DELETE_KEY, MOD } from './ShortcutsButton'
 import ScenePortal, { LayerColorContext, layerColorClass, type LayerColor } from './ScenePortal'
 import { canRandomize, randomizeNode } from './randomize'
 import { layerPlane, type Lens, type Scene, type SceneLayer } from './sceneModel'
@@ -17,6 +19,10 @@ export type LayerMenuControl = {
   open(id: string, x: number, y: number): void
   renaming(): string | null
   setRenaming(id: string | null): void
+  /** Asks before taking a node out of its list, by its id. Returns whether it's one that can be taken out. */
+  remove(id: string): boolean
+  /** Whether a node can be taken out of its list, by its id */
+  removable(id: string): boolean
   /** The menu and its dialog, which can go anywhere as they show over everything */
   View: () => JSX.Element
 }
@@ -39,13 +45,16 @@ export type LayerMenuEditor = {
 /**
  * The menu of a layer or anything in it, opened at the pointer by a right-click on it. A layer's has Edit for text, then
  * Rename, Duplicate, Duplicate to another plane or display, and Delete. Anything with values under it, a layer
- * included, has Randomize, and something else in a list has Delete. It selects what it's for as it opens.
+ * included, has Randomize, and something else in a list has Delete, which asks first. It selects what it's for as it
+ * opens.
  */
 export function createLayerMenu(tree: ConfigTree, editor: LayerMenuEditor): LayerMenuControl {
   const [shown, setShown] = createSignal<{ id: string; x: number; y: number } | null>(null)
   const [renaming, setRenaming] = createSignal<string | null>(null)
   // the layer being copied to another plane or display, while that's chosen
   const [copying, setCopying] = createSignal<{ id: string; place: ListPlace; layer: SceneLayer } | null>(null)
+  // what's about to be taken out, while that's asked
+  const [removing, setRemoving] = createSignal<{ label: string; place: ListPlace } | null>(null)
 
   const layerIndex = (id: string) => (/^layers\/\d+$/.test(id) ? Number(id.split('/')[1]) : null)
 
@@ -58,7 +67,7 @@ export function createLayerMenu(tree: ConfigTree, editor: LayerMenuEditor): Laye
     const index = layerIndex(node.id)
     if (action === 'edit' && index !== null) editor.editText(index)
     else if (action === 'rename') setRenaming(node.id)
-    else if (action === 'delete') tree.remove(node.place)
+    else if (action === 'delete') remove(node.id)
     else if (action === 'duplicate-to') {
       const layer = is(node, 'layer')
       if (layer) setCopying({ id: node.id, place: node.place, layer: layer.lens.get() })
@@ -80,6 +89,13 @@ export function createLayerMenu(tree: ConfigTree, editor: LayerMenuEditor): Laye
     return !!place && place.canRemove !== false && !tree.find(id)?.placement
   }
 
+  const remove = (id: string) => {
+    const node = tree.find(id)
+    if (!node?.place || !removable(id)) return false
+    setRemoving({ label: node.label, place: node.place })
+    return true
+  }
+
   /** Whether a layer is on a plane or a display, rather than on every light in order, so there's somewhere else to copy it to */
   const placed = (id: string) => {
     const node = tree.find(id)
@@ -96,6 +112,8 @@ export function createLayerMenu(tree: ConfigTree, editor: LayerMenuEditor): Laye
     },
     renaming,
     setRenaming,
+    remove,
+    removable,
     View: () => (
       <>
         <Show when={shown()} keyed>
@@ -137,7 +155,7 @@ export function createLayerMenu(tree: ConfigTree, editor: LayerMenuEditor): Laye
                       <Show when={removable(at.id)}>
                         <Menu.Item value="delete">
                           <Menu.ItemText>Delete</Menu.ItemText>
-                          <kbd>Del</kbd>
+                          <kbd>{DELETE_KEY}</kbd>
                         </Menu.Item>
                       </Show>
                     </Menu.Content>
@@ -147,6 +165,19 @@ export function createLayerMenu(tree: ConfigTree, editor: LayerMenuEditor): Laye
             </LayerColorContext.Provider>
           )}
         </Show>
+        <ConfirmDialog
+          open={removing() !== null}
+          title={`Delete ${removing()?.label ?? ''}?`}
+          description={`It's taken out of the scene, along with everything under it. ${MOD}+Z brings it back.`}
+          cancel="Cancel"
+          action="Delete"
+          onCancel={() => setRemoving(null)}
+          onConfirm={() => {
+            const place = removing()?.place
+            setRemoving(null)
+            if (place) tree.remove(place)
+          }}
+        />
         <Show when={copying()} keyed>
           {(copy) => <DuplicateToDialog scene={editor.scene()} layer={copy.layer} onChoose={(to) => (setCopying(null), tree.duplicate(copy.place, (layer) => movedTo(layer as SceneLayer, to)))} onClose={() => setCopying(null)} />}
         </Show>

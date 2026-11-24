@@ -57,6 +57,7 @@
 mod animatable;
 mod assets;
 mod bounds;
+mod cells;
 mod color_adjust;
 mod content;
 mod contour;
@@ -96,6 +97,7 @@ mod visits;
 pub use animatable::*;
 pub use assets::*;
 pub use bounds::*;
+pub use cells::CellStyle;
 pub use color_adjust::*;
 pub use content::*;
 pub(crate) use contour::Contour;

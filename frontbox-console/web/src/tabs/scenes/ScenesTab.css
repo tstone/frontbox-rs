@@ -3911,6 +3911,20 @@ label.scene-button:hover {
   opacity: 1;
 }
 
+/* last in a row, showing only on the row under the mouse */
+.scene-layers-name .scene-eye + .scene-row-remove {
+  margin-left: 0;
+}
+
+.scene-row-remove {
+  opacity: 0;
+}
+
+.scene-layers-row:hover .scene-row-remove,
+.scene-row-remove:focus-visible {
+  opacity: 1;
+}
+
 /* ---- pool ---- */
 
 .scene-spread-mode {

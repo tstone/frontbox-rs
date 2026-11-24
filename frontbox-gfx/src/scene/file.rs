@@ -185,6 +185,17 @@ mod tests {
           width: 60.0.into(),
           height: 15.0.into(),
         })),
+        Layer::new(Fill::new(FillNode::Cells {
+          style: CellStyle::Value,
+          scale: 0.2.into(),
+          jitter: Prop::Variable("jitter".into()),
+          evolution: 0.5.into(),
+          seed: 4,
+          stops: vec![
+            Stop::new(0.0, Color(Rgba([0, 0, 0, 255]))),
+            Stop::new(1.0, Color(Rgba([255, 128, 0, 255]))),
+          ],
+        })),
         Layer::new(
           Fill::new(FillNode::Solid(Color(Rgba([0, 0, 255, 255])).into())).adjust(
             ColorAdjust::Opacity(Prop::Modulated(Modulated {

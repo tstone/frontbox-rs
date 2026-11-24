@@ -610,6 +610,11 @@ function TreeRow(props: {
             </button>
           </Show>
           <RowEye node={node()} />
+          <Show when={menu.removable(node().id)}>
+            <button type="button" class="scene-eye scene-row-remove" aria-label={`Delete ${node().label}`} title="Delete" onClick={() => menu.remove(node().id)}>
+              <icons.X aria-hidden="true" />
+            </button>
+          </Show>
         </div>
         <div class="scene-timeline-lane" classList={{ 'scene-timeline-lane-track': trackOf(node()) !== false }}>
           <Show when={props.timed}>

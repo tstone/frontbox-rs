@@ -5,6 +5,7 @@ import { Dynamic } from 'solid-js/web'
 import * as icons from '../../components/icons'
 import ScenePortal, { LayerColorContext, layerColor, layerColorClass, type LayerColor } from './ScenePortal'
 import { ConfigTreeContext, shownInTree, type ConfigTree } from './configTree'
+import { LayerMenuContext } from './LayerMenu'
 import { NAMED_VALUE_LABELS, namedValueKind, ValueFields } from './ValueFields'
 import { VariableFields, VariableSource } from './VariableFields'
 import { contentImageInfo } from '../../state/contentImages'
@@ -18,6 +19,7 @@ import type { FillNode } from '../../types/generated/FillNode'
 import type { ImageInfo } from '../../types/generated/ImageInfo'
 import type { ImageSize } from '../../types/generated/ImageSize'
 import type { NodeRef } from '../../types/generated/NodeRef'
+import type { CellStyle } from '../../types/generated/CellStyle'
 import type { NoiseStyle } from '../../types/generated/NoiseStyle'
 import type { NumberFormat } from '../../types/generated/NumberFormat'
 import type { Prop } from '../../types/generated/Prop'
@@ -135,8 +137,9 @@ import {
   type Vec2,
 } from './sceneModel'
 
-type FillKind = 'Solid' | GradientStyle | 'Noise' | 'Image' | 'Spritesheet'
+type FillKind = 'Solid' | GradientStyle | 'Noise' | 'Cells' | 'Image' | 'Spritesheet'
 type NoiseFill = Extract<FillNode, { Noise: unknown }>['Noise']
+type CellsFill = Extract<FillNode, { Cells: unknown }>['Cells']
 type WarpTransform = Extract<Transform, { Warp: unknown }>
 type ImageFill = Extract<FillNode, { Image: unknown }>['Image']
 type SpritesheetFill = Extract<FillNode, { Spritesheet: unknown }>['Spritesheet']
@@ -165,6 +168,7 @@ const FILL_OPTIONS: { value: FillKind; label: string }[] = [
   { value: 'Radial', label: 'Radial gradient' },
   { value: 'Conical', label: 'Conical gradient' },
   { value: 'Noise', label: 'Noise' },
+  { value: 'Cells', label: 'Cells' },
   { value: 'Image', label: 'Image' },
   { value: 'Spritesheet', label: 'Sprite sheet' },
 ]
@@ -271,6 +275,15 @@ const NOISE_STYLE_NOTES: Record<NoiseStyle, string> = {
   Turbulent: 'Mostly low with soft bright billows, for fire and churning smoke.',
   Ridged: 'Thin bright veins, for lightning, arcs, and marble.',
 }
+const CELL_STYLE_OPTIONS: { value: CellStyle; label: string }[] = [
+  { value: 'Edges', label: 'Edges' },
+  { value: 'Value', label: 'Value' },
+]
+/** What each cell style looks like, under its picker */
+const CELL_STYLE_NOTES: Record<CellStyle, string> = {
+  Edges: 'Bright where cells meet and dark in their middles. Two stops close together near the end make thin lines, for cracks and scales.',
+  Value: 'A flat random shade in each cell, for mosaic and stained glass.',
+}
 /** Most octaves a noise fill sums, as in the engine */
 const MAX_OCTAVES = 8
 const IMAGE_SIZE_OPTIONS: { value: ImageSize; label: string }[] = [
@@ -305,7 +318,7 @@ const SHAPE_ICONS: Record<RegionKind, Icon> = {
   Bezier: icons.Spline,
   Graph: icons.Network,
 }
-const FILL_ICONS: Record<FillKind, Icon> = { Solid: icons.PaintBucket, Linear: icons.Blend, Radial: icons.Blend, Conical: icons.Blend, Noise: icons.Cloud, Image: icons.ImageIcon, Spritesheet: icons.ImageIcon }
+const FILL_ICONS: Record<FillKind, Icon> = { Solid: icons.PaintBucket, Linear: icons.Blend, Radial: icons.Blend, Conical: icons.Blend, Noise: icons.Cloud, Cells: icons.Hexagon, Image: icons.ImageIcon, Spritesheet: icons.ImageIcon }
 /** A transform's or an adjust's icon says which kind it is, in place of where its value comes from */
 const MODIFIER_ICONS: Record<TransformKind | AdjustKind, Icon> = {
   Translate: icons.Move,
@@ -938,11 +951,11 @@ function Controls(props: { class?: string; children: JSX.Element }) {
   return <span class={props.class ? `scene-tree-controls ${props.class}` : 'scene-tree-controls'}>{props.children}</span>
 }
 
-/** Takes a node out of its list. Moving it is by dragging its row in the tree. */
+/** Takes a node out of its list, after asking. Moving it is by dragging its row in the tree. */
 function RemoveButton(props: { node: ConfigNode; place: ListPlace }) {
-  const tree = useContext(ConfigTreeContext)!
+  const menu = useContext(LayerMenuContext)!
   return (
-    <button type="button" class="scene-icon-button" aria-label={`Remove ${props.node.label}`} title="Remove" disabled={props.place.canRemove === false} onClick={() => tree.remove(props.place)}>
+    <button type="button" class="scene-icon-button" aria-label={`Remove ${props.node.label}`} title="Remove" disabled={props.place.canRemove === false} onClick={() => menu.remove(props.node.id)}>
       <icons.X aria-hidden="true" />
     </button>
   )
@@ -1526,11 +1539,12 @@ const fillKind = (lens: Lens<Fill>): FillKind => {
   if ('Solid' in current) return 'Solid'
   if ('Gradient' in current) return current.Gradient.style
   if ('Noise' in current) return 'Noise'
+  if ('Cells' in current) return 'Cells'
   return 'Image' in current ? 'Image' : 'Spritesheet'
 }
 
-/** A gradient's or a noise's stops, which carry over when switching between the two */
-const stopsOf = (node: FillNode) => ('Gradient' in node ? node.Gradient.stops : 'Noise' in node ? node.Noise.stops : undefined)
+/** A gradient's, a noise's, or cells' stops, which carry over when switching between them */
+const stopsOf = (node: FillNode) => ('Gradient' in node ? node.Gradient.stops : 'Noise' in node ? node.Noise.stops : 'Cells' in node ? node.Cells.stops : undefined)
 
 /** What a fill is. A solid's color is under it, as is an animated image's frame. */
 function FillKindPicker(props: { node: Extract<ConfigNode, { kind: 'fill' }> }) {
@@ -1558,6 +1572,13 @@ function FillKindPicker(props: { node: Extract<ConfigNode, { kind: 'fill' }> }) 
           { at: { Fixed: 1 }, color: color ?? { Fixed: WHITE } },
         ]
         base().set({ Noise: { scale: { Fixed: 0.25 }, octaves: 3, evolution: { Fixed: 0 }, seed: randomSeed(), stops } })
+      } else if (next === 'Cells') {
+        // dark until close to an edge, then the color, so a solid turned into cells is a web of its color
+        const stops = stopsOf(current) ?? [
+          { at: { Fixed: 0.7 }, color: { Fixed: BLACK } },
+          { at: { Fixed: 1 }, color: color ?? { Fixed: WHITE } },
+        ]
+        base().set({ Cells: { scale: { Fixed: 0.25 }, jitter: { Fixed: 1 }, evolution: { Fixed: 0 }, seed: randomSeed(), stops } })
       } else if ('Gradient' in current) {
         base().set({ Gradient: { ...current.Gradient, style: next } })
       } else {
@@ -1586,6 +1607,9 @@ function FillFields(props: { lens: Lens<Fill> }) {
       <Match when={'Noise' in base.get()}>
         <NoiseEditor lens={variant(base, 'Noise')} />
       </Match>
+      <Match when={'Cells' in base.get()}>
+        <CellsEditor lens={variant(base, 'Cells')} />
+      </Match>
       <Match when={'Image' in base.get()}>
         <ImageEditor lens={variant(base, 'Image')} />
       </Match>
@@ -1613,6 +1637,23 @@ function NoiseEditor(props: { lens: Lens<NoiseFill> }) {
         <icons.Dices aria-hidden="true" /> New pattern
       </button>
       <p class="scene-note">Evolution changes the noise in place and loops at every whole number, so taking it from 0 to 1 over the timeline repeats seamlessly. A Translate scrolls it instead.</p>
+    </>
+  )
+}
+
+/** Cells' style, and a new pattern, as for noise */
+function CellsEditor(props: { lens: Lens<CellsFill> }) {
+  const style = () => props.lens.get().style ?? 'Edges'
+  return (
+    <>
+      <FieldRow label="Style">
+        <Dropdown label="Style" options={CELL_STYLE_OPTIONS} value={style()} onChange={(next) => field(props.lens, 'style').set(next === 'Edges' ? undefined : next)} />
+      </FieldRow>
+      <span class="scene-note">{CELL_STYLE_NOTES[style()]}</span>
+      <button type="button" class="scene-button" title="Pick different cells at random, keeping these settings" onClick={() => field(props.lens, 'seed').set(randomSeed())}>
+        <icons.Dices aria-hidden="true" /> New pattern
+      </button>
+      <p class="scene-note">Jitter takes the cells from a grid of squares at 0 to fully random at 1. Evolution moves each cell around a small circle and loops at every whole number, so taking it from 0 to 1 over the timeline repeats seamlessly.</p>
     </>
   )
 }
