@@ -99,14 +99,14 @@ pub enum ShapeNode {
     flare: Prop<f32>,
   },
   /// A line across a box `width` by `height`, left to right, crossing from its bottom to its top and back `runs` times
-  /// in the way its `form` says. `runs` is truncated to a whole number. Like a
+  /// in the way its `style` says. `runs` is truncated to a whole number. Like a
   /// [`ShapeNode::Polyline`], it has no inside, and a stroke draws it.
   Wave {
     width: Prop<f32>,
     height: Prop<f32>,
     runs: Prop<f32>,
     #[serde(default)]
-    form: WaveForm,
+    style: WaveStyle,
   },
   /// `text` in the font named `font`, in a box `width` by `height` around the origin. `size` is the font's em. Lines
   /// break at line breaks, and between words where the next would run past the box, or are cut short with an ellipsis
@@ -137,7 +137,7 @@ pub enum ShapeNode {
 /// How a [`ShapeNode::Wave`] crosses from one side of its box to the other
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub enum WaveForm {
+pub enum WaveStyle {
   /// Easing off at each side, as a sine wave does
   #[default]
   Smooth,
@@ -717,8 +717,8 @@ impl ShapeNode {
         turns.resolve(env).clamp(0.0, MAX_TURNS),
         flare.resolve(env).max(0.0),
       ),
-      Self::Wave { runs, form, .. } => {
-        wave_line(self.reach(env), whole_count(runs, MAX_RUNS, env), *form)
+      Self::Wave { runs, style, .. } => {
+        wave_line(self.reach(env), whole_count(runs, MAX_RUNS, env), *style)
       }
     }
   }
@@ -731,7 +731,7 @@ impl ShapeNode {
       | Self::Bezier { .. }
       | Self::Spiral { .. }
       | Self::Wave {
-        form: WaveForm::Smooth,
+        style: WaveStyle::Smooth,
         ..
       } => Contour::curved(self.outline(env), !self.is_open()),
       _ => Contour::straight(self.outline(env), !self.is_open()),
@@ -1272,12 +1272,12 @@ fn spiral_line(radius: f32, turns: f32, flare: f32) -> Vec<Vec2> {
 }
 
 /// A [`ShapeNode::Wave`]'s line across a box out to `reach` either side of the origin, starting at its bottom left
-fn wave_line(reach: Vec2, runs: u32, form: WaveForm) -> Vec<Vec2> {
+fn wave_line(reach: Vec2, runs: u32, style: WaveStyle) -> Vec<Vec2> {
   if runs == 0 {
     return Vec::new();
   }
   let bottom_first = |run: u32| if run % 2 == 0 { reach.y } else { -reach.y };
-  if form == WaveForm::Square {
+  if style == WaveStyle::Square {
     // each run is a column, the first and last on the box's sides, joined along them
     return (0..runs)
       .flat_map(|run| {
@@ -1300,8 +1300,8 @@ fn wave_line(reach: Vec2, runs: u32, form: WaveForm) -> Vec<Vec2> {
   let mut points = vec![side(0)];
   for run in 0..runs {
     let (from, to) = (side(run), side(run + 1));
-    match form {
-      WaveForm::Smooth => points.extend((1..=WAVE_STEPS).map(|step| {
+    match style {
+      WaveStyle::Smooth => points.extend((1..=WAVE_STEPS).map(|step| {
         let t = step as f32 / WAVE_STEPS as f32;
         let eased = (1.0 - (std::f32::consts::PI * t).cos()) / 2.0;
         Vec2::new(
@@ -1309,7 +1309,7 @@ fn wave_line(reach: Vec2, runs: u32, form: WaveForm) -> Vec<Vec2> {
           from.y + (to.y - from.y) * eased,
         )
       })),
-      WaveForm::Zigzag | WaveForm::Square => points.push(to),
+      WaveStyle::Zigzag | WaveStyle::Square => points.push(to),
     }
   }
   points
@@ -2457,36 +2457,36 @@ mod tests {
 
   #[test]
   fn a_wave_crosses_its_box_its_number_of_runs_in_its_form() {
-    let wave = |form| {
+    let wave = |style| {
       stroked(
         ShapeNode::Wave {
           width: 10.0.into(),
           height: 4.0.into(),
           runs: 2.5.into(),
-          form,
+          style,
         },
         1.0,
         StrokeAlign::Centered,
       )
     };
-    for form in [WaveForm::Smooth, WaveForm::Zigzag, WaveForm::Square] {
-      let wave = wave(form);
+    for style in [WaveStyle::Smooth, WaveStyle::Zigzag, WaveStyle::Square] {
+      let wave = wave(style);
       // from the bottom left, up to the top in the middle, and back down at the right
-      assert_eq!(banded(&wave, -5.0, 2.0, 0.0), 1.0, "{form:?}");
-      assert_eq!(banded(&wave, 0.0, -2.0, 0.0), 1.0, "{form:?}");
-      assert_eq!(banded(&wave, 5.0, 2.0, 0.0), 1.0, "{form:?}");
-      assert_eq!(banded(&wave, 0.0, 2.0, 0.0), 0.0, "{form:?}");
+      assert_eq!(banded(&wave, -5.0, 2.0, 0.0), 1.0, "{style:?}");
+      assert_eq!(banded(&wave, 0.0, -2.0, 0.0), 1.0, "{style:?}");
+      assert_eq!(banded(&wave, 5.0, 2.0, 0.0), 1.0, "{style:?}");
+      assert_eq!(banded(&wave, 0.0, 2.0, 0.0), 0.0, "{style:?}");
     }
     // a square wave's runs are columns, the first up its left side and the last down its right, joined along the top
-    let square = wave(WaveForm::Square);
+    let square = wave(WaveStyle::Square);
     assert_eq!(banded(&square, -5.0, 0.0, 0.0), 1.0);
     assert_eq!(banded(&square, 5.0, 0.0, 0.0), 1.0);
     assert_eq!(banded(&square, -2.5, 0.0, 0.0), 0.0);
     // with nothing leading into it or out of it along the bottom
     assert_eq!(banded(&square, -2.5, 2.0, 0.0), 0.0);
     // where a zigzag goes straight across
-    assert_eq!(banded(&wave(WaveForm::Zigzag), -2.5, 0.0, 0.0), 1.0);
-    assert_eq!(banded(&wave(WaveForm::Zigzag), -1.0, 2.0, 0.0), 0.0);
+    assert_eq!(banded(&wave(WaveStyle::Zigzag), -2.5, 0.0, 0.0), 1.0);
+    assert_eq!(banded(&wave(WaveStyle::Zigzag), -1.0, 2.0, 0.0), 0.0);
   }
 
   #[test]

@@ -5,4 +5,4 @@ import type { Curve } from "./Curve";
  * The shape of one wave of a [`Modulator`]: the attack alone over the whole wave, or the attack over its first half
  * and the decay over its second
  */
-export type Envelope = { attack: Curve, decay?: Curve, };
+export type Waveform = { attack: Curve, decay?: Curve, };

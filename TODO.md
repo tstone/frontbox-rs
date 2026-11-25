@@ -30,9 +30,8 @@
 
 ### Scenes/Editor
 
-- New Prop type: Envelope - follows the rise/fall of a sound
 - Plug in custom shapes or graphics with their own settings (e.g. a kinematics/skeleton extension)
-- Change sweep to, instead of having a nested line/shape, you choose to use an existing one.
+- Change sweep to, instead of having a nested line/shape, you choose to use an existing one. (and add a ping-pong for lines)
 - Graph algorithms have a "Reverse" option to perform the algo in reverse (ie. calculate then play backwards)
 - Changing a sound's volume while it plays (fades, modulators). Scene sound volume is a fixed number for now, as sounds are fire-and-forget; kira's `set_volume` on a kept handle could do it, but it may not belong in the scene.
 - Ability to compose LightQ in editor (are Reverse, Take, etc. still needed?)

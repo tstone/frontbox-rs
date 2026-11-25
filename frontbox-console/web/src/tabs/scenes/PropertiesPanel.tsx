@@ -34,7 +34,7 @@ import type { Traversal } from '../../types/generated/Traversal'
 import type { TraversalAlgorithm } from '../../types/generated/TraversalAlgorithm'
 import type { TextOverflow } from '../../types/generated/TextOverflow'
 import type { VerticalAlign } from '../../types/generated/VerticalAlign'
-import type { WaveForm } from '../../types/generated/WaveForm'
+import type { WaveStyle } from '../../types/generated/WaveStyle'
 import {
   algorithmKind,
   ancestry,
@@ -198,9 +198,9 @@ const TEMPLATES: ShapeOption[] = [
   { value: 'Propeller', label: 'Propeller', group: 'Templates' },
   { value: 'Triangle', label: 'Triangle', group: 'Templates' },
 ]
-/** The waves set up in a form other than the smooth one they start in */
-const WAVE_TEMPLATES: Partial<Record<TemplateKind, WaveForm>> = { Zigzag: 'Zigzag', Serpentine: 'Square' }
-/** What has no inside and is drawn by a stroke, including the waves set up in each form */
+/** The waves set up in a style other than the smooth one they start in */
+const WAVE_TEMPLATES: Partial<Record<TemplateKind, WaveStyle>> = { Zigzag: 'Zigzag', Serpentine: 'Square' }
+/** What has no inside and is drawn by a stroke, including the waves set up in each style */
 const LINES: ShapeOption[] = ([
   { value: 'Polyline', label: 'Line' },
   { value: 'Bezier', label: 'Curve' },
@@ -282,7 +282,7 @@ const TEXT_ALIGN_OPTIONS: { value: TextAlign; label: string }[] = [
   { value: 'Center', label: 'Center' },
   { value: 'Right', label: 'Right' },
 ]
-const WAVE_FORM_OPTIONS: { value: WaveForm; label: string }[] = [
+const WAVE_STYLE_OPTIONS: { value: WaveStyle; label: string }[] = [
   { value: 'Smooth', label: 'Smooth' },
   { value: 'Zigzag', label: 'Zigzag' },
   { value: 'Square', label: 'Square (serpentine)' },
@@ -1204,8 +1204,8 @@ function StrokeFields(props: { node: Extract<ConfigNode, { kind: 'stroke' }> }) 
 function WaveFields(props: { lens: Lens<Shape> }) {
   const wave = () => variant(field(props.lens, 'base') as Lens<ShapeNode>, 'Wave')
   return (
-    <FieldRow label="Form">
-      <Dropdown label="Form" options={WAVE_FORM_OPTIONS} value={wave().get().form} onChange={(form) => field(wave(), 'form').set(form)} />
+    <FieldRow label="Style">
+      <Dropdown label="Style" options={WAVE_STYLE_OPTIONS} value={wave().get().style} onChange={(style) => field(wave(), 'style').set(style)} />
     </FieldRow>
   )
 }
@@ -1921,8 +1921,8 @@ function ShapeKindPicker(props: { node: Extract<ConfigNode, { kind: 'region' | '
     // one shape turned into another takes up the same room
     const size = shapeSize(base().get(), scene.get())
     if (!isTemplate(next)) return base().set(sizedShape(next, size))
-    const form = WAVE_TEMPLATES[next]
-    if (form) return base().set(waveShape(size, form))
+    const style = WAVE_TEMPLATES[next]
+    if (style) return base().set(waveShape(size, style))
     // a template's copies are made before the shape is placed, in place of any it had
     const template = templateShape(next, Math.max(...size))
     const placing = (current.transform ?? []).filter((transform) => !COPY_KINDS.some((copy) => copy in transform))
@@ -2053,8 +2053,8 @@ function templateShape(kind: TemplateKind, across: number): { base: ShapeNode; t
   const length = across / 2
   // a star of one leg, pointing up from its base on the origin
   const triangle = (width: number): ShapeNode => ({ Star: { radius: { Fixed: length }, legs: { Fixed: 1 }, leg_width: { Fixed: width } } })
-  const form = WAVE_TEMPLATES[kind]
-  if (form) return { base: waveShape([across, across], form), transform: [] }
+  const style = WAVE_TEMPLATES[kind]
+  if (style) return { base: waveShape([across, across], style), transform: [] }
   if (kind === 'Triangle') return { base: triangle(TRIANGLE_WIDTH), transform: [] }
   if (kind === 'Pinwheel') {
     // its blades are triangles with their tips together
@@ -2109,9 +2109,9 @@ function sizedShape(kind: Exclude<ShapeKind, 'None'>, [width, height]: Vec2): Sh
   return { Polygon: { points: corners.map((corner) => ({ Fixed: corner })) } }
 }
 
-/** A wave this wide and tall, in `form` */
-function waveShape([width, height]: Vec2, form: WaveForm): ShapeNode {
-  return { Wave: { width: { Fixed: width }, height: { Fixed: height }, runs: { Fixed: RUNS.rest! }, form } }
+/** A wave this wide and tall, in `style` */
+function waveShape([width, height]: Vec2, style: WaveStyle): ShapeNode {
+  return { Wave: { width: { Fixed: width }, height: { Fixed: height }, runs: { Fixed: RUNS.rest! }, style } }
 }
 
 /** How wide and tall a shape is in its own space */

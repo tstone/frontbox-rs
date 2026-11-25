@@ -282,13 +282,16 @@ async fn add_content_image(
     Ok(Err(err)) => {
       let status = match err {
         ContentError::Taken(_) | ContentError::NoFolder => StatusCode::CONFLICT,
-        ContentError::Write { .. } | ContentError::Read { .. } | ContentError::ReadFont { .. } => {
-          StatusCode::INTERNAL_SERVER_ERROR
-        }
+        ContentError::Write { .. }
+        | ContentError::Read { .. }
+        | ContentError::ReadFont { .. }
+        | ContentError::ReadSound { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         ContentError::BadName(_)
         | ContentError::Decode { .. }
         | ContentError::BadFontName(_)
-        | ContentError::NotAFont(_) => StatusCode::UNPROCESSABLE_ENTITY,
+        | ContentError::NotAFont(_)
+        | ContentError::BadSoundName(_)
+        | ContentError::NotASound { .. } => StatusCode::UNPROCESSABLE_ENTITY,
       };
       (status, err.to_string()).into_response()
     }

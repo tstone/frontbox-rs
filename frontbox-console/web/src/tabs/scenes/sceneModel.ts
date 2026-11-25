@@ -32,7 +32,7 @@ import type { VisitResponse } from '../../types/generated/VisitResponse'
 import type { Transform } from '../../types/generated/Transform'
 import type { Traversal } from '../../types/generated/Traversal'
 import type { TraversalAlgorithm } from '../../types/generated/TraversalAlgorithm'
-import type { Envelope } from '../../types/generated/Envelope'
+import type { Waveform } from '../../types/generated/Waveform'
 import { curveHeight } from './curves'
 
 export type Vec2 = [number, number]
@@ -240,7 +240,7 @@ export function withoutValue(scene: Scene, name: string): Scene {
 }
 
 /** A modulator before it's been changed: one linear rise per cycle */
-export const newModulator = (): Modulator => ({ envelope: { attack: 'Linear' }, rate: 1 })
+export const newModulator = (): Modulator => ({ waveform: { attack: 'Linear' }, rate: 1 })
 
 /** `Modulator 1`, or the next number the scene hasn't used */
 function freshModulatorName(scene: Scene) {
@@ -330,8 +330,8 @@ function spreadAt(spread: Spread, height: number): SceneValue {
   return hueColor(at(spread.Color.hue))
 }
 
-/** An envelope's height at `position` through its wave, 0 to 1, as `Envelope::sample` in frontbox-gfx has it */
-export function envelopeHeight({ attack, decay }: Envelope, position: number): number {
+/** An waveform's height at `position` through its wave, 0 to 1, as `Waveform::sample` in frontbox-gfx has it */
+export function waveformHeight({ attack, decay }: Waveform, position: number): number {
   if (!decay) return curveHeight(attack, position)
   return position < 0.5 ? curveHeight(attack, position * 2) : curveHeight(decay, position * 2 - 1)
 }
@@ -351,7 +351,7 @@ export function fullSpread(like: SceneValue, [x, y]: Ranges): Spread {
   return { Color: { hue: [HUE.min, HUE.max] } }
 }
 
-/** The value a prop shows with no game running: the variable's default, a track's first key, the middle of a spread, where a wave starts, where a path was moved to, or a visit response at rest */
+/** The value a prop shows with no game running: the variable's default, a track's first key, the middle of a spread, where a wave starts, where a path was moved to, a visit response at rest, or an envelope at rest */
 export function startingValue<T extends SceneValue>(prop: Prop<T>, scene: Scene, fallback: T, depth = 0): T {
   if ('Fixed' in prop) return prop.Fixed
   if ('Visit' in prop) return prop.Visit.from
@@ -362,8 +362,10 @@ export function startingValue<T extends SceneValue>(prop: Prop<T>, scene: Scene,
     const modulator = scene.modulators?.[name]
     if (!modulator || !spreadFits(spread, fallback)) return fallback
     const position = wavePosition(modulator, startingValue(phase, scene, 0), 0)
-    return asLike(spreadAt(spread, envelopeHeight(modulator.envelope, position)), fallback)
+    return asLike(spreadAt(spread, waveformHeight(modulator.waveform, position)), fallback)
   }
+  // an envelope rests at the low end of its spread, where its sound is silent
+  if ('ExternalEnvelope' in prop) return spreadFits(prop.ExternalEnvelope.spread, fallback) ? asLike(spreadAt(prop.ExternalEnvelope.spread, 0), fallback) : fallback
   if ('Sweep' in prop) {
     const moved = prop.Sweep.path.transform?.find((transform) => 'Translate' in transform)
     return moved && 'Translate' in moved ? (startingValue(moved.Translate, scene, fallback as Vec2) as T) : fallback
@@ -805,10 +807,11 @@ function held(prop: Prop<SceneValue>, scene: Scene): Prop<SceneValue> {
     const { modulator: name, spread, phase } = prop.Modulated
     const modulator = scene.modulators?.[name]
     if (!modulator) return prop
-    const height = envelopeHeight(modulator.envelope, wavePosition(modulator, startingValue(phase, scene, 0), 0))
+    const height = waveformHeight(modulator.waveform, wavePosition(modulator, startingValue(phase, scene, 0), 0))
     return { Random: { picks: [newPick(0)], spread: pointOf(spread, height), seed: 0 } }
   }
   if ('Random' in prop) return { Random: { ...prop.Random, spread: pointOf(prop.Random.spread, 0.5) } }
+  if ('ExternalEnvelope' in prop) return { Random: { picks: [newPick(0)], spread: pointOf(prop.ExternalEnvelope.spread, 0), seed: 0 } }
   return 'Keyframes' in prop && prop.Keyframes.keys.length > 0 ? { Fixed: prop.Keyframes.keys[0].value } : prop
 }
 
@@ -848,6 +851,43 @@ function sceneFile({ layers, sounds, ...scene }: Scene): SceneFile {
 /** What to call a sound layer: its name, or the file it plays without the folder and extension */
 export const soundLabel = (layer: SoundLayer, index: number) =>
   layer.name ?? (layer.sound.split('/').at(-1)!.replace(/\.[^.]+$/, '') || `Sound ${index + 1}`)
+
+/** The props in a scene following sound layer `name` with an envelope, named values included */
+function envelopeUsers(scene: Lens<Scene>, name: string) {
+  return propUses(scene).filter(({ lens }) => {
+    const prop = lens.get()
+    return 'ExternalEnvelope' in prop && prop.ExternalEnvelope.source.Sound.layer === name
+  })
+}
+
+/**
+ * A scene whose sound layer at `index` has a name, for an envelope to follow it by, and that name. A layer with a name
+ * keeps it, and one without is named what it's called, unlike any other sound layer's name.
+ */
+export function withSoundNamed(scene: Scene, index: number): [Scene, string] {
+  const sound = scene.sounds[index]
+  if (sound.name !== undefined) return [scene, sound.name]
+  const name = freshName(soundLabel(sound, index), (taken) => scene.sounds.some((other) => other.name === taken))
+  return [{ ...scene, sounds: scene.sounds.map((other, at) => (at === index ? { ...other, name } : other)) }, name]
+}
+
+/**
+ * A scene with its sound layer at `index` renamed `to`, or left unnamed for `undefined`, and the envelopes following it
+ * following. Envelopes keep following the old name when it's taken away or `to` is another sound layer's name, as there's
+ * then no saying which they mean.
+ */
+export function withSoundRenamed(scene: Scene, index: number, to: string | undefined): Scene {
+  const from = scene.sounds[index].name
+  let renamed: Scene = { ...scene, sounds: scene.sounds.map((sound, at) => (at === index ? { ...sound, name: to } : sound)) }
+  if (from === undefined || to === undefined || from === to || scene.sounds.some((sound) => sound.name === to)) return renamed
+  const editing: Lens<Scene> = { get: () => renamed, set: (next) => (renamed = next) }
+  for (const { lens } of envelopeUsers(editing, from)) {
+    const prop = lens.get() as Extract<Prop<SceneValue>, { ExternalEnvelope: unknown }>
+    const { source } = prop.ExternalEnvelope
+    lens.set({ ExternalEnvelope: { ...prop.ExternalEnvelope, source: { Sound: { ...source.Sound, layer: to } } } })
+  }
+  return renamed
+}
 
 /** Where on the timeline a sound layer's sound would end if it weren't cut off, if `length` says how long the sound is */
 export const soundNaturalEnd = (layer: SoundLayer, length: number | null | undefined) => (length == null ? undefined : layer.start + length - (layer.skip ?? 0))
@@ -1114,6 +1154,8 @@ export const GROWTH_DENSITY: Range = { min: 0, max: 32, step: 1, rest: 4 }
 export const BRANCHING: Range = { ...UNIT, rest: 0.3 }
 /** Steps of a visit response's timing */
 export const STEPS: Range = { min: 0, max: 10, step: 0.1, rest: 0 }
+/** An envelope's attack or release, in seconds: fine enough for a few milliseconds */
+export const SLEW: Range = { min: 0, max: 2, step: 0.005, rest: 0 }
 /** Waves per scene cycle, at least one, as `MIN_RATE` in frontbox-gfx has it. Fractions carry a wave on across cycles. */
 export const WAVE_RATE: Range = { min: 1, max: 16, step: 0.25, rest: 1 }
 /** A fraction of a star's leg is dropped, so a spread goes one past the last, as it does for `frameRanges` */

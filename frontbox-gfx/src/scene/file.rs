@@ -390,14 +390,14 @@ mod tests {
     scene.modulators.insert(
       "pulse".into(),
       Modulator::new(
-        Envelope::new(Curve::EaseIn.reverse()).decay(Curve::BounceOut),
+        Waveform::new(Curve::EaseIn.reverse()).decay(Curve::BounceOut),
         2.0,
       ),
     );
     scene.modulators.insert(
       "back and forth".into(),
       Modulator::new(
-        Envelope::new(Curve::Linear).decay(Curve::Linear.reverse()),
+        Waveform::new(Curve::Linear).decay(Curve::Linear.reverse()),
         1.0,
       ),
     );
@@ -544,7 +544,7 @@ mod tests {
   fn modulated_props_read_and_write() {
     let source = r#"(
       timing: (duration: 2.0),
-      modulators: {"slow": (envelope: (attack: Reverse(EaseIn), decay: BounceOut), rate: 1.5)},
+      modulators: {"slow": (waveform: (attack: Reverse(EaseIn), decay: BounceOut), rate: 1.5)},
       layers: [(fill: (base: Solid(Modulated(
         modulator: "slow",
         spread: Color(hue: (0.0, 120.0)),
@@ -561,8 +561,8 @@ mod tests {
       (modulated.modulator.as_str(), &modulated.spread),
       ("slow", &spread)
     );
-    let envelope = Envelope::new(Curve::EaseIn.reverse()).decay(Curve::BounceOut);
-    assert_eq!(loaded.modulators["slow"], Modulator::new(envelope, 1.5));
+    let waveform = Waveform::new(Curve::EaseIn.reverse()).decay(Curve::BounceOut);
+    assert_eq!(loaded.modulators["slow"], Modulator::new(waveform, 1.5));
     let Prop::Keyframes(phase) = &*modulated.phase else {
       panic!("{written}");
     };
@@ -581,7 +581,7 @@ mod tests {
     let scene = load(
       r#"(
       timing: (duration: 1.0),
-      modulators: {"rise": (envelope: (attack: Linear), rate: 1.0)},
+      modulators: {"rise": (waveform: (attack: Linear), rate: 1.0)},
       layers: [(fill: (base: Solid(Modulated(
         modulator: "rise", spread: Color(hue: (0.0, 360.0)),
       ))))],
@@ -593,8 +593,8 @@ mod tests {
     };
     assert!(matches!(*modulated.phase, Prop::Fixed(0.0)));
     assert_eq!(
-      scene.modulators["rise"].envelope,
-      Envelope::new(Curve::Linear)
+      scene.modulators["rise"].waveform,
+      Waveform::new(Curve::Linear)
     );
     let written = save(&scene).unwrap();
     assert!(!written.contains("decay"), "{written}");

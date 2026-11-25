@@ -3,15 +3,17 @@ use serde::{Deserialize, Serialize};
 use crate::scene::layer::env;
 use crate::scene::sweep::only_for_positions;
 use crate::scene::{
-  Animatable, Env, Inputs, Keyframes, LayerFrame, Modulated, Random, Sweep, Value, VisitResponse,
+  Animatable, Env, ExternalEnvelope, Inputs, Keyframes, LayerFrame, Modulated, Random, Sweep,
+  Value, VisitResponse,
 };
 
 /// A value in a definition that can be fixed, read from a variable, keyframed, picked at random, moved in a wave, swept
-/// along a path, or set off by a traversal's visits
+/// along a path, set off by a traversal's visits, or made to follow something outside the graphics
 ///
 /// In RON: `Fixed(4.0)`, `Variable("size")`, `Keyframes((keys: [...]))`, `Random((picks: [...], spread: Float(0.0, 1.0)))`,
 /// `Modulated((modulator: "pulse", spread: Float(0.0, 1.0)))`, `Sweep((path: (base: Circle(radius: Fixed(5.0))), position: Variable("lap")))`,
-/// or `Visit((traversal: "bolt", from: 0.0, to: 1.0, smooth_out: 3.0))`. Files from before variables were named so can
+/// `Visit((traversal: "bolt", from: 0.0, to: 1.0, smooth_out: 3.0))`, or
+/// `ExternalEnvelope((source: Sound(layer: "hits"), spread: Float(0.0, 1.0), release: 0.15))`. Files from before variables were named so can
 /// say `Param` for `Variable`.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,6 +35,9 @@ pub enum Prop<T> {
   Sweep(Sweep),
   /// Responds to a traversal visiting the node being drawn, on a layer with a graph
   Visit(VisitResponse<T>),
+  /// Follows the rise and fall of something outside the graphics, as an envelope follower does, such as the loudness of
+  /// one of the scene's sounds
+  ExternalEnvelope(ExternalEnvelope),
 }
 
 impl<T> From<T> for Prop<T> {
@@ -47,7 +52,11 @@ impl<T> Prop<T> {
     match self {
       Self::Fixed(_) | Self::Variable(_) => false,
       Self::Sweep(sweep) => sweep.is_animated(),
-      Self::Keyframes(_) | Self::Random(_) | Self::Modulated(_) | Self::Visit(_) => true,
+      Self::Keyframes(_)
+      | Self::Random(_)
+      | Self::Modulated(_)
+      | Self::Visit(_)
+      | Self::ExternalEnvelope(_) => true,
     }
   }
 }
@@ -74,6 +83,7 @@ impl<T: Animatable> Prop<T> {
       Self::Modulated(modulated) => modulated.resolve(env),
       Self::Sweep(sweep) => T::from_point(sweep.resolve(env)).unwrap_or_default(),
       Self::Visit(response) => response.resolve(env),
+      Self::ExternalEnvelope(envelope) => envelope.resolve(env),
     }
   }
 
@@ -84,6 +94,7 @@ impl<T: Animatable> Prop<T> {
       Self::Variable(name) => inputs.variable(name, T::VARIABLE_TYPE),
       Self::Modulated(modulated) => modulated.phase.read_inputs(inputs),
       Self::Sweep(sweep) => sweep.read_inputs(inputs),
+      Self::ExternalEnvelope(envelope) => inputs.envelope(envelope.key()),
     }
   }
 }

@@ -7,13 +7,14 @@ import { Switch as Toggle } from '@ark-ui/solid/switch'
 import { SegmentGroup } from '@ark-ui/solid/segment-group'
 import { createContext, createMemo, createSignal, For, Index, Match, Show, Switch, useContext, type Accessor, type Signal } from 'solid-js'
 import ScenePortal, { layerColorClass, type LayerColor } from './ScenePortal'
-import { AudioWaveform, ChartSpline, Dices, Eye, EyeOff, Footprints, Orbit, Pin, Pipette, Plus, SlidersHorizontal, Variable, X } from '../../components/icons'
+import { AudioLines, AudioWaveform, ChartSpline, Dices, Eye, EyeOff, Footprints, Orbit, Pin, Pipette, Plus, SlidersHorizontal, Variable, X } from '../../components/icons'
 import type { Color } from '../../types/generated/Color'
 import { NAMED_COLORS } from '../../types/generated/namedColors'
 import type { Prop } from '../../types/generated/Prop'
 import type { RenderedShape } from '../../types/generated/RenderedShape'
 import type { Layer } from '../../types/generated/Layer'
 import type { Curve } from '../../types/generated/Curve'
+import type { ExternalEnvelope } from '../../types/generated/ExternalEnvelope'
 import type { Modulated } from '../../types/generated/Modulated'
 import type { Modulator } from '../../types/generated/Modulator'
 import type { Overlap } from '../../types/generated/Overlap'
@@ -23,7 +24,7 @@ import type { VisitResponse } from '../../types/generated/VisitResponse'
 import CurvePicker, { CurveGraph } from './CurvePicker'
 import { curveHeight, curveText, PLAIN_CURVES } from './curves'
 import NumberBox from './NumberBox'
-import { field, freshVariableName, fullSpread, HUE, item, newPick, newSweep, newVisit, poolOf, removed, unwrapValue, variableReads, spreadFits, startingValue, STEPS, variant, WAVE_RATE, withNewModulator, withVariable, withTiming, wrapValue, type Lens, type PropValue,type Range, type Ranges, type LayerSurfaces, type Scene, type SceneValue, type Selection, type Surface, type Vec2 } from './sceneModel'
+import { field, freshVariableName, fullSpread, HUE, item, newPick, newSweep, newVisit, poolOf, removed, SLEW, soundLabel, unwrapValue, variableReads, spreadFits, startingValue, STEPS, variant, WAVE_RATE, withNewModulator, withSoundNamed, withVariable, withTiming, wrapValue, type Lens, type PropValue,type Range, type Ranges, type LayerSurfaces, type Scene, type SceneValue, type Selection, type Surface, type Vec2 } from './sceneModel'
 
 /** The scene being edited, for fields whose edits reach past their own place in it */
 export const SceneContext = createContext<Lens<Scene>>()
@@ -556,8 +557,8 @@ export function ValueField(props: { label: string; lens: Lens<SceneValue>; range
   )
 }
 
-export type PropKind = 'Fixed' | 'Variable' | 'Keyframes' | 'Random' | 'Modulated' | 'Sweep' | 'Visit'
-const PROP_KINDS: PropKind[] = ['Fixed', 'Variable', 'Keyframes', 'Random', 'Modulated', 'Sweep', 'Visit']
+export type PropKind = 'Fixed' | 'Variable' | 'Keyframes' | 'Random' | 'Modulated' | 'Sweep' | 'Visit' | 'ExternalEnvelope'
+const PROP_KINDS: PropKind[] = ['Fixed', 'Variable', 'Keyframes', 'Random', 'Modulated', 'Sweep', 'Visit', 'ExternalEnvelope']
 
 export const PROP_KIND_LABELS: Record<PropKind, string> = {
   Fixed: 'Fixed',
@@ -567,6 +568,7 @@ export const PROP_KIND_LABELS: Record<PropKind, string> = {
   Modulated: 'Modulated',
   Sweep: 'Sweep',
   Visit: 'Visit',
+  ExternalEnvelope: 'Envelope',
 }
 
 /** A prop's icon says where its value comes from */
@@ -578,6 +580,7 @@ export const SOURCE_ICONS: Record<PropKind, typeof Pin> = {
   Modulated: AudioWaveform,
   Sweep: Orbit,
   Visit: Footprints,
+  ExternalEnvelope: AudioLines,
 }
 
 /** What each source does, in the menu that picks one */
@@ -589,6 +592,7 @@ const PROP_KIND_HINTS: Record<PropKind, string> = {
   Modulated: 'Moves back and forth in a wave',
   Sweep: 'Follows a path, drawn under it',
   Visit: 'Reacts when a traversal reaches a light',
+  ExternalEnvelope: "Follows the loudness of one of the scene's sounds",
 }
 
 export const propKind = (prop: Prop<SceneValue>) => Object.keys(prop)[0] as PropKind
@@ -605,7 +609,7 @@ type PropProps<T extends SceneValue> = {
 
 /**
  * A prop: whether it's fixed, read from a variable, keyframed, picked at random, moved in a wave, swept along a path,
- * or set off by visits, and the control for that. A sweep's path is under the prop's row in the tree, and selected there to edit it.
+ * set off by visits, or following a sound, and the control for that. A sweep's path is under the prop's row in the tree, and selected there to edit it.
  */
 export function PropField<T extends SceneValue>(
   props: PropProps<T> & {
@@ -679,6 +683,9 @@ export function PropField<T extends SceneValue>(
         <Match when={kind() === 'Visit'}>
           <VisitField label={props.label} ranges={props.ranges} lens={variant(props.lens as Lens<Prop<SceneValue>>, 'Visit')} />
         </Match>
+        <Match when={kind() === 'ExternalEnvelope'}>
+          <ExternalEnvelopeField label={props.label} ranges={props.ranges} fallback={props.fallback} lens={variant(props.lens as Lens<Prop<SceneValue>>, 'ExternalEnvelope')} />
+        </Match>
       </Switch>
     </div>
   )
@@ -697,10 +704,15 @@ export function PropSource<T extends SceneValue>(props: PropProps<T>) {
   const value = () => startingValue(prop(), scene.get(), props.fallback)
   // only a position can follow a path, though a scene that has one anywhere else can still be switched off it
   const isPosition = () => Array.isArray(props.fallback) && props.fallback.length === 2
-  // visits are only there to respond to in a layer with traversals
+  // visits are only there to respond to in a layer with traversals, and an envelope in a scene with sounds
   const traversals = useContext(TraversalsContext)
   const kinds = () =>
-    PROP_KINDS.filter((option) => (option !== 'Sweep' || isPosition() || kind() === 'Sweep') && (option !== 'Visit' || traversals().length > 0 || kind() === 'Visit'))
+    PROP_KINDS.filter(
+      (option) =>
+        (option !== 'Sweep' || isPosition() || kind() === 'Sweep') &&
+        (option !== 'Visit' || traversals().length > 0 || kind() === 'Visit') &&
+        (option !== 'ExternalEnvelope' || scene.get().sounds.length > 0 || kind() === 'ExternalEnvelope'),
+    )
 
   const choose = (next: PropKind) => {
     if (next === kind()) return
@@ -736,6 +748,12 @@ export function PropSource<T extends SceneValue>(props: PropProps<T>) {
     if (next === 'Visit') {
       scene.set(withTiming(scene.get()))
       props.lens.set({ Visit: newVisit(traversals()[0] ?? '', current, props.ranges) as VisitResponse<T> })
+    }
+    if (next === 'ExternalEnvelope') {
+      // follows the scene's first sound, which is given a name to be followed by if it has none
+      const [named, layer] = withSoundNamed(withTiming(scene.get()), 0)
+      scene.set(named)
+      props.lens.set({ ExternalEnvelope: { source: { Sound: { layer } }, spread: fullSpread(current, props.ranges), release: 0.1 } })
     }
   }
 
@@ -912,14 +930,53 @@ function ModulatedField(props: { label: string; lens: Lens<Modulated>; ranges: R
   )
 }
 
-/** One of the scene's modulators: its attack and decay, and how many times its wave goes by each cycle */
-export function ModulatorFields(props: { label: string; lens: Lens<Modulator> }) {
-  const envelope = field(props.lens, 'envelope')
+/**
+ * Which of the scene's sounds an envelope follows, the range it moves through, and how fast it can rise and fall.
+ * Following a sound that has no name gives it one, as an envelope follows a sound by its name.
+ */
+function ExternalEnvelopeField(props: { label: string; lens: Lens<ExternalEnvelope>; ranges: Ranges; fallback: SceneValue }) {
+  const scene = useScene()
+  const chosen = () => props.lens.get().source.Sound.layer
+  const sounds = () => scene.get().sounds
+  const index = () => sounds().findIndex((sound) => sound.name === chosen())
+  // one the scene doesn't have anymore stays chosen, so it can be seen and changed
+  const options = () => [
+    ...sounds().map((sound, at) => ({ value: String(at), label: soundLabel(sound, at) })),
+    ...(index() < 0 ? [{ value: 'missing', label: chosen() }] : []),
+  ]
+  const follow = (value: string) => {
+    if (value === 'missing') return
+    const [named, layer] = withSoundNamed(scene.get(), Number(value))
+    scene.set(named)
+    field(props.lens, 'source').set({ Sound: { ...props.lens.get().source.Sound, layer } })
+  }
+
   return (
     <>
-      <div class="scene-envelope">
-        <EnvelopeCurveField label={`${props.label} attack`} name="Attack" value={envelope.get().attack} onChange={field(envelope, 'attack').set} />
-        <EnvelopeCurveField optional label={`${props.label} decay`} name="Decay" value={envelope.get().decay} onChange={field(envelope, 'decay').set} />
+      <Dropdown label={`${props.label} sound`} options={options()} value={index() < 0 ? 'missing' : String(index())} onChange={follow} />
+      <Show when={index() < 0}>
+        <p class="scene-note scene-note-warn">The scene has no sound by that name, so this stays at the low end of its range.</p>
+      </Show>
+      <SpreadField label={props.label} ranges={props.ranges} like={props.fallback} lens={field(props.lens, 'spread')} />
+      <FieldRow label="Attack">
+        <NumberField label={`${props.label} attack`} range={SLEW} value={props.lens.get().attack ?? 0} onChange={(attack) => field(props.lens, 'attack').set(attack || undefined)} />
+      </FieldRow>
+      <FieldRow label="Release">
+        <NumberField label={`${props.label} release`} range={SLEW} value={props.lens.get().release ?? 0} onChange={(release) => field(props.lens, 'release').set(release || undefined)} />
+      </FieldRow>
+      <p class="scene-note">Moves from the low end of its range when the sound is silent to the high end at its loudest, wherever the sound is on the timeline. Attack and release are the fewest seconds it takes to rise all the way and fall all the way, smoothing out flicker. How loud the sound is set to play doesn't change it.</p>
+    </>
+  )
+}
+
+/** One of the scene's modulators: its attack and decay, and how many times its wave goes by each cycle */
+export function ModulatorFields(props: { label: string; lens: Lens<Modulator> }) {
+  const waveform = field(props.lens, 'waveform')
+  return (
+    <>
+      <div class="scene-waveform">
+        <WaveformCurveField label={`${props.label} attack`} name="Attack" value={waveform.get().attack} onChange={field(waveform, 'attack').set} />
+        <WaveformCurveField optional label={`${props.label} decay`} name="Decay" value={waveform.get().decay} onChange={field(waveform, 'decay').set} />
       </div>
       <FieldRow label="Rate">
         <NumberField label={`${props.label} rate`} range={WAVE_RATE} value={props.lens.get().rate} onChange={(rate) => field(props.lens, 'rate').set(Math.max(WAVE_RATE.min, rate))} />
@@ -932,13 +989,13 @@ export function ModulatorFields(props: { label: string; lens: Lens<Modulator> })
  * One curve of a wave drawn out, which opens the curves to pick from. Only a decay can be left out, which is what
  * `undefined` stands for: it shows as a box to add one, and once added has an X to remove it on hover.
  */
-function EnvelopeCurveField<T extends Curve | undefined>(props: { label: string; name: string; value: T; onChange: (value: T) => void; optional?: boolean }) {
+function WaveformCurveField<T extends Curve | undefined>(props: { label: string; name: string; value: T; onChange: (value: T) => void; optional?: boolean }) {
   return (
-    <div class="scene-envelope-part">
+    <div class="scene-waveform-part">
       <span class="scene-field-label">{props.name}</span>
       <div class="scene-curve-removable">
-        <CurvePicker class="scene-envelope-curve" label={props.label} value={props.value} onChange={(curve) => props.onChange(curve as T)}>
-          <Show when={props.value} fallback={<span class="scene-envelope-add">+</span>}>
+        <CurvePicker class="scene-waveform-curve" label={props.label} value={props.value} onChange={(curve) => props.onChange(curve as T)}>
+          <Show when={props.value} fallback={<span class="scene-waveform-add">+</span>}>
             {(curve) => <CurveGraph height={(phase) => curveHeight(curve(), phase)} />}
           </Show>
         </CurvePicker>

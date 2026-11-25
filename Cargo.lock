@@ -1217,6 +1217,7 @@ dependencies = [
  "palette",
  "ron",
  "serde",
+ "symphonia",
  "ts-rs",
 ]
 

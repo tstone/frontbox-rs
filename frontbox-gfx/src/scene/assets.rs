@@ -1,19 +1,21 @@
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 
-use crate::scene::{Font, Picture};
+use crate::scene::{EnvelopeKey, Font, Picture, PreparedEnvelope};
 
 static NONE: LazyLock<Assets> = LazyLock::new(Assets::default);
 
-/// Decoded images and loaded fonts by name, passed to sampling through
+/// Decoded images and loaded fonts by name, and prepared external envelopes, passed to sampling through
 /// [`LayerFrame::assets`](crate::scene::LayerFrame::assets)
 ///
 /// Scenes refer to images and fonts by name only. [`Content::assets_for`](crate::scene::Content::assets_for) builds this
-/// for a scene. Clones share pixel and font data.
+/// for a scene's layers, and the scene adds the envelopes they follow, as only it knows where its sounds play. Clones
+/// share pixel, font, and envelope data.
 #[derive(Debug, Clone, Default)]
 pub struct Assets {
   pictures: HashMap<String, Arc<Picture>>,
   fonts: HashMap<String, Font>,
+  envelopes: HashMap<EnvelopeKey, Arc<PreparedEnvelope>>,
 }
 
 impl Assets {
@@ -34,11 +36,19 @@ impl Assets {
     self.fonts.insert(name.into(), font);
   }
 
+  pub fn insert_envelope(&mut self, key: EnvelopeKey, envelope: impl Into<Arc<PreparedEnvelope>>) {
+    self.envelopes.insert(key, envelope.into());
+  }
+
   pub fn picture(&self, name: &str) -> Option<&Picture> {
     self.pictures.get(name).map(Arc::as_ref)
   }
 
   pub fn font(&self, name: &str) -> Option<&Font> {
     self.fonts.get(name)
+  }
+
+  pub fn envelope(&self, key: &EnvelopeKey) -> Option<&PreparedEnvelope> {
+    self.envelopes.get(key).map(Arc::as_ref)
   }
 }

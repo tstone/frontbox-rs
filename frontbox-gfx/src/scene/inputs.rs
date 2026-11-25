@@ -1,14 +1,16 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use crate::scene::Value;
+use crate::scene::{EnvelopeKey, Value};
 
-/// The variables a scene's layers read from the code playing them. Each layer adds what it reads with
-/// [`Layer::read_inputs`](crate::scene::Layer::read_inputs).
+/// What a scene's layers read from outside them: variables from the code playing them, and what their external
+/// envelopes follow. Each layer adds what it reads with [`Layer::read_inputs`](crate::scene::Layer::read_inputs).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Inputs {
   /// Each variable by name, with every type it's read as
   pub variables: BTreeMap<String, BTreeSet<VariableType>>,
+  /// Each [`ExternalEnvelope`](crate::scene::ExternalEnvelope)'s source and slew, which the scene's assets prepare it by
+  pub envelopes: BTreeSet<EnvelopeKey>,
 }
 
 impl Inputs {
@@ -22,6 +24,10 @@ impl Inputs {
       .entry(name.into())
       .or_default()
       .insert(read_as);
+  }
+
+  pub(crate) fn envelope(&mut self, key: EnvelopeKey) {
+    self.envelopes.insert(key);
   }
 }
 

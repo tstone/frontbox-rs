@@ -51,11 +51,11 @@ pub fn no_modulators() -> &'static Modulators {
 /// [`Keyframes`](crate::scene::Keyframes) are in seconds, so a wave made of keys drifts when the scene's duration
 /// changes. This keeps the same number of waves per cycle at any duration.
 ///
-/// In RON: `(envelope: (attack: (curve: Linear)), rate: 2.0)`
+/// In RON: `(waveform: (attack: (curve: Linear)), rate: 2.0)`
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Modulator {
-  pub envelope: Envelope,
+  pub waveform: Waveform,
   /// Waves per scene cycle, at least 1. A whole number starts each cycle at the same point in the wave. A fraction
   /// carries on across cycles, so 1.5 starts every other cycle halfway through a wave.
   pub rate: f32,
@@ -65,8 +65,8 @@ pub struct Modulator {
 pub const MIN_RATE: f32 = 1.0;
 
 impl Modulator {
-  pub fn new(envelope: Envelope, rate: f32) -> Self {
-    Self { envelope, rate }
+  pub fn new(waveform: Waveform, rate: f32) -> Self {
+    Self { waveform, rate }
   }
 
   /// Checks that its wave goes by at least once a cycle, so every cycle shows the whole of it
@@ -81,7 +81,7 @@ impl Modulator {
 
   /// The wave's height at `env`, shifted along by `phase`. Usually 0 to 1, though some curves overshoot.
   fn height(&self, env: &Env, phase: f32) -> f32 {
-    self.envelope.sample(self.position(env, phase))
+    self.waveform.sample(self.position(env, phase))
   }
 
   /// Where in the current wave `env` is, 0 to 1. Counts the cycles already played, so a fractional rate carries on.
@@ -98,14 +98,14 @@ impl Modulator {
 /// and the decay over its second
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Envelope {
+pub struct Waveform {
   pub attack: Curve,
   #[serde(default, skip_serializing_if = "Option::is_none")]
   #[cfg_attr(feature = "ts", ts(optional))]
   pub decay: Option<Curve>,
 }
 
-impl Envelope {
+impl Waveform {
   pub fn new(attack: Curve) -> Self {
     Self {
       attack,
@@ -152,19 +152,19 @@ mod tests {
   }
 
   /// One modulator, named `WAVE`
-  fn modulators(envelope: Envelope, rate: f32) -> Modulators {
-    Modulators::from([(WAVE.into(), Modulator::new(envelope, rate))])
+  fn modulators(waveform: Waveform, rate: f32) -> Modulators {
+    Modulators::from([(WAVE.into(), Modulator::new(waveform, rate))])
   }
 
-  fn rising() -> Envelope {
-    Envelope::new(Curve::Linear)
+  fn rising() -> Waveform {
+    Waveform::new(Curve::Linear)
   }
 
-  fn falling() -> Envelope {
-    Envelope::new(Curve::Linear.reverse())
+  fn falling() -> Waveform {
+    Waveform::new(Curve::Linear.reverse())
   }
 
-  fn up_and_down() -> Envelope {
+  fn up_and_down() -> Waveform {
     rising().decay(Curve::Linear.reverse())
   }
 
@@ -181,8 +181,8 @@ mod tests {
     modulated.resolve(&env)
   }
 
-  fn samples(envelope: Envelope) -> [f32; 4] {
-    let modulators = modulators(envelope, 1.0);
+  fn samples(waveform: Waveform) -> [f32; 4] {
+    let modulators = modulators(waveform, 1.0);
     [0.0, 1.0, 2.0, 3.0].map(|time| at(&modulated(), &modulators, time))
   }
 
@@ -190,7 +190,7 @@ mod tests {
   fn an_attack_alone_takes_the_whole_wave() {
     assert_eq!(samples(rising()), [10.0, 12.5, 15.0, 17.5]);
     assert_eq!(
-      samples(Envelope::new(Curve::EaseIn)),
+      samples(Waveform::new(Curve::EaseIn)),
       [10.0, 10.625, 12.5, 15.625]
     );
   }

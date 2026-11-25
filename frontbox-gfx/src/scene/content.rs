@@ -12,7 +12,8 @@ use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use crate::scene::file;
-use crate::scene::{Assets, Font, Layer, Picture};
+use crate::scene::sound;
+use crate::scene::{Analysis, Assets, EnvelopeContent, Font, Layer, Picture};
 
 /// Largest width or height that will be decoded
 const MAX_IMAGE_SIDE: u32 = 8192;
@@ -50,7 +51,7 @@ const SOUND_EXTENSIONS: [&str; 4] = ["wav", "mp3", "ogg", "flac"];
 /// An app without a folder still has a `Content`, from [`Self::without_folder`]. It has only the fonts it's given, and
 /// anything that needs a file is a [`ContentError::NoFolder`] or [`SceneFileError::NoFolder`].
 ///
-/// Decoded images and loaded fonts are cached until their file changes. Clones share the cache.
+/// Decoded images, loaded fonts, and analyzed sounds are cached until their file changes. Clones share the cache.
 #[derive(Debug, Clone)]
 pub struct Content {
   /// `None` for an app without a folder
@@ -58,6 +59,8 @@ pub struct Content {
   decoded: Arc<Mutex<HashMap<String, Decoded>>>,
   /// Loaded fonts, with their file's modified time and size when they were loaded
   fonts: Arc<Mutex<HashMap<String, (Stamp, Font)>>>,
+  /// Analyzed sounds, with their file's modified time and size when they were analyzed
+  envelopes: Arc<Mutex<HashMap<(String, Analysis), Analyzed>>>,
   /// From [`Self::with_fonts`], by name
   bundled_fonts: Arc<BTreeMap<String, Font>>,
   /// From [`Self::with_scenes`]: each scene's source, by name
@@ -78,6 +81,7 @@ impl Content {
       root: None,
       decoded: Arc::default(),
       fonts: Arc::default(),
+      envelopes: Arc::default(),
       bundled_fonts: Arc::default(),
       bundled_scenes: Arc::default(),
     }
@@ -262,6 +266,55 @@ impl Content {
     Ok(font)
   }
 
+  /// Sound `name` analyzed by `analysis`, for an external envelope to follow, from the cache unless its file has
+  /// changed. Decodes the whole sound, so don't call this mid-frame.
+  pub fn envelope(
+    &self,
+    name: &str,
+    analysis: Analysis,
+  ) -> Result<Arc<EnvelopeContent>, ContentError> {
+    if !is_sound_name(name) {
+      return Err(ContentError::BadSoundName(name.into()));
+    }
+    let path = self.file(name).ok_or(ContentError::NoFolder)?;
+    let read = |error| ContentError::ReadSound {
+      name: name.into(),
+      error,
+    };
+    let key = (name.to_owned(), analysis);
+    let stamp = match stamp(&path) {
+      Ok(stamp) => stamp,
+      Err(error) => {
+        self.envelopes.lock().unwrap().remove(&key);
+        return Err(read(error));
+      }
+    };
+    if let Some((_, envelope)) = self
+      .envelopes
+      .lock()
+      .unwrap()
+      .get(&key)
+      .filter(|(analyzed, _)| *analyzed == stamp)
+    {
+      return Ok(envelope.clone());
+    }
+    let bytes = fs::read(&path).map_err(read)?;
+    let (power, sample_rate) =
+      sound::decode_power(name, bytes).map_err(|error| ContentError::NotASound {
+        name: name.into(),
+        error,
+      })?;
+    let envelope = Arc::new(match analysis {
+      Analysis::Rms => EnvelopeContent::rms(&power, sample_rate),
+    });
+    self
+      .envelopes
+      .lock()
+      .unwrap()
+      .insert(key, (stamp, envelope.clone()));
+    Ok(envelope)
+  }
+
   /// Loads every image and font a scene's layers use, given in the scene's order. A missing one is an error here,
   /// rather than a layer silently drawing nothing.
   pub fn assets_for<'a>(
@@ -363,6 +416,9 @@ impl Content {
   }
 }
 
+/// A cached analyzed sound, with its file's modified time and size when it was analyzed
+type Analyzed = (Stamp, Arc<EnvelopeContent>);
+
 /// A cached decoded image
 #[derive(Debug)]
 struct Decoded {
@@ -418,6 +474,18 @@ pub enum ContentError {
     error: io::Error,
   },
   NotAFont(String),
+  /// Not a valid sound path inside the folder
+  BadSoundName(String),
+  /// Couldn't read a sound's file, including when it doesn't exist
+  ReadSound {
+    name: String,
+    error: io::Error,
+  },
+  /// A sound's file couldn't be decoded, for why
+  NotASound {
+    name: String,
+    error: String,
+  },
   /// An image by this name already exists
   Taken(String),
   Write {
@@ -448,6 +516,15 @@ impl fmt::Display for ContentError {
       }
       Self::ReadFont { name, error } => write!(f, "couldn't read font \"{name}\": {error}"),
       Self::NotAFont(name) => write!(f, "\"{name}\" isn't a TrueType or OpenType font"),
+      Self::BadSoundName(name) => write!(
+        f,
+        "\"{name}\" isn't the name of a sound in the content folder"
+      ),
+      Self::ReadSound { name, error } if error.kind() == io::ErrorKind::NotFound => {
+        write!(f, "there's no sound \"{name}\" in the content folder")
+      }
+      Self::ReadSound { name, error } => write!(f, "couldn't read sound \"{name}\": {error}"),
+      Self::NotASound { name, error } => write!(f, "couldn't decode sound \"{name}\": {error}"),
       Self::Taken(name) => write!(f, "there's already an image \"{name}\""),
       Self::Write { name, error } => write!(f, "couldn't save image \"{name}\": {error}"),
     }
@@ -674,6 +751,54 @@ mod tests {
     fn drop(&mut self) {
       let _ = fs::remove_dir_all(&self.0);
     }
+  }
+
+  #[test]
+  fn a_sound_is_analyzed_for_an_envelope_until_its_file_changes() {
+    let folder = Folder::new();
+    let loud = crate::scene::sound::tests::wav(1000, &[i16::MAX; 100]);
+    folder.write("sounds/hit.wav", &loud);
+    let content = Content::new(&folder.0);
+    let analyzed = content.envelope("sounds/hit.wav", Analysis::Rms).unwrap();
+    assert_eq!(analyzed.rate(), 200.0);
+    assert!(analyzed.values().iter().all(|value| *value == 1.0));
+    assert!(Arc::ptr_eq(
+      &analyzed,
+      &content.envelope("sounds/hit.wav", Analysis::Rms).unwrap()
+    ));
+
+    folder.write(
+      "sounds/hit.wav",
+      &crate::scene::sound::tests::wav(1000, &[0; 200]),
+    );
+    let silent = content.envelope("sounds/hit.wav", Analysis::Rms).unwrap();
+    assert_eq!(
+      silent.values().len(),
+      40,
+      "the changed file is analyzed again"
+    );
+  }
+
+  #[test]
+  fn a_sound_that_isnt_there_or_doesnt_decode_has_no_envelope() {
+    let folder = Folder::new();
+    folder.write("sounds/broken.wav", b"not a sound");
+    let content = Content::new(&folder.0);
+    let error = |name| {
+      content
+        .envelope(name, Analysis::Rms)
+        .unwrap_err()
+        .to_string()
+    };
+    assert_eq!(
+      error("sounds/missing.wav"),
+      "there's no sound \"sounds/missing.wav\" in the content folder"
+    );
+    assert!(error("sounds/broken.wav").starts_with("couldn't decode sound"));
+    assert_eq!(
+      error("title.png"),
+      "\"title.png\" isn't the name of a sound in the content folder"
+    );
   }
 
   fn png(width: u32, height: u32) -> Vec<u8> {

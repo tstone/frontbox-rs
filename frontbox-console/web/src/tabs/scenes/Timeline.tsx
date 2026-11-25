@@ -21,7 +21,7 @@ import { CurveField, Dropdown, EyeButton, FieldRow, LayerSurfacesContext, Number
 import { curveHeight } from './curves'
 import { contentSoundLength } from '../../state/contentSounds'
 import type { SoundLayer } from '../../types/generated/SoundLayer'
-import { field, isHidden, item, moveMoment, removed, repeats, sceneTracks, soundEnd, soundNaturalEnd, sceneTraversals, snap, startingValue, TIME_STEP, trackTimes, traversalLength, UNIT, variant, envelopeHeight, wavePosition, withKey, withKeyCopy, withPick, withHidden, withTimesInLength, withTimesScaled, type Lens, type Ranges, type Scene, type SceneLayer, type SceneValue } from './sceneModel'
+import { field, isHidden, item, moveMoment, removed, repeats, sceneTracks, soundEnd, soundNaturalEnd, sceneTraversals, snap, startingValue, TIME_STEP, trackTimes, traversalLength, UNIT, variant, waveformHeight, wavePosition, withKey, withKeyCopy, withSoundRenamed, withPick, withHidden, withTimesInLength, withTimesScaled, type Lens, type Ranges, type Scene, type SceneLayer, type SceneValue } from './sceneModel'
 
 /** How close in pixels a click can be to a key before it's taken to mean that key */
 const KEY_REACH = 12
@@ -640,12 +640,17 @@ function TreeRow(props: {
  * goes back to what the layer is called unnamed.
  */
 function NameEditor(props: { node: Extract<ConfigNode, { kind: 'layer' | 'sound' }>; onDone: () => void }) {
+  const scene = useContext(SceneContext)!
   const name = () => field(props.node.lens as Lens<{ name?: string }>, 'name')
   let done = false
   const finish = (keep: string | null) => {
     if (done) return
     done = true
-    if (keep !== null) name().set(keep.trim() || undefined)
+    const to = keep?.trim() || undefined
+    // envelopes follow a sound by its name, so they follow it to its new one
+    const sound = props.node.kind === 'sound' ? props.node.place?.index : undefined
+    if (keep !== null && sound !== undefined) scene.set(withSoundRenamed(scene.get(), sound, to))
+    else if (keep !== null) name().set(to)
     props.onDone()
   }
   return (
@@ -993,7 +998,7 @@ function WaveLine(props: { modulated: Modulated; modulator: Modulator; scene: Sc
     return Array.from({ length: samples + 1 }, (_, index) => {
       const at = index / samples
       const phase = phaseAt(props.modulated.phase, props.scene, at * props.duration)
-      return `${at},${1 - envelopeHeight(props.modulator.envelope, wavePosition(props.modulator, phase, at))}`
+      return `${at},${1 - waveformHeight(props.modulator.waveform, wavePosition(props.modulator, phase, at))}`
     }).join(' ')
   }
   return (

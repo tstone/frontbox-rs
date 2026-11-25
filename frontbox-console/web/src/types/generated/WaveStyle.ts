@@ -3,4 +3,4 @@
 /**
  * How a [`ShapeNode::Wave`] crosses from one side of its box to the other
  */
-export type WaveForm = "Smooth" | "Zigzag" | "Square";
+export type WaveStyle = "Smooth" | "Zigzag" | "Square";

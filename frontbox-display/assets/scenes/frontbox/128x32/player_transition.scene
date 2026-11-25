@@ -11,13 +11,13 @@ Scene(
   },
   modulators: {
     "Fade": (
-      envelope: (
+      waveform: (
         attack: Reverse(Linear),
       ),
       rate: 1.0,
     ),
     "Grow": (
-      envelope: (
+      waveform: (
         attack: EaseOut,
       ),
       rate: 1.0,

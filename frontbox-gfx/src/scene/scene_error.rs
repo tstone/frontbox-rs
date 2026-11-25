@@ -19,6 +19,10 @@ pub enum SceneError {
   EndBeforeStart { layer: String },
   /// A sound skips less than none of its beginning
   NegativeSkip { layer: String },
+  /// An external envelope follows a sound layer the scene doesn't have
+  NoSoundToFollow { sound: String },
+  /// An external envelope's attack or release isn't 0 or more seconds
+  NegativeSlew { sound: String },
 }
 
 impl fmt::Display for SceneError {
@@ -45,6 +49,14 @@ impl fmt::Display for SceneError {
       }
       Self::EndBeforeStart { layer } => write!(f, "{layer} has to end after it starts"),
       Self::NegativeSkip { layer } => write!(f, "{layer} can't skip less than none of its sound"),
+      Self::NoSoundToFollow { sound } => write!(
+        f,
+        "an envelope follows sound layer \"{sound}\", which the scene doesn't have"
+      ),
+      Self::NegativeSlew { sound } => write!(
+        f,
+        "the envelope following \"{sound}\" needs an attack and release of 0 or more seconds"
+      ),
     }
   }
 }

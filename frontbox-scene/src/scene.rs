@@ -4,8 +4,9 @@ use frontbox_core::prelude::*;
 use frontbox_gfx::animation::Cycle;
 use frontbox_gfx::scene::file::{self, FormatError};
 use frontbox_gfx::scene::{
-  self, Assets, Content, Inputs, Layer, LayerAssetError, LayerFrame, Modulators, SceneError,
-  SceneFileError, Timing, Value, Values, Variables, Visits,
+  self, Assets, Content, EnvelopeSource, Inputs, Layer, LayerAssetError, LayerFrame, Modulators,
+  Placement, PreparedEnvelope, SceneError, SceneFileError, Timing, Value, Values, Variables,
+  Visits,
 };
 use serde::{Deserialize, Serialize};
 
@@ -136,10 +137,31 @@ impl Scene {
         drawn => drawn
           .layer()
           .map_or(Ok(()), |layer| layer.check(index, self.timing)),
-      })
+      })?;
+    self.inputs().envelopes.iter().try_for_each(|key| {
+      key.check()?;
+      let EnvelopeSource::Sound { layer, .. } = &key.source;
+      match self.sound_layer(layer) {
+        Some(_) => Ok(()),
+        None => Err(SceneError::NoSoundToFollow {
+          sound: layer.clone(),
+        }),
+      }
+    })
   }
 
-  /// The variables its layers and named values read from the code playing it
+  /// The first sound layer named `name`, and where it is among the layers
+  fn sound_layer(&self, name: &str) -> Option<(usize, &SoundLayer)> {
+    self
+      .layers
+      .iter()
+      .enumerate()
+      .filter_map(|(index, layer)| Some((index, layer.as_sound()?)))
+      .find(|(_, layer)| layer.name.as_deref() == Some(name))
+  }
+
+  /// What its layers and named values read from outside them: variables from the code playing it, and the external
+  /// envelopes they follow
   pub fn inputs(&self) -> Inputs {
     let mut inputs = Inputs::new();
     self
@@ -228,10 +250,35 @@ impl Scene {
     sound_starts(starts)
   }
 
-  /// Loads the images and fonts its layers draw from `content`. A layer whose image or font is missing is an error,
-  /// rather than one that silently draws nothing. That reads files, so do it ahead of time rather than in a tick.
+  /// Loads the images and fonts its layers draw from `content`, and prepares the external envelopes they follow from
+  /// the sounds of its sound layers. A layer whose image, font, or sound is missing is an error, rather than one that
+  /// silently draws nothing. That reads and decodes files, so do it ahead of time rather than in a tick.
+  ///
+  /// An envelope following a sound layer the scene doesn't have is left out, to rest at its spread's default.
+  /// [`Scene::check`] reports it.
   pub fn with_assets(mut self, content: &Content) -> Result<Self, LayerAssetError> {
-    self.assets = content.assets_for(self.layers.iter().filter_map(SceneLayer::layer))?;
+    let mut assets = content.assets_for(self.layers.iter().filter_map(SceneLayer::layer))?;
+    for key in self.inputs().envelopes {
+      let EnvelopeSource::Sound { layer, analysis } = &key.source;
+      let Some((index, sound)) = self.sound_layer(layer) else {
+        continue;
+      };
+      let analyzed =
+        content
+          .envelope(&sound.sound, *analysis)
+          .map_err(|error| LayerAssetError {
+            layer: sound.label(index),
+            error,
+          })?;
+      let placement = Placement {
+        start: sound.start,
+        skip: sound.skip,
+        end: sound.end,
+      };
+      let prepared = PreparedEnvelope::new(&analyzed, placement, key.attack(), key.release());
+      assets.insert_envelope(key, prepared);
+    }
+    self.assets = assets;
     Ok(self)
   }
 
@@ -696,7 +743,7 @@ mod tests {
 
   #[test]
   fn a_modulator_slower_than_once_a_cycle_is_refused() {
-    let source = r#"Scene(version: 2, timing: (duration: 1.0), modulators: {"drift": (envelope: (attack: Linear), rate: 0.5)})"#;
+    let source = r#"Scene(version: 2, timing: (duration: 1.0), modulators: {"drift": (waveform: (attack: Linear), rate: 0.5)})"#;
     let Err(FormatError::Invalid(message)) = Scene::load(source) else {
       panic!("loaded a modulator with a rate of 0.5");
     };
@@ -900,6 +947,90 @@ mod tests {
       Scene::open(&content, "b.scene"),
       Err(OpenError::File(_))
     ));
+  }
+
+  /// A 16-bit mono WAV at 1000 frames a second, loud for its first tenth of a second and silent for the rest of a second
+  fn hit() -> Vec<u8> {
+    let samples: Vec<i16> = (0..1000)
+      .map(|frame| if frame < 100 { i16::MAX } else { 0 })
+      .collect();
+    let data = (samples.len() * 2) as u32;
+    let mut bytes = b"RIFF".to_vec();
+    bytes.extend((36 + data).to_le_bytes());
+    bytes.extend(b"WAVEfmt ");
+    bytes.extend(16u32.to_le_bytes());
+    bytes.extend([1u16, 1].map(u16::to_le_bytes).concat()); // PCM, mono
+    bytes.extend(1000u32.to_le_bytes());
+    bytes.extend(2000u32.to_le_bytes());
+    bytes.extend([2u16, 16].map(u16::to_le_bytes).concat());
+    bytes.extend(b"data");
+    bytes.extend(data.to_le_bytes());
+    samples
+      .iter()
+      .for_each(|sample| bytes.extend(sample.to_le_bytes()));
+    bytes
+  }
+
+  /// A scene whose value "glow" follows sound layer `layer`, which plays `hit.wav` half a second into each cycle
+  fn following(layer: &str) -> Result<Scene, FormatError> {
+    Scene::load(&format!(
+      r#"Scene(
+        version: 2,
+        timing: (duration: 1.0, cycle: Forever),
+        values: {{"glow": Float(ExternalEnvelope(source: Sound(layer: "{layer}"), spread: Float(0.0, 1.0)))}},
+        layers: [Sound(name: "hit", sound: "hit.wav", start: 0.5)],
+      )"#
+    ))
+  }
+
+  #[test]
+  fn an_envelope_follows_its_sound_where_the_layer_plays_it() {
+    let folder =
+      std::env::temp_dir().join(format!("frontbox-scene-envelope-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("hit.wav"), hit()).unwrap();
+    let scene = following("hit")
+      .unwrap()
+      .with_assets(&Content::new(&folder));
+    std::fs::remove_dir_all(&folder).unwrap();
+    let scene = scene.unwrap();
+
+    let NamedValue::Float(glow) = &scene.values["glow"] else {
+      panic!("{:?}", scene.values);
+    };
+    let variables = Variables::new();
+    let at = |time| {
+      let moment = Moment {
+        time,
+        playback_seed: 0,
+        variables: &variables,
+      };
+      let frame = scene.frame(&moment, Surface::Sequence, Vec2::ONE, None);
+      (glow.at(&frame) * 100.0).round() / 100.0
+    };
+    assert_eq!(
+      [0.2, 0.55, 0.8, 1.55].map(at),
+      [0.0, 1.0, 0.0, 1.0],
+      "loud only in the tenth of a second after each start"
+    );
+  }
+
+  #[test]
+  fn an_envelope_has_to_follow_a_sound_layer_the_scene_has() {
+    if let Err(error) = following("hit") {
+      panic!("{error}");
+    }
+    let error = following("nope").unwrap_err().to_string();
+    assert!(error.contains("sound layer \"nope\""), "{error}");
+  }
+
+  #[test]
+  fn an_envelopes_sound_has_to_be_in_the_content_folder() {
+    let error = following("hit")
+      .unwrap()
+      .with_assets(&Content::without_folder())
+      .unwrap_err();
+    assert_eq!(error.layer, "layer \"hit\"");
   }
 
   #[test]

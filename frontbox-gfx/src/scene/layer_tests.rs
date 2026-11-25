@@ -203,7 +203,7 @@ fn a_wave_shows_a_layer_for_its_upper_half() {
   .timing(Timing::new(1.0, Cycle::Forever));
   scene.modulators.insert(
     "rise".into(),
-    Modulator::new(Envelope::new(Curve::Linear), 1.0),
+    Modulator::new(Waveform::new(Curve::Linear), 1.0),
   );
   assert_eq!(at(&scene, 0.25, &Variables::new()), RED);
   assert_eq!(at(&scene, 0.75, &Variables::new()), BLUE);
