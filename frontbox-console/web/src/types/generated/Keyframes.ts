@@ -7,7 +7,7 @@ import type { Key } from "./Key";
  */
 export type Keyframes<T> = { 
 /**
- * Sorted by `at`
+ * Sorted by `at`, which a file's are put in as it loads
  */
 keys: Array<Key<T>>, 
 /**

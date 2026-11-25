@@ -5,8 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::animation::Lerp;
 use crate::scene::noise::{default_octaves, to_cells};
 use crate::scene::{
-  CellStyle, Color, ColorAdjust, Env, Inputs, Node, NoiseStyle, Picture, Prop, Transform, Warp,
-  Wrap,
+  Bend, CellStyle, Color, ColorAdjust, Env, Inputs, Node, NoiseStyle, Picture, Prop, Transform,
 };
 
 /// The colors a layer is drawn with
@@ -32,10 +31,17 @@ impl Fill {
       ..*env
     };
     let to_scene = self.to_scene(Vec2::ZERO, env)?;
-    let (warps, to_local) = self.warps(size, env);
+    let (bends, to_local) = self.bends(size, env);
+    // a `Rotate` on a `Sequence` repeats every lap, after everything else
+    let lap = self.lap(env).map(|lap| {
+      let around = Bend::Repeat {
+        center: to_scene.transform_point2(Vec2::ZERO),
+        size: Vec2::new(lap, 0.0),
+      };
+      (Affine2::IDENTITY, around)
+    });
     Some(PreparedFill {
-      wrap: self.wrap(Vec2::ZERO, to_scene, env),
-      warps,
+      bends: lap.into_iter().chain(bends).collect(),
       to_local,
       footprint: to_scene.inverse().matrix2.abs() * footprint,
       base: self.base.resolve(size, env),
@@ -47,27 +53,25 @@ impl Fill {
     })
   }
 
-  /// The way back from a sample point to the fill's local space, split at each `Warp`: the affine to take before each
-  /// warp, starting from the last, and the affine after the first. Without a warp, that's just `to_scene` inverted.
-  fn warps(&self, unit_box: Vec2, env: &Env) -> (Vec<(Affine2, Warp)>, Affine2) {
-    let mut warps = Vec::new();
-    // the transforms after the warp last met, combined
+  /// The way back from a sample point to the fill's local space, split at each transform that bends it: the affine to
+  /// take before each bend, starting from the last, and the affine after the first. Without one, that's just `to_scene`
+  /// inverted.
+  fn bends(&self, unit_box: Vec2, env: &Env) -> (Vec<(Affine2, Bend)>, Affine2) {
+    let mut bends = Vec::new();
+    // the transforms after the bend last met, combined
     let mut after = Affine2::IDENTITY;
-    for (transform, affine) in self
-      .transform
-      .iter()
-      .zip(self.affines(Vec2::ZERO, env))
-      .rev()
+    for (transform, (affine, center)) in
+      self.transform.iter().zip(self.steps(Vec2::ZERO, env)).rev()
     {
-      match transform.warp(unit_box, env) {
-        Some(warp) => {
-          warps.push((after.inverse(), warp));
+      match transform.bend(center, unit_box, env) {
+        Some(bend) => {
+          bends.push((after.inverse(), bend));
           after = Affine2::IDENTITY;
         }
         None => after *= affine,
       }
     }
-    (warps, after.inverse())
+    (bends, after.inverse())
   }
 
   pub(crate) fn is_animated(&self) -> bool {
@@ -412,10 +416,9 @@ impl FillNode {
 
 /// A [`Fill`] resolved for one frame, with what coloring a sample needs
 pub(crate) struct PreparedFill<'a> {
-  wrap: Option<Wrap>,
-  /// From the sample point, each `Warp` from the last, with the affine taken before it
-  warps: Vec<(Affine2, Warp)>,
-  /// To the fill's local space, after the warps
+  /// From the sample point, each bend from the last, with the affine taken before it
+  bends: Vec<(Affine2, Bend)>,
+  /// To the fill's local space, after the bends
   to_local: Affine2,
   /// The samples' radius along each axis, in the fill's local space
   footprint: Vec2,
@@ -427,9 +430,8 @@ pub(crate) struct PreparedFill<'a> {
 impl PreparedFill<'_> {
   /// The color at a point in the unit box
   pub(crate) fn color(&self, p: Vec2) -> Rgba<u8> {
-    let p = self.wrap.map_or(p, |wrap| wrap.apply(p));
-    let p = self.warps.iter().fold(p, |p, (affine, warp)| {
-      warp.apply(affine.transform_point2(p))
+    let p = self.bends.iter().fold(p, |p, (affine, bend)| {
+      bend.apply(affine.transform_point2(p))
     });
     let color = self
       .base

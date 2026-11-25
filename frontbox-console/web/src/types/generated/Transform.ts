@@ -9,9 +9,9 @@ import type { Scaling } from "./Scaling";
  * `Mirror`, `Revolve`, `Bisect`, `Shift`, `Bulge`, and `Round` are for shapes. Their `center` is in the space the
  * transforms before them put the shape in, and the transforms after them apply to everything they leave, so
  * `[Revolve(..), Translate(..)]` moves every copy. A sweep follows only the shape itself, and a fill ignores them.
- * `Warp` is for fills, and a shape ignores it.
+ * `Warp` and `Polar` are for fills, and a shape ignores them. `Repeat` is for both.
  */
-export type Transform = { "Translate": Prop<[number, number]> } | { "Rotate": Rotation } | { "Scale": Scaling } | { "Fit": string } | { "Mirror": { center: Prop<[number, number]>, rotation: Prop<number>, } } | { "Revolve": { center: Prop<[number, number]>, angle: Prop<number>, count: Prop<number>, } } | { "Bisect": { center: Prop<[number, number]>, rotation: Prop<number>, } } | { "Shift": { amount: Prop<number>, rotation: Prop<number>, } } | { "Bulge": Prop<number> } | { "Round": Prop<number> } | { "Warp": { 
+export type Transform = { "Translate": Prop<[number, number]> } | { "Rotate": Rotation } | { "Scale": Scaling } | { "Fit": string } | { "Repeat": Prop<[number, number]> } | { "Mirror": { center: Prop<[number, number]>, rotation: Prop<number>, } } | { "Revolve": { center: Prop<[number, number]>, angle: Prop<number>, count: Prop<number>, } } | { "Bisect": { center: Prop<[number, number]>, rotation: Prop<number>, } } | { "Shift": { amount: Prop<number>, rotation: Prop<number>, } } | { "Bulge": Prop<number> } | { "Round": Prop<number> } | { "Warp": { 
 /**
  * How far a point is pushed at most, as a share of the region's shorter side
  */
@@ -23,4 +23,4 @@ scale: Prop<number>,
 /**
  * Layers of finer ripples on top, from 1 to 8, as for noise
  */
-octaves: number, evolution: Prop<number>, seed: number, } };
+octaves: number, evolution: Prop<number>, seed: number, } } | { "Polar": Record<symbol, never> };

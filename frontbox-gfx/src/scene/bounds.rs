@@ -1,4 +1,4 @@
-use glam::{Affine2, Vec2};
+use glam::{Affine2, BVec2, Vec2};
 
 /// An axis-aligned rectangle in scene units, such as a viewport or a shape's extent
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -8,6 +8,12 @@ pub struct Bounds {
 }
 
 impl Bounds {
+  /// Without end in every direction
+  pub(crate) const EVERYWHERE: Self = Self {
+    min: Vec2::NEG_INFINITY,
+    max: Vec2::INFINITY,
+  };
+
   pub fn new(min: Vec2, max: Vec2) -> Self {
     Self { min, max }
   }
@@ -61,6 +67,31 @@ impl Bounds {
   /// Larger by `amount` on every side
   pub(crate) fn grown(&self, amount: f32) -> Self {
     Self::new(self.min - amount, self.max + amount)
+  }
+
+  /// Without end along the axes of `along` that are set
+  pub(crate) fn endless(&self, along: BVec2) -> Self {
+    Self::new(
+      Vec2::select(along, Vec2::NEG_INFINITY, self.min),
+      Vec2::select(along, Vec2::INFINITY, self.max),
+    )
+  }
+
+  /// [`Self::transformed`], for a box that may be without end along an axis. One that is stays as it is if `affine`
+  /// doesn't move it, and is otherwise without end along both.
+  pub(crate) fn placed(&self, affine: Affine2) -> Self {
+    if self.size().is_finite() {
+      self.transformed(affine)
+    } else if affine == Affine2::IDENTITY {
+      *self
+    } else {
+      Self::EVERYWHERE
+    }
+  }
+
+  /// The smallest box around this one and `other`
+  pub(crate) fn around(&self, other: Self) -> Self {
+    Self::new(self.min.min(other.min), self.max.max(other.max))
   }
 
   /// The smallest box around this one after `affine` is applied to it

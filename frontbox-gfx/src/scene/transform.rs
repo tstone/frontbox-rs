@@ -12,7 +12,7 @@ const MAX_COPIES: f32 = 360.0;
 /// `Mirror`, `Revolve`, `Bisect`, `Shift`, `Bulge`, and `Round` are for shapes. Their `center` is in the space the
 /// transforms before them put the shape in, and the transforms after them apply to everything they leave, so
 /// `[Revolve(..), Translate(..)]` moves every copy. A sweep follows only the shape itself, and a fill ignores them.
-/// `Warp` is for fills, and a shape ignores it.
+/// `Warp` and `Polar` are for fills, and a shape ignores them. `Repeat` is for both.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Transform {
@@ -20,7 +20,8 @@ pub enum Transform {
   /// Degrees clockwise (y points down), around an anchor.
   ///
   /// A `Sequence` has no second axis, so there it scrolls the drawing along the line with the ends wrapped together:
-  /// 360 degrees is one full lap, and the anchor does nothing.
+  /// 360 degrees is one full lap, and the anchor does nothing. That's a `Translate` and then a `Repeat` of the line's
+  /// length, applied after every other transform.
   Rotate(Rotation),
   /// The same on both axes, around an anchor. A shape's own size, such as a `Rect`'s width and height, gives it a
   /// different one on each.
@@ -33,6 +34,15 @@ pub enum Transform {
   /// centers a radial gradient on the start. Changes nothing outside a layer with a graph, or while the traversal visits
   /// nothing or ends where it started.
   Fit(String),
+  /// Draws the node again every `x` across and every `y` down, without end, in the space the transforms before it put
+  /// the node in. 0 on an axis doesn't repeat along it, and a `Sequence` only has the first. The transforms after it
+  /// apply to every copy, and a `Translate` before it scrolls the node through its copies: with `x` the width of some
+  /// text and a gap, that's a marquee.
+  ///
+  /// A shape's copies overlap where it's bigger than their spacing. A fill is cut into tiles instead: the part of it
+  /// within half the spacing of its center is what repeats, in the units of its unit box, so `(0.25, 0.0)` fits four
+  /// across its region.
+  Repeat(#[cfg_attr(feature = "ts", ts(as = "Prop<[f32; 2]>"))] Prop<Vec2>),
   /// Draws the shape and its reflection across a line through `center`. At 0 degrees the line runs straight down, so
   /// the reflection is the shape flipped left to right, and it turns clockwise from there.
   Mirror {
@@ -89,6 +99,13 @@ pub enum Transform {
     #[serde(default)]
     seed: u32,
   },
+  /// Bends the fill around its center: what ran left to right runs clockwise from 3 o'clock, and what ran top to
+  /// bottom runs from the center out, reaching the bottom at the middle of the region's shorter sides. A linear
+  /// gradient becomes a conical one, stripes become rings or spokes, and a `Translate` before it spins the fill or
+  /// sends it out from the center. The left and right edges of the fill meet at 3 o'clock.
+  ///
+  /// In RON: `Polar()`
+  Polar {},
 }
 
 impl Transform {
@@ -127,15 +144,17 @@ impl Transform {
         );
         env.fill_frame * fit
       }
-      // the shape itself stays where it is, and `copies` and `cut` say what's added to it or taken away
-      Self::Mirror { .. }
+      // the shape itself stays where it is, and `copies`, `repeat`, and `cut` say what's added to it or taken away
+      Self::Repeat(_)
+      | Self::Mirror { .. }
       | Self::Revolve { .. }
       | Self::Bisect { .. }
       | Self::Shift { .. }
       | Self::Bulge(_)
       | Self::Round(_)
-      // it bends the fill between the affines on either side of it, as `warp` says
-      | Self::Warp { .. } => Affine2::IDENTITY,
+      // they bend the fill between the affines on either side of them, as `bend` says
+      | Self::Warp { .. }
+      | Self::Polar {} => Affine2::IDENTITY,
     }
   }
 
@@ -243,8 +262,27 @@ impl Transform {
     }
   }
 
-  /// For a `Warp`, how it bends a fill whose unit box is `unit_box` across in scene units
-  pub(crate) fn warp(&self, unit_box: Vec2, env: &Env) -> Option<Warp> {
+  /// For a `Repeat`, how far apart its copies are on each axis, 0 for an axis that isn't repeated. `None` for other
+  /// transforms, and for one that repeats along neither.
+  pub(crate) fn repeat(&self, env: &Env) -> Option<Vec2> {
+    match self {
+      Self::Repeat(size) => {
+        let size = size.resolve(env).abs();
+        // a `Sequence` only has the one axis to repeat along
+        let size = if env.lap.is_some() {
+          Vec2::new(size.x, 0.0)
+        } else {
+          size
+        };
+        (size.max_element() > f32::EPSILON).then_some(size)
+      }
+      _ => None,
+    }
+  }
+
+  /// For a `Warp`, `Polar`, or `Repeat`, how it bends a fill whose unit box is `unit_box` across in scene units, and
+  /// whose center the transforms before it put at `center`
+  pub(crate) fn bend(&self, center: Vec2, unit_box: Vec2, env: &Env) -> Option<Bend> {
     match self {
       Self::Warp {
         amount,
@@ -252,7 +290,7 @@ impl Transform {
         octaves,
         evolution,
         seed,
-      } => Some(Warp {
+      } => Some(Bend::Warp(Warp {
         to_cells: to_cells(unit_box, scale.resolve(env)),
         // the push is a share of the shorter side, so it's as far across as it is down
         push: amount.resolve(env) * unit_box.min_element()
@@ -260,7 +298,9 @@ impl Transform {
         octaves: *octaves,
         evolution: evolution.resolve(env),
         seed: *seed,
-      }),
+      })),
+      Self::Repeat(_) => self.repeat(env).map(|size| Bend::Repeat { center, size }),
+      Self::Polar {} => Some(Bend::Polar { center, unit_box }),
       _ => None,
     }
   }
@@ -275,7 +315,8 @@ impl Transform {
 
   pub(crate) fn is_animated(&self) -> bool {
     match self {
-      Self::Translate(prop) => prop.is_animated(),
+      Self::Translate(prop) | Self::Repeat(prop) => prop.is_animated(),
+      Self::Polar {} => false,
       Self::Bulge(prop) | Self::Round(prop) => prop.is_animated(),
       Self::Rotate(Rotation { degrees, anchor }) => degrees.is_animated() || anchor.is_animated(),
       Self::Scale(Scaling { amount, anchor }) => amount.is_animated() || anchor.is_animated(),
@@ -302,7 +343,8 @@ impl Transform {
 
   pub(crate) fn read_inputs(&self, inputs: &mut Inputs) {
     match self {
-      Self::Translate(prop) => prop.read_inputs(inputs),
+      Self::Translate(prop) | Self::Repeat(prop) => prop.read_inputs(inputs),
+      Self::Polar {} => {}
       Self::Bulge(prop) | Self::Round(prop) => prop.read_inputs(inputs),
       Self::Rotate(Rotation { degrees, anchor }) => {
         degrees.read_inputs(inputs);
@@ -464,6 +506,16 @@ impl Cut {
     (p - self.point).dot(self.out)
   }
 
+  /// [`Self::distance`] in scene units, for a cut and a point in the space `to_here` takes the scene to
+  pub(crate) fn scene_distance(&self, p: Vec2, to_here: &Affine2) -> f32 {
+    let stretch = (to_here.matrix2.transpose() * self.out).length();
+    if stretch > f32::EPSILON {
+      self.distance(p) / stretch
+    } else {
+      self.distance(p)
+    }
+  }
+
   /// The same cut, in the space `affine` takes this one's to
   pub(crate) fn transformed(&self, affine: Affine2) -> Self {
     let out = affine.matrix2.inverse().transpose() * self.out;
@@ -471,6 +523,55 @@ impl Cut {
       point: affine.transform_point2(self.point),
       out: out.normalize_or(self.out),
     }
+  }
+}
+
+/// A transform that bends a fill rather than moving all of it the same way, resolved
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Bend {
+  Warp(Warp),
+  /// Tiles `size` across, the one around `center` being the fill itself. An axis of 0 isn't tiled.
+  Repeat {
+    center: Vec2,
+    size: Vec2,
+  },
+  /// Around `center`, in a unit box `unit_box` across in scene units
+  Polar {
+    center: Vec2,
+    unit_box: Vec2,
+  },
+}
+
+impl Bend {
+  /// Where `p`, in the unit box, is drawn from
+  pub(crate) fn apply(&self, p: Vec2) -> Vec2 {
+    match self {
+      Self::Warp(warp) => warp.apply(p),
+      Self::Repeat { center, size } => {
+        let from = p - *center;
+        *center + Vec2::new(nearest_tile(from.x, size.x), nearest_tile(from.y, size.y))
+      }
+      Self::Polar { center, unit_box } => {
+        // measured in scene units, so it's a circle whatever the region's proportions
+        let from = (p - *center) * *unit_box;
+        let reach = unit_box.min_element() / 2.0;
+        if reach <= f32::EPSILON {
+          return p;
+        }
+        // in f64, as a conical gradient's is
+        let around = ((from.y as f64).atan2(from.x as f64) / std::f64::consts::TAU).rem_euclid(1.0);
+        *center + Vec2::new(around as f32 - 0.5, from.length() / reach - 0.5)
+      }
+    }
+  }
+}
+
+/// `offset` from the middle of a tile, moved by whole tiles of `size` into the one at 0. As it is if `size` is 0.
+fn nearest_tile(offset: f32, size: f32) -> f32 {
+  if size > f32::EPSILON {
+    offset - size * (offset / size).round()
+  } else {
+    offset
   }
 }
 

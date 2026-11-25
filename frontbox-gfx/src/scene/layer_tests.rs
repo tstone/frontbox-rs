@@ -2378,3 +2378,220 @@ fn a_sprite_at_its_native_size_is_the_sprites_pixels() {
   }
   assert_eq!(drawn, expected);
 }
+
+const CLEAR: Rgba<u8> = Rgba([0, 0, 0, 0]);
+
+/// A red circle of `radius` at (50, 25), with these transforms after it's put there
+fn dots(radius: f32, transform: Vec<Transform>) -> Scene {
+  let circle = Shape::new(ShapeNode::circle(radius))
+    .transform(Transform::Translate(Vec2::new(50.0, 25.0).into()));
+  let shape = transform.into_iter().fold(circle, Shape::transform);
+  Scene::new(Surface::Area, vec![Layer::new(solid(RED)).region(shape)])
+}
+
+fn repeat(x: f32, y: f32) -> Transform {
+  Transform::Repeat(Vec2::new(x, y).into())
+}
+
+#[test]
+fn repeat_draws_a_shape_again_along_the_axes_it_has_a_spacing_for() {
+  let scene = dots(5.0, vec![repeat(20.0, 0.0)]);
+  for x in [10.0, 30.0, 50.0, 70.0, 90.0, 250.0] {
+    assert_eq!(sample(&scene, x, 25.0, 0.1), RED, "{x}");
+  }
+  assert_eq!(sample(&scene, 60.0, 25.0, 0.1), CLEAR);
+  assert_eq!(sample(&scene, 50.0, 45.0, 0.1), CLEAR);
+
+  let both = dots(5.0, vec![repeat(20.0, 15.0)]);
+  assert_eq!(sample(&both, 70.0, 40.0, 0.1), RED);
+  assert_eq!(sample(&both, 70.0, 32.5, 0.1), CLEAR);
+}
+
+#[test]
+fn a_repeat_with_no_spacing_leaves_the_shape_as_it_is() {
+  let scene = dots(5.0, vec![repeat(0.0, 0.0)]);
+  assert_eq!(sample(&scene, 50.0, 25.0, 0.1), RED);
+  assert_eq!(sample(&scene, 70.0, 25.0, 0.1), CLEAR);
+}
+
+#[test]
+fn a_shape_bigger_than_its_spacing_overlaps_its_copies() {
+  // each circle reaches 15 either side, so a point 20 from one center is covered by the copies either side of it
+  let scene = dots(15.0, vec![repeat(20.0, 0.0)]);
+  for x in [50.0, 60.0, 70.0] {
+    assert_eq!(sample(&scene, x, 25.0, 0.1), RED, "{x}");
+  }
+  // the edge is the nearest copy's, so the circles join into scallops rather than a band
+  assert_eq!(sample(&scene, 60.0, 37.0, 0.1), CLEAR);
+  assert_eq!(sample(&scene, 50.0, 37.0, 0.1), RED);
+}
+
+#[test]
+fn transforms_after_a_repeat_apply_to_every_copy() {
+  let moved = dots(
+    5.0,
+    vec![
+      repeat(20.0, 0.0),
+      Transform::Translate(Vec2::new(10.0, 0.0).into()),
+    ],
+  );
+  assert_eq!(sample(&moved, 60.0, 25.0, 0.1), RED);
+  assert_eq!(sample(&moved, 50.0, 25.0, 0.1), CLEAR);
+
+  // scaled around the first circle's center, the copies are twice as big and twice as far apart
+  let scaled = dots(5.0, vec![repeat(20.0, 0.0), Transform::Scale(2.0.into())]);
+  assert_eq!(sample(&scaled, 90.0, 25.0, 0.1), RED);
+  assert_eq!(sample(&scaled, 99.0, 25.0, 0.1), RED);
+  assert_eq!(sample(&scaled, 70.0, 25.0, 0.1), CLEAR);
+
+  // everything left of the line through the first circle's center is cut away, copies and all
+  let cut = dots(
+    5.0,
+    vec![
+      repeat(20.0, 0.0),
+      Transform::Bisect {
+        center: Vec2::new(50.0, 25.0).into(),
+        rotation: 0.0.into(),
+      },
+    ],
+  );
+  assert_eq!(sample(&cut, 70.0, 25.0, 0.1), RED);
+  assert_eq!(sample(&cut, 52.0, 25.0, 0.1), RED);
+  assert_eq!(sample(&cut, 48.0, 25.0, 0.1), CLEAR);
+  assert_eq!(sample(&cut, 30.0, 25.0, 0.1), CLEAR);
+}
+
+#[test]
+fn a_repeat_copies_what_the_copying_transforms_before_it_drew() {
+  // a pair of dots 8 apart, and the pair again every 30
+  let scene = dots(
+    2.0,
+    vec![
+      Transform::Mirror {
+        center: Vec2::new(54.0, 25.0).into(),
+        rotation: 0.0.into(),
+      },
+      repeat(30.0, 0.0),
+    ],
+  );
+  for x in [50.0, 58.0, 80.0, 88.0, 20.0, 28.0] {
+    assert_eq!(sample(&scene, x, 25.0, 0.1), RED, "{x}");
+  }
+  assert_eq!(sample(&scene, 54.0, 25.0, 0.1), CLEAR);
+  assert_eq!(sample(&scene, 70.0, 25.0, 0.1), CLEAR);
+}
+
+#[test]
+fn a_repeat_can_be_repeated() {
+  // a row of dots 6 apart goes on forever, and the second repeat draws the row again every 20 down
+  let scene = dots(2.0, vec![repeat(6.0, 0.0), repeat(0.0, 20.0)]);
+  assert_eq!(sample(&scene, 62.0, 25.0, 0.1), RED);
+  assert_eq!(sample(&scene, 62.0, 45.0, 0.1), RED);
+  assert_eq!(sample(&scene, 62.0, 35.0, 0.1), CLEAR);
+}
+
+#[test]
+fn a_translate_before_a_repeat_scrolls_a_shape_through_its_copies() {
+  let scrolled = |by: f32| {
+    let shape = Shape::new(ShapeNode::circle(5.0))
+      .transform(Transform::Translate(Vec2::new(50.0 + by, 25.0).into()))
+      .transform(repeat(20.0, 0.0));
+    Scene::new(Surface::Area, vec![Layer::new(solid(RED)).region(shape)])
+  };
+  assert_eq!(sample(&scrolled(10.0), 60.0, 25.0, 0.1), RED);
+  assert_eq!(sample(&scrolled(10.0), 50.0, 25.0, 0.1), CLEAR);
+  // a whole spacing along, it's back where it started
+  for x in [45.0, 50.0, 58.0, 70.0] {
+    assert_eq!(
+      sample(&scrolled(20.0), x, 25.0, 0.1),
+      sample(&scrolled(0.0), x, 25.0, 0.1)
+    );
+  }
+}
+
+#[test]
+fn repeat_tiles_a_fill() {
+  let scene = Scene::new(
+    Surface::Area,
+    vec![Layer::new(red_to_blue().transform(repeat(0.25, 0.0)))],
+  );
+  // four tiles across the 100 wide viewport, each the middle quarter of the gradient
+  let middle = Scene::new(Surface::Area, vec![Layer::new(red_to_blue())]);
+  for x in [3.0, 12.5, 20.0] {
+    let tile = sample(&middle, 37.5 + x, 10.0, 0.1);
+    for start in [12.5, 37.5, 62.5] {
+      assert_eq!(sample(&scene, start + x, 10.0, 0.1), tile, "{start} + {x}");
+    }
+  }
+  assert_ne!(
+    sample(&scene, 40.0, 10.0, 0.1),
+    sample(&scene, 60.0, 10.0, 0.1)
+  );
+}
+
+#[test]
+fn repeat_only_runs_along_a_sequence() {
+  // moved a little first, so no point sits right where one tile meets the next
+  let tiled = |spacing: Vec2| {
+    Scene::new(
+      Surface::Sequence,
+      vec![Layer::new(
+        red_to_blue()
+          .transform(Transform::Translate(Vec2::new(0.03, 0.0).into()))
+          .transform(Transform::Repeat(spacing.into())),
+      )],
+    )
+  };
+  // 9 points are an eighth of the line apart, so half the line is 4 of them
+  let along = line(&tiled(Vec2::new(0.5, 0.0)), 9);
+  assert_eq!(along[..4], along[4..8]);
+  assert_ne!(along[0], along[3]);
+  assert_eq!(line(&tiled(Vec2::new(0.5, 0.3)), 9), along);
+  assert_eq!(
+    line(&tiled(Vec2::new(0.0, 0.3)), 9),
+    line(&tiled(Vec2::ZERO), 9)
+  );
+}
+
+#[test]
+fn polar_bends_a_linear_gradient_into_a_conical_one() {
+  let square = || {
+    Shape::new(ShapeNode::Rect {
+      width: 40.0.into(),
+      height: 40.0.into(),
+    })
+    .transform(Transform::Translate(Vec2::new(50.0, 25.0).into()))
+  };
+  let conical = Fill::new(FillNode::Gradient {
+    stops: vec![Stop::new(0.0, Color(RED)), Stop::new(1.0, Color(BLUE))],
+    style: GradientStyle::Conical,
+  });
+  let scene = |fill: Fill| Scene::new(Surface::Area, vec![Layer::new(fill).region(square())]);
+  let (bent, around) = (
+    scene(red_to_blue().transform(Transform::Polar {})),
+    scene(conical),
+  );
+  for (x, y) in [(60.0, 27.0), (45.0, 40.0), (33.0, 20.0), (55.0, 8.0)] {
+    assert_eq!(
+      sample(&bent, x, y, 0.1),
+      sample(&around, x, y, 0.1),
+      "{x}, {y}"
+    );
+  }
+}
+
+#[test]
+fn polar_runs_the_fill_from_its_center_out_to_the_shorter_sides() {
+  let down = red_to_blue()
+    .transform(Transform::Rotate(90.0.into()))
+    .transform(Transform::Polar {});
+  let scene = Scene::new(Surface::Area, vec![Layer::new(down)]);
+  // the viewport is 100 x 50, so the gradient ends 25 from the center, whichever way
+  let at = |x: f32, y: f32| sample(&scene, 50.0 + x, 25.0 + y, 0.1);
+  assert_eq!(at(0.0, 0.0), RED);
+  assert_eq!(at(25.0, 0.0), BLUE);
+  assert_eq!(at(0.0, 25.0), BLUE);
+  assert_eq!(at(40.0, 0.0), BLUE);
+  assert_eq!(at(12.5, 0.0), at(0.0, -12.5));
+  assert_ne!(at(12.5, 0.0), at(20.0, 0.0));
+}

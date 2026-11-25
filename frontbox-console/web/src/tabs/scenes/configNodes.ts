@@ -45,6 +45,7 @@ import {
   featherRange,
   shadowProps,
   traversalTarget,
+  repeatRanges,
   translateRanges,
   UNIT,
   variant,
@@ -177,7 +178,7 @@ export const WANDERING: AlgorithmKind[] = ['BreadthFirst', 'Dijkstra', 'Shortest
 export const BY_DISTANCE: AlgorithmKind[] = ['Dijkstra', 'ShortestPath', 'FanOut', 'Growth']
 export const algorithmKind = (algorithm: TraversalAlgorithm) => (typeof algorithm === 'string' ? algorithm : Object.keys(algorithm)[0]) as AlgorithmKind
 
-export const TRANSFORM_LABELS = { Translate: 'Translate', Rotate: 'Rotate', Scale: 'Scale', Fit: 'Fit to traversal', Mirror: 'Mirror', Revolve: 'Revolve', Bisect: 'Bisect', Shift: 'Shift', Bulge: 'Bulge', Round: 'Round corners', Warp: 'Warp' }
+export const TRANSFORM_LABELS = { Translate: 'Translate', Rotate: 'Rotate', Scale: 'Scale', Fit: 'Fit to traversal', Mirror: 'Mirror', Revolve: 'Revolve', Bisect: 'Bisect', Shift: 'Shift', Bulge: 'Bulge', Round: 'Round corners', Warp: 'Warp', Repeat: 'Repeat', Polar: 'Polar' }
 export type TransformKind = keyof typeof TRANSFORM_LABELS
 export const transformKind = (transform: Transform) => Object.keys(transform)[0] as TransformKind
 
@@ -416,7 +417,7 @@ function modifierNodes(id: string, transforms: Lens<Transform[]>, space: Transfo
     const place = { list: transforms as Lens<unknown[]>, listId: transformList, index }
     const kind = transformKind(transform)
     if (kind === 'Fit') return { id: transformId, label: TRANSFORM_LABELS.Fit, kind: 'fit', lens, value: transform, place }
-    if (kind === 'Mirror' || kind === 'Revolve' || kind === 'Bisect' || kind === 'Shift' || kind === 'Rotate' || kind === 'Scale' || kind === 'Warp') {
+    if (kind === 'Mirror' || kind === 'Revolve' || kind === 'Bisect' || kind === 'Shift' || kind === 'Rotate' || kind === 'Scale' || kind === 'Warp' || kind === 'Polar') {
       const children = transformProps(lens, surface, space).map(({ key, label, fallback, lens: propLens, ranges }) => {
         const anchorOf = key === 'anchor' && shape ? { shape, index } : undefined
         return propNode(`${transformId}/${key}`, label, { lens: propLens, variableName: `${kind.toLowerCase()}_${key}`, fallback, ranges, anchorOf }, surface)
@@ -427,9 +428,11 @@ function modifierNodes(id: string, transforms: Lens<Transform[]>, space: Transfo
     const spec: PropSpec =
       kind === 'Translate'
         ? { lens: variant(lens, 'Translate') as Lens<Prop<SceneValue>>, variableName: 'offset', fallback: [0, 0], ranges: translateRanges(surface, space) }
-        : kind === 'Bulge'
-          ? { lens: variant(lens, 'Bulge') as Lens<Prop<SceneValue>>, variableName: 'bulge', fallback: BULGE.rest!, ranges: both(BULGE) }
-          : { lens: variant(lens, 'Round') as Lens<Prop<SceneValue>>, variableName: 'corner_radius', fallback: 0, ranges: both(cornerRange(surface)) }
+        : kind === 'Repeat'
+          ? { lens: variant(lens, 'Repeat') as Lens<Prop<SceneValue>>, variableName: 'spacing', fallback: [0, 0], ranges: repeatRanges(surface, space) }
+          : kind === 'Bulge'
+            ? { lens: variant(lens, 'Bulge') as Lens<Prop<SceneValue>>, variableName: 'bulge', fallback: BULGE.rest!, ranges: both(BULGE) }
+            : { lens: variant(lens, 'Round') as Lens<Prop<SceneValue>>, variableName: 'corner_radius', fallback: 0, ranges: both(cornerRange(surface)) }
     // a translate is a position, so it can sweep around a path, which the prop has under it
     if (index === placement) return { ...propNode(transformId, 'Position', spec, surface), place, modifier: kind, placement: true }
     return { ...propNode(transformId, TRANSFORM_LABELS[kind], spec, surface), place, modifier: kind }

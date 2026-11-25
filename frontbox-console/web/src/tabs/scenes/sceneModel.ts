@@ -571,6 +571,7 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
     transform.get().forEach((w, index) => {
       const lens = item(transform, index)
       if ('Translate' in w) use(variant(lens, 'Translate'), `${label} · Offset`, translateRanges(surface, space))
+      else if ('Repeat' in w) use(variant(lens, 'Repeat'), `${label} · Repeat`, repeatRanges(surface, space))
       else {
         const name = `${label} · ${Object.keys(w)[0]}`
         transformProps(lens, surface, space).forEach((prop) => use(prop.lens, `${name} · ${prop.label}`, prop.ranges))
@@ -1180,6 +1181,15 @@ export function translateRanges(surface: Surface, space: TransformSpace): Ranges
   // half its size past each edge, so a shape can be moved on from off to one side and off again past the other
   const along = (size: number) => ({ ...span(-size / 2, size * 1.5), rest: 0 })
   return [along(surface[0]), along(surface[1])]
+}
+
+/** How far apart a repeat's copies are on each axis: up to the whole of what it's on, and 0 for an axis it leaves alone */
+export function repeatRanges(surface: Surface, space: TransformSpace): Ranges {
+  if (space === 'fill' || !surface) return both({ min: 0, max: 1, step: 0.01, rest: 0 })
+  return [
+    { ...span(0, surface[0]), rest: 0 },
+    { ...span(0, surface[1]), rest: 0 },
+  ]
 }
 
 export function scaleRanges(): Ranges {

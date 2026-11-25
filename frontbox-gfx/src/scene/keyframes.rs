@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::animation::{Curve, Cycle};
 use crate::scene::Animatable;
@@ -6,8 +6,10 @@ use crate::scene::Animatable;
 /// Keyframes, timed from the start of each scene cycle
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(bound(deserialize = "T: Deserialize<'de>"))]
 pub struct Keyframes<T> {
-  /// Sorted by `at`
+  /// Sorted by `at`, which a file's are put in as it loads
+  #[serde(deserialize_with = "sorted_keys")]
   pub keys: Vec<Key<T>>,
   /// How many times the keys play. Each loop jumps from the last key straight back to the first.
   #[serde(default)]
@@ -64,6 +66,15 @@ impl<T> Key<T> {
   pub fn new(at: f32, value: T, curve: Curve) -> Self {
     Self { at, value, curve }
   }
+}
+
+/// Reads keys in order of `at`, whatever order the file has them in. Keys at the same time stay in the file's order.
+fn sorted_keys<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
+  deserializer: D,
+) -> Result<Vec<Key<T>>, D::Error> {
+  let mut keys = Vec::<Key<T>>::deserialize(deserializer)?;
+  keys.sort_by(|a, b| a.at.total_cmp(&b.at));
+  Ok(keys)
 }
 
 #[cfg(test)]
@@ -129,5 +140,16 @@ mod tests {
       cycle: Cycle::Once,
     });
     assert_eq!(prop.resolve(&env(1.0, &variables)), 0.0);
+  }
+
+  #[test]
+  fn keys_out_of_order_in_a_file_are_sorted_as_it_loads() {
+    let keyframes: Keyframes<f32> = crate::scene::file::load(
+      "(keys: [(at: 2.0, value: 20.0), (at: 0.0, value: 0.0), (at: 1.0, value: 10.0)])",
+    )
+    .unwrap();
+    let times: Vec<f32> = keyframes.keys.iter().map(|key| key.at).collect();
+    assert_eq!(times, [0.0, 1.0, 2.0]);
+    assert_eq!(keyframes.resolve(0.5), 5.0);
   }
 }

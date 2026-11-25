@@ -1,6 +1,6 @@
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::hash::{Hash, Hasher};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::animation::Curve;
 use crate::scene::{Animatable, Env, Value};
@@ -18,8 +18,9 @@ const MAX_RETRIES: u32 = 64;
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Random {
-  /// Sorted by `at`. Before the first pick, the previous cycle's last pick is in effect (or the first pick, in the first
-  /// cycle).
+  /// Sorted by `at`, which a file's are put in as it loads. Before the first pick, the previous cycle's last pick is in
+  /// effect (or the first pick, in the first cycle).
+  #[serde(deserialize_with = "sorted_picks")]
   pub picks: Vec<Pick>,
   pub spread: Spread,
   /// Distinguishes this prop's values from another random prop with the same picks
@@ -287,10 +288,36 @@ struct PickInstance {
 /// Three random numbers, each 0 to 1, hashed from `moment`
 pub(crate) fn rnd(moment: impl Hash) -> [f32; 3] {
   const MASK: u64 = (1 << 21) - 1;
-  let mut hasher = DefaultHasher::new();
+  let mut hasher = MomentHasher(0xcbf2_9ce4_8422_2325);
   moment.hash(&mut hasher);
   let hash = hasher.finish();
   [0, 21, 42].map(|shift| ((hash >> shift) & MASK) as f32 / MASK as f32)
+}
+
+/// Reads picks in order of `at`, whatever order the file has them in
+fn sorted_picks<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<Pick>, D::Error> {
+  let mut picks = Vec::<Pick>::deserialize(deserializer)?;
+  picks.sort_by(|a, b| a.at.total_cmp(&b.at));
+  Ok(picks)
+}
+
+/// The hash behind [`rnd`]: FNV-1a over the bytes, then mixed so every bit of the result depends on all of them. Unlike
+/// the standard library's default hasher, it gives the same values on every Rust release.
+struct MomentHasher(u64);
+
+impl Hasher for MomentHasher {
+  fn write(&mut self, bytes: &[u8]) {
+    for &byte in bytes {
+      self.0 = (self.0 ^ byte as u64).wrapping_mul(0x0000_0100_0000_01b3);
+    }
+  }
+
+  fn finish(&self) -> u64 {
+    let mut hash = self.0;
+    hash = (hash ^ (hash >> 33)).wrapping_mul(0xff51_afd7_ed55_8ccd);
+    hash = (hash ^ (hash >> 33)).wrapping_mul(0xc4ce_b9fe_1a85_ec53);
+    hash ^ (hash >> 33)
+  }
 }
 
 #[cfg(test)]
@@ -772,5 +799,31 @@ mod tests {
       prop.resolve(&env(0.0, &variables)),
       random(vec![0.0]).resolve::<f32>(&env(0.0, &variables))
     );
+  }
+
+  #[test]
+  fn picks_out_of_order_in_a_file_are_sorted_as_it_loads() {
+    let random: Random = crate::scene::file::load(
+      "(picks: [(at: 2.0), (at: 0.0), (at: 1.0)], spread: Float(0.0, 1.0))",
+    )
+    .unwrap();
+    let times: Vec<f32> = random.picks.iter().map(|pick| pick.at).collect();
+    assert_eq!(times, [0.0, 1.0, 2.0]);
+  }
+
+  #[test]
+  fn rnd_is_spread_evenly_and_the_same_every_time() {
+    assert_eq!(rnd((1u32, 2u64, "fan")), rnd((1u32, 2u64, "fan")));
+    // moments one apart land all over, on each of the three numbers
+    for part in 0..3 {
+      let values: Vec<f32> = (0..1000u32).map(|i| rnd((7u32, i))[part]).collect();
+      let mean = values.iter().sum::<f32>() / values.len() as f32;
+      assert!((mean - 0.5).abs() < 0.05, "mean {mean}");
+      for tenth in 0..10 {
+        let (low, high) = (tenth as f32 / 10.0, (tenth + 1) as f32 / 10.0);
+        let count = values.iter().filter(|v| (low..high).contains(*v)).count();
+        assert!((50..150).contains(&count), "{count} in tenth {tenth}");
+      }
+    }
   }
 }

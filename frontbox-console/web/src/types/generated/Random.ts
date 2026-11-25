@@ -13,8 +13,8 @@ import type { Spread } from "./Spread";
  */
 export type Random = { 
 /**
- * Sorted by `at`. Before the first pick, the previous cycle's last pick is in effect (or the first pick, in the first
- * cycle).
+ * Sorted by `at`, which a file's are put in as it loads. Before the first pick, the previous cycle's last pick is in
+ * effect (or the first pick, in the first cycle).
  */
 picks: Array<Pick>, spread: Spread, 
 /**

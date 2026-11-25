@@ -46,29 +46,15 @@
 - Live reload of scenes and fonts, as `Content` already does for images.
 - Golden-image tests: render a scene at a time to PNG and compare with a stored one.
 - All the different scene features will probably need a library of demos/templates ("presets")
-- `Transform::Warp` on shapes: bend the outline by noise too, as fills already are. A shape's edges need cutting into short pieces first, or a rect barely bends.
-
-### gfx
-
-- Non-affine transforms: apply the transform list as point mappings, then add `Repeat(size)` (wrap), `Mirror`, and  polar. `Translate` + `Repeat` replaces the `lap` plumbing; `Rotate` on a `Sequence` becomes sugar for it. This is a format change that rewrites every file.
-- Marquee: `Translate` + `Repeat` inside a mask.
-- Per-layer `blend` (additive, `Max`, `Multiply`).
-- Float color: sample in `f32` premultiplied, convert once at the device edge (where LED gamma and per-strip calibration go). Fixes dark fringes fading to transparent and precision loss in `ColorAdjust` chains.
-- Strokes on `Polyline`/`Bezier`: give their edge an unsigned distance to the line.
-- `Stop::at` as a `Prop<f32>`.
-- Per-point phase for `Modulated`: a prop source that reads the point's position or `Sequence` index.
-- One internal walker over every `Prop`, replacing the hand-written `is_animated`, `read_inputs`, `image_names`,  `font_names`, and `check` walks.
-- Gaps in `check`: `Visit`/`Fit` naming a missing traversal; `Modulated` naming a missing modulator; unsorted `Keyframes::keys`, `Random::picks`, gradient `stops` (sort on load); `Prop::Sweep` on a non-position type built in code.
-- Replace `DefaultHasher` in `scene/random.rs` with a fixed integer hash (stable across Rust releases, cheaper).
-- Images on hard-edged displays are point-sampled and alias when shrunk: give images their own footprint. A wider one is a blur, for an image's own soft edges, which a Feather can't reach.
+- `Transform::Warp` and `Transform::Polar` on shapes: bend the outline too, as fills already are. A shape's edges need cutting into short pieces first, or a rect barely bends.
+- Show a `Repeat`'s copies in the editor's outline of a shape, and give it a handle for its spacing. Only the shape itself is outlined now.
 - Plane stitching for playback (or should this just be real 3d rendering?)
 
 ### Lighting
 
 - Alternate resolver doesn't work with animated inputs: key its state on declaration ids, not colors
 - `Mix` conflict resolution isn't an average: it folds with `mix_with(c, 0.5)`, weighting the last color 50%
-- Light and display frames at their own rate instead of once per tick. A higher LED rate needs a per-frame EXP bus
-  budget (~80 chars/ms), sending the largest changes first.
+- Light and display frames at their own rate instead of once per tick. A higher LED rate needs a per-frame EXP bus budget (~80 chars/ms), sending the largest changes first.
 - `undeclare_by_system` leaves empty maps behind; clean them up as `undeclare` does.
 - Keep each light's declarations ordered by `(z, order)` to drop the per-tick sort.
 - `light_graph.rs` `GRAPHS` cache is never evicted (grows with each light position edit in the console).
@@ -120,11 +106,9 @@
 ## Console
 
 - Macros: recordable + re-playable switch/coil sequences (can also reference other macros)
-- Event sourcing/replay - dump per game (serialize to JSON) - record timestamp as a well. Needs: RandSystem, so a
-  replayed game is deterministic.
+- Event sourcing/replay - dump per game (serialize to JSON) - record timestamp as a well. Needs: RandSystem, so a replayed game is deterministic.
 
 ## Docs and tooling
 
-- Have a Claude skill that's ready to go for people (how can this not duplicate docs?). Last, so it describes the API
-  after the renames and cleanups above.
+- Have a Claude skill that's ready to go for people (how can this not duplicate docs?). Last, so it describes the API after the renames and cleanups above.
 - There seems to be a layering emerging: setup hardware + verify that works; setup systems for hardware (Scoop) and shots (ShotSystem); build modes on top of that

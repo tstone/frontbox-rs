@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::scene::{
   Bounds, Contour, Cut, Env, Fill, Inputs, Node, PreparedAdjust, PreparedShadow, PreparedStroke,
   Prop, Reshape, Sample, ShapeAdjust, ShiftLine, TextAlign, TextOutline, TextOverflow, TextSource,
-  Transform, VerticalAlign, Wrap, layout_text,
+  Transform, VerticalAlign, layout_text,
 };
 
 /// Points in the outline polygon of a round shape
@@ -204,8 +204,6 @@ impl Shape {
       Some((outline, _)) => Edge::Polygon(outline),
       None => self.base.edge(env, to_scene),
     };
-    let wrap = self.wrap(bounds.center(), to_scene, env);
-    let extent = edge.extent();
     let (mut strokes, mut shadows, mut feather) = (Vec::new(), Vec::new(), 0.0);
     for adjust in &self.adjust {
       match adjust.prepare(env) {
@@ -220,21 +218,42 @@ impl Shape {
       .iter()
       .map(PreparedStroke::reach)
       .fold(0.0, f32::max);
-    let copies = self
-      .placements(bounds.center(), env)
+    // how far what's inside each of a tier's copies reaches, in the space it's placed from
+    let mut extent = edge.extent();
+    let tiers = self
+      .tiers(bounds.center(), env)
       .into_iter()
-      .map(|placed| PreparedCopy {
-        to_local: placed.to_scene.inverse(),
-        reach: wrap.is_none().then(|| extent.transformed(placed.to_scene)),
-        cuts: placed.cuts,
+      .map(|tier| {
+        let tile = extent;
+        // repeated along an axis, it has no end there
+        let within = tier
+          .spacing
+          .map_or(tile, |spacing| tile.endless(spacing.cmpgt(Vec2::ZERO)));
+        let copies: Vec<PreparedCopy> = tier
+          .placed
+          .into_iter()
+          .map(|placed| PreparedCopy {
+            to_local: placed.to_scene.inverse(),
+            reach: within.placed(placed.to_scene),
+            cuts: placed.cuts,
+          })
+          .collect();
+        extent = copies
+          .iter()
+          .map(|copy| copy.reach)
+          .reduce(|all, reach| all.around(reach))
+          .unwrap_or(Bounds::EVERYWHERE);
+        PreparedTier {
+          repeat: tier.spacing.map(|spacing| Repeat { spacing, tile }),
+          copies,
+        }
       })
       .collect();
     Some(PreparedShape {
       edge,
       bounds,
       to_local: to_scene.inverse(),
-      wrap,
-      copies,
+      tiers,
       strokes,
       feather,
       edge_reach,
@@ -379,13 +398,38 @@ impl Shape {
   }
 
   /// Each copy of the shape its `Mirror`s and `Revolve`s draw, the shape itself first, with what its `Bisect`s cut from
-  /// it. Assumes the shape isn't collapsed.
+  /// it. A `Repeat`'s copies have no end, so they're left out. Assumes the shape isn't collapsed.
   fn placements(&self, center: Vec2, env: &Env) -> Vec<Placement> {
-    let mut placed = vec![Placement {
-      to_scene: Affine2::IDENTITY,
-      cuts: Vec::new(),
-    }];
+    let placed = self.tiers(center, env).into_iter().map(|tier| tier.placed);
+    placed
+      .reduce(|inside, outside| {
+        outside
+          .iter()
+          .flat_map(|outer| inside.iter().map(|inner| inner.placed(outer)))
+          .take(MAX_COPIES)
+          .collect()
+      })
+      .unwrap_or_default()
+  }
+
+  /// The shape's copies, split into tiers at each `Repeat`, from the shape outward. The first tier's copies are of the
+  /// shape itself, and each one after places copies of the tier before it, repeated. A `Rotate` on a `Sequence` adds a
+  /// last tier that repeats everything along the line. Assumes the shape isn't collapsed.
+  fn tiers(&self, center: Vec2, env: &Env) -> Vec<Tier> {
+    let mut tiers = Vec::new();
+    let mut placed = vec![Placement::unmoved()];
+    let mut spacing = None;
+    let mut close = |placed: &mut Vec<Placement>, spacing: &mut Option<Vec2>, next: Vec2| {
+      tiers.push(Tier {
+        placed: std::mem::replace(placed, vec![Placement::unmoved()]),
+        spacing: spacing.replace(next),
+      });
+    };
     for (transform, affine) in self.transform.iter().zip(self.affines(center, env)) {
+      if let Some(next) = transform.repeat(env) {
+        close(&mut placed, &mut spacing, next);
+        continue;
+      }
       let moves = transform.copies(env).unwrap_or_else(|| vec![affine]);
       placed = placed
         .iter()
@@ -398,7 +442,11 @@ impl Shape {
           .for_each(|placement| placement.cuts.push(cut));
       }
     }
-    placed
+    if let Some(lap) = self.lap(env) {
+      close(&mut placed, &mut spacing, Vec2::new(lap, 0.0));
+    }
+    tiers.push(Tier { placed, spacing });
+    tiers
   }
 
   /// The scene-space point `phase` (0 to 1) of the way along the outline. The origin if there's no outline.
@@ -789,9 +837,8 @@ pub(crate) struct PreparedShape {
   pub bounds: Bounds,
   /// Scene to local space for the shape itself, without the copies a `Mirror` or `Revolve` makes
   pub to_local: Affine2,
-  wrap: Option<Wrap>,
-  /// Each copy that's drawn, the shape itself first
-  copies: Vec<PreparedCopy>,
+  /// Its copies, from the shape outward, as [`Shape::tiers`] splits them. Never empty.
+  tiers: Vec<PreparedTier>,
   /// In order
   strokes: Vec<PreparedStroke>,
   /// How wide the edge and the strokes' bands are softened, in scene units
@@ -854,33 +901,68 @@ impl PreparedShape {
   }
 
   /// The signed distance at `pos` to the edge of the nearest copy, and where `pos` is in that copy's local space. Each
-  /// stroke's distance to its band, from the nearest copy to it, goes in `bands`, which can be left empty. Copies whose box, grown by `reach`, is away from `pos` are skipped, and `None`
-  /// if every one is.
+  /// stroke's distance to its band, from the nearest copy to it, goes in `bands`, which can be left empty. Copies whose
+  /// box, grown by `reach`, is away from `pos` are skipped, and `None` if every one is.
   fn nearest(&self, pos: Vec2, reach: f32, bands: &mut [f32]) -> Option<(f32, Vec2)> {
-    let wrapped = self.wrap.map_or(pos, |wrap| wrap.apply(pos));
     let mut nearest: Option<(f32, Vec2)> = None;
-    for copy in &self.copies {
-      if copy
-        .reach
-        .is_some_and(|extent| !extent.grown(reach).contains(pos))
-      {
-        continue;
-      }
-      let local = copy.to_local.transform_point2(wrapped);
-      let (distance, gradient) = self.edge.distance(local);
-      // inside the edge and on the kept side of every cut, so the farthest of them
-      let distance = copy.cuts.iter().fold(
-        scene_distance(distance, gradient, &copy.to_local),
-        |distance, cut| distance.max(cut.distance(wrapped)),
-      );
+    let mut found = |distance: f32, local: Vec2| {
       for (band, stroke) in bands.iter_mut().zip(&self.strokes) {
         *band = band.min(stroke.band(distance));
       }
       if nearest.is_none_or(|(nearest, _)| distance < nearest) {
         nearest = Some((distance, local));
       }
-    }
+    };
+    let outermost = Within {
+      to_here: Affine2::IDENTITY,
+      cut: f32::NEG_INFINITY,
+    };
+    self.each_copy(self.tiers.len() - 1, pos, outermost, reach, &mut found);
     nearest
+  }
+
+  /// Calls `found` for each copy of the shape near `pos`, with the signed distance to its edge in scene units and where
+  /// `pos` is in its local space. `pos` is in the space the copies of `tier` are placed in, which `within` describes.
+  fn each_copy(
+    &self,
+    tier: usize,
+    pos: Vec2,
+    within: Within,
+    reach: f32,
+    found: &mut dyn FnMut(f32, Vec2),
+  ) {
+    let PreparedTier { repeat, copies } = &self.tiers[tier];
+    let near = reach * stretch(&within.to_here);
+    for copy in copies {
+      if !copy.reach.grown(near).contains(pos) {
+        continue;
+      }
+      let inside = copy.to_local.transform_point2(pos);
+      let to_inside = copy.to_local * within.to_here;
+      // on the kept side of every cut so far, so the farthest of them
+      let cut = copy.cuts.iter().fold(within.cut, |distance, cut| {
+        distance.max(cut.scene_distance(pos, &within.to_here))
+      });
+      match repeat {
+        Some(repeat) if tier > 0 => {
+          for offset in repeat.offsets(inside, reach * stretch(&to_inside)) {
+            let within = Within {
+              to_here: Affine2::from_translation(-offset) * to_inside,
+              cut,
+            };
+            self.each_copy(tier - 1, inside - offset, within, reach, found);
+          }
+        }
+        _ => {
+          let (distance, gradient) = self.edge.distance(inside);
+          // inside the edge as well as the cuts
+          found(
+            scene_distance(distance, gradient, &to_inside).max(cut),
+            inside,
+          );
+        }
+      }
+    }
   }
 }
 
@@ -896,14 +978,75 @@ pub(crate) struct Cover {
   pub shadows: Vec<(f32, Rgba<u8>)>,
 }
 
-/// One copy of a [`PreparedShape`]
+/// One tier of a [`PreparedShape`]'s copies
+struct PreparedTier {
+  /// How what's inside each copy repeats. `None` for the first tier, and for a shape with no `Repeat`.
+  repeat: Option<Repeat>,
+  /// Each copy that's drawn, the shape itself first
+  copies: Vec<PreparedCopy>,
+}
+
+/// One copy in a [`PreparedTier`], of the shape or of the tier before
 struct PreparedCopy {
+  /// From the space the tier's copies are placed in to the copy's own
   to_local: Affine2,
-  /// In scene space
+  /// In the space the tier's copies are placed in
   cuts: Vec<Cut>,
-  /// Its edge's extent in scene space, before strokes, feathers, and shadows reach past it. `None` when it wraps around
-  /// a `Sequence`.
-  reach: Option<Bounds>,
+  /// How far what's inside it reaches in the space the tier's copies are placed in, before strokes, feathers, and
+  /// shadows reach past that. Without end along an axis it's repeated on.
+  reach: Bounds,
+}
+
+/// How a tier's contents repeat inside each of its copies
+struct Repeat {
+  /// How far apart on each axis, 0 for an axis that isn't repeated
+  spacing: Vec2,
+  /// How far one of them reaches. Along an axis where that's without end, it isn't repeated any further.
+  tile: Bounds,
+}
+
+impl Repeat {
+  /// How far along an axis the copies either side of the nearest are looked at, for a shape bigger than its spacing
+  const NEIGHBORS: f32 = 2.0;
+
+  /// The offset of each repeat that comes within `near` of `pos`
+  fn offsets(&self, pos: Vec2, near: f32) -> impl Iterator<Item = Vec2> + use<> {
+    let (tile, spacing) = (self.tile, self.spacing);
+    let nearest = ((pos - tile.center()) / spacing).round();
+    // the repeats whose tile, grown by `near`, has `pos` in it
+    let first = ((pos - tile.max - near) / spacing).ceil();
+    let last = ((pos - tile.min + near) / spacing).floor();
+    let repeated = spacing.cmpgt(Vec2::ZERO) & tile.size().is_finite_mask();
+    Self::lattice(
+      Vec2::select(repeated, first.max(nearest - Self::NEIGHBORS), Vec2::ZERO),
+      Vec2::select(repeated, last.min(nearest + Self::NEIGHBORS), Vec2::ZERO),
+      spacing,
+    )
+  }
+
+  /// Each whole step from `first` to `last` on both axes, times `spacing`
+  fn lattice(first: Vec2, last: Vec2, spacing: Vec2) -> impl Iterator<Item = Vec2> + use<> {
+    let steps = |first: f32, last: f32| first as i32..=last as i32;
+    steps(first.y, last.y).flat_map(move |y| {
+      steps(first.x, last.x).map(move |x| Vec2::new(x as f32, y as f32) * spacing)
+    })
+  }
+}
+
+/// The space a tier's copies are placed in, on the way from the scene to one copy of the shape
+#[derive(Clone, Copy)]
+struct Within {
+  /// From scene space
+  to_here: Affine2,
+  /// The farthest out of every cut passed on the way, in scene units
+  cut: f32,
+}
+
+/// The copies a shape's transforms place between one `Repeat` and the next
+struct Tier {
+  placed: Vec<Placement>,
+  /// How far apart what's inside each copy repeats. `None` for the first tier, and for a shape with no `Repeat`.
+  spacing: Option<Vec2>,
 }
 
 /// Where one copy of a shape is drawn, from local to scene space, and what's cut from it in scene space
@@ -913,6 +1056,21 @@ struct Placement {
 }
 
 impl Placement {
+  /// The shape where it is, with nothing cut
+  fn unmoved() -> Self {
+    Self {
+      to_scene: Affine2::IDENTITY,
+      cuts: Vec::new(),
+    }
+  }
+
+  /// This copy as it is inside `outer`, a copy of everything this one is part of
+  fn placed(&self, outer: &Placement) -> Self {
+    let mut placed = self.moved(outer.to_scene);
+    placed.cuts.extend(outer.cuts.iter().copied());
+    placed
+  }
+
   /// The same copy, and its cuts, moved on by `affine`
   fn moved(&self, affine: Affine2) -> Self {
     Self {
@@ -1041,6 +1199,19 @@ fn scene_distance(distance: f32, gradient: Vec2, to_local: &Affine2) -> f32 {
   }
 }
 
+/// The most `affine` stretches a length by, in any direction
+fn stretch(affine: &Affine2) -> f32 {
+  let (x, y) = (affine.matrix2.x_axis, affine.matrix2.y_axis);
+  let squares = x.length_squared() + y.length_squared();
+  let determinant = affine.matrix2.determinant();
+  ((squares
+    + (squares * squares - 4.0 * determinant * determinant)
+      .max(0.0)
+      .sqrt())
+    / 2.0)
+    .sqrt()
+}
+
 /// Anti-aliased coverage: a linear ramp across the sample's radius, so a sample centered on the edge is half covered.
 /// A `feather` widens the ramp by its width and eases both ends of it, as a blur does.
 fn coverage(distance: f32, radius: f32, feather: f32) -> f32 {
@@ -1114,7 +1285,10 @@ fn wave_line(reach: Vec2, runs: u32, form: WaveForm) -> Vec<Vec2> {
           1 => 0.0,
           _ => -reach.x + 2.0 * reach.x * run as f32 / (runs - 1) as f32,
         };
-        [Vec2::new(x, bottom_first(run)), Vec2::new(x, bottom_first(run + 1))]
+        [
+          Vec2::new(x, bottom_first(run)),
+          Vec2::new(x, bottom_first(run + 1)),
+        ]
       })
       .collect();
   }
@@ -1130,7 +1304,10 @@ fn wave_line(reach: Vec2, runs: u32, form: WaveForm) -> Vec<Vec2> {
       WaveForm::Smooth => points.extend((1..=WAVE_STEPS).map(|step| {
         let t = step as f32 / WAVE_STEPS as f32;
         let eased = (1.0 - (std::f32::consts::PI * t).cos()) / 2.0;
-        Vec2::new(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * eased)
+        Vec2::new(
+          from.x + (to.x - from.x) * t,
+          from.y + (to.y - from.y) * eased,
+        )
       })),
       WaveForm::Zigzag | WaveForm::Square => points.push(to),
     }

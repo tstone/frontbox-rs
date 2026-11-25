@@ -91,9 +91,26 @@ lerp_tuple!(
   (A 0, B 1, C 2, D 3, E 4, F 5)
 );
 
+/// Each color counts for as much as it's opaque, so fading to a transparent color keeps this one's color on the way
+/// rather than mixing in one that can't be seen: red to transparent black is red all the way down. Between colors of
+/// the same alpha, that's each channel on its own.
 impl Lerp for image::Rgba<u8> {
   fn interpolate(&self, other: &Self, t: f32) -> Self {
-    image::Rgba(self.0.interpolate(&other.0, t))
+    let (from, to) = (self.0[3] as f32, other.0[3] as f32);
+    // past either end there's no mix to weigh, and each end is itself exactly
+    if from == to || t <= 0.0 || t >= 1.0 {
+      return image::Rgba(self.0.interpolate(&other.0, t));
+    }
+    let (near, far) = (from * (1.0 - t), to * t);
+    let channel = |c: usize| {
+      ((self.0[c] as f32 * near + other.0[c] as f32 * far) / (near + far)).round() as u8
+    };
+    image::Rgba([
+      channel(0),
+      channel(1),
+      channel(2),
+      self.0[3].interpolate(&other.0[3], t),
+    ])
   }
 }
 
@@ -171,8 +188,22 @@ mod tests {
   #[test]
   fn test_pixels() {
     let from = image::Rgba([0, 255, 100, 255]);
-    let to = image::Rgba([100, 55, 100, 0]);
-    assert_eq!(from.interpolate(&to, 0.5), image::Rgba([50, 155, 100, 127]));
+    let to = image::Rgba([100, 55, 100, 255]);
+    assert_eq!(from.interpolate(&to, 0.5), image::Rgba([50, 155, 100, 255]));
+  }
+
+  #[test]
+  fn test_pixels_fading_out_keep_their_color() {
+    let red = image::Rgba([255, 0, 0, 255]);
+    let clear = image::Rgba([0, 0, 0, 0]);
+    assert_eq!(red.interpolate(&clear, 0.5), image::Rgba([255, 0, 0, 127]));
+    assert_eq!(clear.interpolate(&red, 0.25), image::Rgba([255, 0, 0, 64]));
+    // each end is itself, whatever color a transparent one has
+    assert_eq!(red.interpolate(&clear, 1.0), clear);
+    assert_eq!(red.interpolate(&clear, 0.0), red);
+    // the more opaque color counts for more
+    let faint_blue = image::Rgba([0, 0, 255, 85]);
+    assert_eq!(red.interpolate(&faint_blue, 0.5), image::Rgba([191, 0, 64, 170]));
   }
 
   #[test]
@@ -235,6 +266,7 @@ mod tests {
     let mid = from.interpolate(&to, 0.5);
     assert_eq!(mid.dimensions(), (2, 1));
     assert_eq!(*mid.get_pixel(0, 0), image::Rgba([150, 150, 150, 255]));
-    assert_eq!(*mid.get_pixel(1, 0), image::Rgba([50, 50, 50, 127]));
+    // fading out, it keeps its color
+    assert_eq!(*mid.get_pixel(1, 0), image::Rgba([100, 100, 100, 127]));
   }
 }

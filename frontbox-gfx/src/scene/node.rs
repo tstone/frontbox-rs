@@ -73,35 +73,15 @@ impl<N, A> Node<N, A> {
     (forward.matrix2.determinant().abs() > f32::EPSILON).then_some(forward)
   }
 
-  /// How a `Sequence` wraps around for a node with a `Rotate`, given its `to_scene`. `None` on an `Area`, or without a
-  /// `Rotate`.
-  pub(crate) fn wrap(&self, center: Vec2, to_scene: Affine2, env: &Env) -> Option<Wrap> {
-    let lap = env.lap.filter(|_| {
+  /// On a `Sequence`, the lap a node with a `Rotate` repeats at, so that what's scrolled off one end comes back at the
+  /// other. `None` on an `Area`, or without a `Rotate`.
+  pub(crate) fn lap(&self, env: &Env) -> Option<f32> {
+    env.lap.filter(|_| {
       self
         .transform
         .iter()
         .any(|transform| matches!(transform, Transform::Rotate(_)))
-    })?;
-    Some(Wrap {
-      lap,
-      center: to_scene.transform_point2(center).x,
     })
-  }
-}
-
-/// Where a node on a `Sequence` repeats: once every `lap`, around its `center` along the line
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct Wrap {
-  lap: f32,
-  center: f32,
-}
-
-impl Wrap {
-  /// Shifts `at` by whole laps to whichever copy is nearest the node, so a node scrolled off one end reappears at the
-  /// other
-  pub(crate) fn apply(&self, at: Vec2) -> Vec2 {
-    let laps = ((self.center - at.x) / self.lap).round();
-    Vec2::new(at.x + laps * self.lap, at.y)
   }
 }
 

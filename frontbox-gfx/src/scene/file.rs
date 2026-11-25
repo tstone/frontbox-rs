@@ -280,11 +280,14 @@ mod tests {
             center: Vec2::new(8.0, 0.0).into(),
             rotation: 20.0.into(),
           })
-          .transform(Transform::Translate(Vec2::new(30.0, 25.0).into())),
+          .transform(Transform::Translate(Vec2::new(30.0, 25.0).into()))
+          .transform(Transform::Repeat(Vec2::new(40.0, 0.0).into())),
         ),
-        Layer::new(Fill::new(FillNode::Solid(
-          Color(Rgba([0, 128, 255, 255])).into(),
-        )))
+        Layer::new(
+          Fill::new(FillNode::Solid(Color(Rgba([0, 128, 255, 255])).into()))
+            .transform(Transform::Repeat(Vec2::new(0.25, 0.5).into()))
+            .transform(Transform::Polar {}),
+        )
         .region(
           Shape::new(ShapeNode::Star {
             radius: 15.0.into(),

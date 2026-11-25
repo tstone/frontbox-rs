@@ -225,7 +225,7 @@ const PATH_OPTIONS: ShapeOption[] = [
   { value: 'Spiral', label: 'Spiral', group: 'Shapes' } as ShapeOption,
   { value: 'Wave', label: 'Wave', group: 'Shapes' } as ShapeOption,
 ].sort(byLabel)
-const TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = (['Translate', 'Rotate', 'Scale'] as const).map((value) => ({ value, label: TRANSFORM_LABELS[value] }))
+const TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = (['Translate', 'Rotate', 'Scale', 'Repeat'] as const).map((value) => ({ value, label: TRANSFORM_LABELS[value] }))
 /** Only for a shape that's drawn, rather than a sweep's path */
 const SHAPE_TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = [...COPY_KINDS, ...RESHAPE_KINDS].map((value) => ({ value, label: TRANSFORM_LABELS[value] }))
 /** Only for a layer on a light scene */
@@ -233,7 +233,7 @@ const GRAPH_REGION_OPTIONS: ShapeOption[] = [ALL, { value: 'Graph', label: 'Grap
 /** Only for a layer with traversals to fit to */
 const FIT_OPTION: { value: TransformKind; label: string } = { value: 'Fit', label: TRANSFORM_LABELS.Fit }
 /** Only for a fill */
-const FILL_TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = [{ value: 'Warp', label: TRANSFORM_LABELS.Warp }]
+const FILL_TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = (['Warp', 'Polar'] as const).map((value) => ({ value, label: TRANSFORM_LABELS[value] }))
 const ALGORITHM_OPTIONS: { value: AlgorithmKind; label: string }[] = [
   { value: 'DepthFirst', label: 'Depth first' },
   { value: 'ShortestPath', label: 'Direct path (targeted)' },
@@ -362,6 +362,8 @@ const MODIFIER_ICONS: Record<TransformKind | AdjustKind | 'Feather' | 'Shadow', 
   Bulge: icons.Squircle,
   Round: icons.SquareRoundCorner,
   Warp: icons.Waves,
+  Repeat: icons.Grid3x3,
+  Polar: icons.Radar,
   HueShift: icons.Palette,
   Opacity: icons.Droplet,
   Brightness: icons.Sun,
@@ -2181,6 +2183,9 @@ function newTransform(kind: TransformKind, traversals: string[], size: Vec2): Tr
   if (kind === 'Shift') return { Shift: { amount: { Fixed: SHIFT.rest! }, rotation: { Fixed: 0 } } }
   if (kind === 'Bulge') return { Bulge: { Fixed: BULGE.rest! } }
   if (kind === 'Round') return { Round: { Fixed: 0 } }
+  // a shape is copied beside itself with a gap, and a fill is tiled twice across
+  if (kind === 'Repeat') return { Repeat: { Fixed: size[0] > 0 ? [Math.ceil(size[0] * 1.5), 0] : [0.5, 0] } }
+  if (kind === 'Polar') return { Polar: {} }
   if (kind === 'Warp') return { Warp: { amount: { Fixed: WARP_AMOUNT.rest! }, scale: { Fixed: 0.5 }, octaves: 2, evolution: { Fixed: 0 }, seed: randomSeed() } }
   return { Fit: traversals[0] ?? '' }
 }
