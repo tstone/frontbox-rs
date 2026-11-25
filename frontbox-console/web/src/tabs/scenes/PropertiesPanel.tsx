@@ -77,6 +77,7 @@ import {
   ShowModulatorContext,
   SurfaceContext,
   TraversalsContext,
+  LayerIndexContext,
 } from './SceneFields'
 import ModulatorList, { modulatorElementId } from './ModulatorList'
 import {
@@ -181,7 +182,6 @@ const FILL_OPTIONS: { value: FillKind; label: string }[] = [
   { value: 'Image', label: 'Image' },
   { value: 'Spritesheet', label: 'Sprite sheet' },
 ]
-const byLabel = (a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label)
 type ShapeOption = { value: RegionKind | TemplateKind; label: string; group?: string }
 const SHAPES: ShapeOption[] = ([
   { value: 'Chevron', label: 'Chevron' },
@@ -214,19 +214,8 @@ const isTemplate = (kind: RegionKind | TemplateKind): kind is TemplateKind =>
 const ALL: ShapeOption = { value: 'None', label: 'All' }
 /** "All", then the shapes by label, then the templates made of them, then lines */
 const SHAPE_OPTIONS: ShapeOption[] = [ALL, ...SHAPES, ...TEMPLATES, ...LINES]
-/**
- * A path has to be something, and can also be a line, which has no inside to draw as a shape. A sweep follows only a
- * path's own outline, so it has no templates. Text isn't offered, as only its box is an outline to follow.
- */
-const PATH_OPTIONS: ShapeOption[] = [
-  ...SHAPES.filter((option) => option.value !== 'Text'),
-  { value: 'Polyline', label: 'Polyline', group: 'Shapes' } as ShapeOption,
-  { value: 'Bezier', label: 'Bezier', group: 'Shapes' } as ShapeOption,
-  { value: 'Spiral', label: 'Spiral', group: 'Shapes' } as ShapeOption,
-  { value: 'Wave', label: 'Wave', group: 'Shapes' } as ShapeOption,
-].sort(byLabel)
 const TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = (['Translate', 'Rotate', 'Scale', 'Repeat'] as const).map((value) => ({ value, label: TRANSFORM_LABELS[value] }))
-/** Only for a shape that's drawn, rather than a sweep's path */
+/** Only for a shape, rather than a fill */
 const SHAPE_TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = [...COPY_KINDS, ...RESHAPE_KINDS].map((value) => ({ value, label: TRANSFORM_LABELS[value] }))
 /** Only for a layer on a light scene */
 const GRAPH_REGION_OPTIONS: ShapeOption[] = [ALL, { value: 'Graph', label: 'Graph' }, ...SHAPES, ...TEMPLATES, ...LINES]
@@ -255,7 +244,7 @@ const MASK_OPTIONS: { value: 'Off' | 'Outside' | 'Inside'; label: string }[] = [
   { value: 'Inside', label: 'Hides inside' },
 ]
 const ADJUST_OPTIONS = (Object.keys(ADJUSTS) as AdjustKind[]).map((value) => ({ value, label: ADJUSTS[value].label }))
-/** Only for a shape that's drawn, rather than a sweep's path */
+/** Only for a shape, rather than a fill */
 const SHAPE_ADJUST_OPTIONS: { value: 'Stroke' | 'Feather' | 'Shadow'; label: string }[] = [
   { value: 'Stroke', label: 'Stroke' },
   { value: 'Feather', label: 'Feather' },
@@ -399,7 +388,6 @@ const CONTROL_LABELS: Partial<Record<NodeKind, string | null>> = {
   z: 'Z-index',
   mask: 'Mask',
   region: 'Region',
-  path: 'Path',
   fill: 'Fill',
   fit: 'Fit to',
   variable: 'Source',
@@ -409,7 +397,7 @@ const CONTROL_LABELS: Partial<Record<NodeKind, string | null>> = {
 }
 
 /** The kinds of node whose control is small enough to go beside its label */
-const INLINE_KINDS: NodeKind[] = ['lights', 'z', 'mask', 'fit', 'fill', 'region', 'path']
+const INLINE_KINDS: NodeKind[] = ['lights', 'z', 'mask', 'fit', 'fill', 'region']
 
 /** The kinds of node under a layer that are its settings, shown in its properties */
 const SETTING_KINDS: NodeKind[] = ['lights', 'z', 'mask']
@@ -579,12 +567,15 @@ function NodeScope(props: { id: string; children: JSX.Element }) {
     return node?.kind === 'layer' ? node.lens.get() : undefined
   }
   const color = (): LayerColor => (inSound ? 'sound' : layer() ? layerColor(layer()!) : undefined)
+  const index = layerId === undefined ? null : Number(layerId.split('/')[1])
   return (
     <SurfaceContext.Provider value={() => (layer() ? surfaces(layer()!) : null)}>
       <TraversalsContext.Provider value={() => (inTraversal || !layer() ? [] : traversalNames(layer()!))}>
-        <LayerColorContext.Provider value={color()}>
-          <div class={`scene-properties-node ${layerColorClass(color()) ?? ''}`}>{props.children}</div>
-        </LayerColorContext.Provider>
+        <LayerIndexContext.Provider value={() => index}>
+          <LayerColorContext.Provider value={color()}>
+            <div class={`scene-properties-node ${layerColorClass(color()) ?? ''}`}>{props.children}</div>
+          </LayerColorContext.Provider>
+        </LayerIndexContext.Provider>
       </TraversalsContext.Provider>
     </SurfaceContext.Provider>
   )
@@ -840,7 +831,7 @@ function NodeControl(props: { node: ConfigNode }) {
       <Match when={is(props.node, 'z')}>
         {(z) => <NumberBox class="scene-tree-number" aria-label="Z-index" step="1" value={z().lens.get().z ?? 0} onNumber={(value) => field(z().lens, 'z').set(Math.round(value) || undefined)} />}
       </Match>
-      <Match when={is(props.node, 'region') || is(props.node, 'path')}>{(region) => <ShapeKindPicker node={region()} />}</Match>
+      <Match when={is(props.node, 'region')}>{(region) => <ShapeKindPicker node={region()} />}</Match>
       <Match when={is(props.node, 'fill')}>{(fill) => <FillKindPicker node={fill()} />}</Match>
       <Match when={is(props.node, 'stops')}>{(stops) => <AddStop node={stops()} />}</Match>
       <Match when={is(props.node, 'mask')}>{(mask) => <MaskPicker lens={mask().lens} />}</Match>
@@ -938,7 +929,7 @@ export function NodeIcon(props: { node: ConfigNode }) {
     if (node.kind === 'layer') return node.lens.get().display !== undefined ? icons.Monitor : icons.Lightbulb
     if (node.kind === 'sound') return icons.AudioLines
     if (node.kind === 'section') return node.section === 'values' ? icons.Braces : icons.Variable
-    if (node.kind === 'region' || node.kind === 'path') return SHAPE_ICONS[regionKind(node.lens, node.kind === 'region' ? node.layer : undefined)]
+    if (node.kind === 'region') return SHAPE_ICONS[regionKind(node.lens, node.layer)]
     if (node.kind === 'fill') return FILL_ICONS[fillKind(node.lens)]
     if (node.modifier) return MODIFIER_ICONS[node.modifier]
     if (node.kind === 'prop') return SOURCE_ICONS[propKind(node.lens.get())]
@@ -949,7 +940,7 @@ export function NodeIcon(props: { node: ConfigNode }) {
 }
 
 /** All the shapes a region or path can be, for their labels */
-const REGION_LABELS = new Map([...GRAPH_REGION_OPTIONS, ...PATH_OPTIONS].map(({ value, label }) => [value, label]))
+const REGION_LABELS = new Map(GRAPH_REGION_OPTIONS.map(({ value, label }) => [value, label]))
 
 /**
  * A glance at a node: what type of layer it is, what shape or fill, how many are in a list, or a fixed prop's value or
@@ -960,7 +951,7 @@ export function NodeSummary(props: { node: ConfigNode }) {
   const text = (): string | null => {
     const node = props.node
     if (node.kind === 'layer' || node.kind === 'sound') return layerType(node, scene.get())
-    if (node.kind === 'region' || node.kind === 'path') return REGION_LABELS.get(regionKind(node.lens, node.kind === 'region' ? node.layer : undefined)) ?? null
+    if (node.kind === 'region') return REGION_LABELS.get(regionKind(node.lens, node.layer)) ?? null
     if (node.kind === 'fill') return FILL_OPTIONS.find(({ value }) => value === fillKind(node.lens))?.label ?? null
     if (node.kind === 'value') return NAMED_VALUE_LABELS[namedValueKind(scene.get().values![node.name]!)]
     if (node.kind === 'fit') return (node.lens.get() as { Fit: string }).Fit || null
@@ -1875,24 +1866,22 @@ function regionKind(lens: Lens<Shape | undefined>, layer?: Lens<SceneLayer>): Re
 }
 
 /**
- * Picks what a layer's region or a sweep's path is, which can't be left out. On a light scene, a layer's region
- * can also be its graph. In the file the two are separate, and a layer could have both, but the graph already says which
+ * Picks what a layer's region is. On a light scene, it can also be its graph. In the file the two are separate, and a layer could have both, but the graph already says which
  * lights it shows on. A region has its outline in the preview, which can be hidden.
  */
-function ShapeKindPicker(props: { node: Extract<ConfigNode, { kind: 'region' | 'path' }> }) {
+function ShapeKindPicker(props: { node: Extract<ConfigNode, { kind: 'region' }> }) {
   const tree = useContext(ConfigTreeContext)!
   const surface = useContext(SurfaceContext)!
   const scene = useContext(SceneContext)!
   const graphNodes = useGraphNodes()
   const visibility = useContext(RegionVisibilityContext)
-  const path = () => props.node.kind === 'path'
-  const layer = () => (props.node.kind === 'region' ? props.node.layer : undefined)
+  const layer = () => props.node.layer
   const lens = () => props.node.lens as Lens<Shape | undefined>
   const base = () => field(lens() as Lens<Shape>, 'base') as Lens<ShapeNode>
   // a graph's nodes are where its lights are on a plane, so a sequence has none
   const graphs = () => layer() !== undefined && layerPlane(layer()!.get()) !== null
   const kind = () => regionKind(lens(), layer())
-  const options = () => (path() ? PATH_OPTIONS : graphs() ? GRAPH_REGION_OPTIONS : SHAPE_OPTIONS)
+  const options = () => (graphs() ? GRAPH_REGION_OPTIONS : SHAPE_OPTIONS)
   const of = () => selectionOf(props.node.id)
 
   const change = (next: RegionKind | TemplateKind) => {
@@ -1944,7 +1933,7 @@ function ShapeKindPicker(props: { node: Extract<ConfigNode, { kind: 'region' | '
         }}
       />
       {/* what's selected has its region drawn over the preview */}
-      <Show when={!path() && visibility && of() && kind() !== 'None'}>
+      <Show when={visibility && of() && kind() !== 'None'}>
         <EyeButton label="the region in the preview" hidden={!visibility!.shown(of()!)} onChange={(hidden) => visibility!.show(of()!, !hidden)} />
       </Show>
     </Controls>

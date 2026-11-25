@@ -49,12 +49,12 @@ export const ConfigTreeContext = createContext<ConfigTree>()
 export const hasTrack = (prop: Prop<SceneValue>) => 'Keyframes' in prop || 'Random' in prop || 'Modulated' in prop
 
 /** Nodes that always have a row of their own: what a layer is made of that's set apart from it */
-const OWN_ROWS: NodeKind[] = ['layer', 'sound', 'traversal', 'path', 'copy', 'fit', 'stroke', 'shadow']
+const OWN_ROWS: NodeKind[] = ['layer', 'sound', 'traversal', 'copy', 'fit', 'stroke', 'shadow']
 
 /**
  * Whether a node has a row in the tree. A layer is one row, with its shape, its fill and their settings in its
- * properties. What's set apart from those has a row under it: a modifier, a prop that changes along the timeline, a
- * traversal, and a sweep's path.
+ * properties. What's set apart from those has a row under it: a modifier, a prop that changes along the timeline, and a
+ * traversal.
  */
 export function shownInTree(node: ConfigNode) {
   // shown with its layer, as a fill is

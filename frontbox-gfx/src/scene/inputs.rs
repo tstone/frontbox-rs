@@ -11,6 +11,8 @@ pub struct Inputs {
   pub variables: BTreeMap<String, BTreeSet<VariableType>>,
   /// Each [`ExternalEnvelope`](crate::scene::ExternalEnvelope)'s source and slew, which the scene's assets prepare it by
   pub envelopes: BTreeSet<EnvelopeKey>,
+  /// The layers whose regions its [`Sweep`](crate::scene::Sweep)s follow, by name
+  pub regions: BTreeSet<String>,
 }
 
 impl Inputs {
@@ -28,6 +30,10 @@ impl Inputs {
 
   pub(crate) fn envelope(&mut self, key: EnvelopeKey) {
     self.envelopes.insert(key);
+  }
+
+  pub(crate) fn region(&mut self, layer: &str) {
+    self.regions.insert(layer.into());
   }
 }
 
@@ -120,12 +126,13 @@ mod tests {
   fn variables_inside_other_props_are_found() {
     let inputs = inputs(
       r#"(fill: (base: Solid(Fixed(0, 0, 0, 255))),
-        region: (base: Circle(radius: Fixed(2.0)), transform: [Translate(Sweep(path: (base: Circle(radius: Variable("orbit"))), position: Variable("lap")))]))"#,
+        region: (base: Circle(radius: Variable("orbit")), transform: [Translate(Sweep(layer: "track", position: Variable("lap")))]))"#,
     );
     assert_eq!(
       inputs.variables.keys().collect::<Vec<_>>(),
       ["lap", "orbit"]
     );
+    assert_eq!(inputs.regions.iter().collect::<Vec<_>>(), ["track"]);
   }
 
   #[test]

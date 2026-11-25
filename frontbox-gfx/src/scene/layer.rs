@@ -425,6 +425,7 @@ pub(crate) fn env<'a>(frame: &LayerFrame<'a>) -> Env<'a> {
     defaults: frame.defaults,
     values: frame.values,
     modulators: frame.modulators,
+    regions: frame.regions,
     depth: 0,
     assets: frame.assets,
     viewport: frame.surface.viewport(frame.size),

@@ -11,7 +11,7 @@ use crate::scene::{
 /// along a path, set off by a traversal's visits, or made to follow something outside the graphics
 ///
 /// In RON: `Fixed(4.0)`, `Variable("size")`, `Keyframes((keys: [...]))`, `Random((picks: [...], spread: Float(0.0, 1.0)))`,
-/// `Modulated((modulator: "pulse", spread: Float(0.0, 1.0)))`, `Sweep((path: (base: Circle(radius: Fixed(5.0))), position: Variable("lap")))`,
+/// `Modulated((modulator: "pulse", spread: Float(0.0, 1.0)))`, `Sweep((layer: "orbit", position: Variable("lap")))`,
 /// `Visit((traversal: "bolt", from: 0.0, to: 1.0, smooth_out: 3.0))`, or
 /// `ExternalEnvelope((source: Sound(layer: "hits"), spread: Float(0.0, 1.0), release: 0.15))`. Files from before variables were named so can
 /// say `Param` for `Variable`.
@@ -30,7 +30,7 @@ pub enum Prop<T> {
   Random(Random),
   /// Moves through a range by one of the scene's modulators, a repeating wave timed to the scene cycle
   Modulated(Modulated),
-  /// Moves along a shape's outline. Only valid for positions (`Vec2`); a file using it for anything else fails to load.
+  /// Moves along another layer's region. Only valid for positions (`Vec2`); a file using it for anything else fails to load.
   #[serde(deserialize_with = "only_for_positions::<T, _>")]
   Sweep(Sweep),
   /// Responds to a traversal visiting the node being drawn, on a layer with a graph
@@ -114,7 +114,9 @@ impl Prop<f32> {
 mod tests {
   use super::*;
   use crate::scene::value::tests::env;
-  use crate::scene::{Assets, Bounds, Color, Value, Variables, no_modulators, no_values};
+  use crate::scene::{
+    Assets, Bounds, Color, Value, Variables, no_modulators, no_regions, no_values,
+  };
 
   #[test]
   fn fixed_resolves_to_its_value() {
@@ -138,6 +140,7 @@ mod tests {
       defaults: &defaults,
       values: no_values(),
       modulators: no_modulators(),
+      regions: no_regions(),
       depth: 0,
       assets: Assets::none(),
       viewport: Bounds::sized(glam::Vec2::ONE),

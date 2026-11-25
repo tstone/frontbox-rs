@@ -189,7 +189,8 @@ pub struct ShapePose {
   /// Outline of the shape itself in scene space, without what a `Mirror`, `Revolve`, or `Bisect` does to it. Closed,
   /// except for polylines and beziers.
   pub outline: Vec<Vec2>,
-  /// For each transform, the pose of the `Sweep` path it follows, if any. The path's coordinates are translate values.
+  /// For each transform, the pose of the layer region its `Sweep` follows, if any. The path's coordinates are translate
+  /// values.
   pub paths: Vec<Option<ShapePose>>,
 }
 
@@ -347,7 +348,11 @@ impl Shape {
       paths: self
         .transform
         .iter()
-        .map(|transform| transform.path().and_then(|path| path.pose(env)))
+        .map(|transform| {
+          transform
+            .path(env)
+            .and_then(|(path, path_env)| path.pose(&path_env))
+        })
         .collect(),
     })
   }
@@ -478,6 +483,15 @@ impl Shape {
       .adjust
       .iter()
       .for_each(|adjust| adjust.read_inputs(inputs));
+  }
+
+  /// The inputs of what decides where its outline is, which is everything but its adjusts: what a sweep along it reads
+  pub(crate) fn read_path_inputs(&self, inputs: &mut Inputs) {
+    self.base.read_inputs(inputs);
+    self
+      .transform
+      .iter()
+      .for_each(|transform| transform.read_inputs(inputs));
   }
 
   /// Each stroke's fill, in order
@@ -753,7 +767,7 @@ impl ShapeNode {
   }
 
   /// Whether it's a line, with no inside
-  fn is_open(&self) -> bool {
+  pub(crate) fn is_open(&self) -> bool {
     matches!(
       self,
       Self::Polyline { .. } | Self::Bezier { .. } | Self::Spiral { .. } | Self::Wave { .. }

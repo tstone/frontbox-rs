@@ -23,6 +23,16 @@ pub enum SceneError {
   NoSoundToFollow { sound: String },
   /// An external envelope's attack or release isn't 0 or more seconds
   NegativeSlew { sound: String },
+  /// A sweep follows a layer the scene doesn't have
+  NoPathToFollow { layer: String, path: String },
+  /// A sweep follows a layer by a name more than one drawn layer has
+  SamePathName { path: String },
+  /// A sweep follows a layer with no region
+  PathHasNoRegion { path: String },
+  /// A sweep follows a layer drawn on something else, whose units aren't its own
+  PathElsewhere { layer: String, path: String },
+  /// A layer's region follows a region that follows its way back to the first
+  PathLoop { layer: String },
 }
 
 impl fmt::Display for SceneError {
@@ -56,6 +66,26 @@ impl fmt::Display for SceneError {
       Self::NegativeSlew { sound } => write!(
         f,
         "the envelope following \"{sound}\" needs an attack and release of 0 or more seconds"
+      ),
+      Self::NoPathToFollow { layer, path } => write!(
+        f,
+        "{layer} sweeps along layer \"{path}\", which the scene doesn't have"
+      ),
+      Self::SamePathName { path } => write!(
+        f,
+        "a sweep follows layer \"{path}\", but more than one layer has that name"
+      ),
+      Self::PathHasNoRegion { path } => write!(
+        f,
+        "a sweep follows layer \"{path}\", which has no region to follow"
+      ),
+      Self::PathElsewhere { layer, path } => write!(
+        f,
+        "{layer} sweeps along layer \"{path}\", which is drawn on something else"
+      ),
+      Self::PathLoop { layer } => write!(
+        f,
+        "the region of {layer} sweeps along regions that come back around to it"
       ),
     }
   }

@@ -117,6 +117,7 @@ mod tests {
           defaults: no_variables(),
           values: no_values(),
           modulators: no_modulators(),
+          regions: no_regions(),
         };
         (0..20)
           .flat_map(|y| {
@@ -323,14 +324,46 @@ mod tests {
           })
           .transform(Transform::Translate(Vec2::new(50.0, 40.0).into())),
         ),
+        // the paths the sweeps below follow, which aren't drawn
+        Layer::new(Fill::new(FillNode::Solid(
+          Color(Rgba([0, 0, 255, 255])).into(),
+        )))
+        .name("orbit")
+        .visible(false)
+        .region(
+          Shape::new(ShapeNode::circle(15.0))
+            .transform(Transform::Translate(Vec2::new(50.0, 25.0).into())),
+        ),
+        Layer::new(Fill::new(FillNode::Solid(
+          Color(Rgba([0, 0, 255, 255])).into(),
+        )))
+        .name("line")
+        .region(Shape::new(ShapeNode::Polyline {
+          points: vec![Vec2::ZERO.into(), Vec2::new(10.0, 0.0).into()],
+        })),
+        Layer::new(Fill::new(FillNode::Solid(
+          Color(Rgba([0, 0, 255, 255])).into(),
+        )))
+        .name("curve")
+        .region(Shape::new(ShapeNode::Bezier {
+          points: vec![
+            BezierPoint {
+              point: Vec2::ZERO.into(),
+              handle: Vec2::new(0.0, 5.0).into(),
+            },
+            BezierPoint {
+              point: Vec2::new(10.0, 0.0).into(),
+              handle: Vec2::new(0.0, -5.0).into(),
+            },
+          ],
+        })),
         Layer::new(Fill::new(FillNode::Solid(
           Color(Rgba([0, 255, 0, 255])).into(),
         )))
         .region(
           Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(
             Sweep::new(
-              Shape::new(ShapeNode::circle(15.0))
-                .transform(Transform::Translate(Vec2::new(50.0, 25.0).into())),
+              "orbit",
               Prop::Keyframes(Keyframes::new(
                 vec![
                   Key::new(0.25, 0.0, Curve::Linear),
@@ -346,12 +379,7 @@ mod tests {
         )))
         .region(
           Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(
-            Sweep::new(
-              Shape::new(ShapeNode::Polyline {
-                points: vec![Vec2::ZERO.into(), Vec2::new(10.0, 0.0).into()],
-              }),
-              Prop::Variable("lap".into()),
-            ),
+            Sweep::new("line", Prop::Variable("lap".into())).ends(SweepEnds::PingPong),
           ))),
         ),
         Layer::new(Fill::new(FillNode::Solid(
@@ -360,18 +388,7 @@ mod tests {
         .region(
           Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(
             Sweep::new(
-              Shape::new(ShapeNode::Bezier {
-                points: vec![
-                  BezierPoint {
-                    point: Vec2::ZERO.into(),
-                    handle: Vec2::new(0.0, 5.0).into(),
-                  },
-                  BezierPoint {
-                    point: Vec2::new(10.0, 0.0).into(),
-                    handle: Vec2::new(0.0, -5.0).into(),
-                  },
-                ],
-              }),
+              "curve",
               Prop::Modulated(Modulated {
                 modulator: "back and forth".into(),
                 spread: Spread::Float(0.0, 1.0),
@@ -406,11 +423,14 @@ mod tests {
 
   #[test]
   fn a_sweep_only_loads_on_a_position() {
-    let sweep =
-      "Sweep(path: (base: Ellipse(rx: Fixed(1.0), ry: Fixed(1.0))), position: Fixed(0.5))";
+    let sweep = r#"Sweep(layer: "track", position: Fixed(0.5))"#;
     let scene = |transform: &str, radius: &str, color: &str| {
       format!(
         "(timing: (duration: 1.0), layers: [(
+          name: \"track\",
+          region: (base: Circle(radius: Fixed(5.0))),
+          fill: (base: Solid(Fixed(0, 0, 255, 255))),
+        ), (
           region: (transform: [{transform}], base: Ellipse(rx: Fixed(1.0), ry: {radius})),
           fill: (base: Solid({color})),
         )])"
@@ -642,6 +662,7 @@ mod tests {
       defaults: no_variables(),
       values: no_values(),
       modulators: no_modulators(),
+      regions: no_regions(),
     };
     let colors: Vec<_> = line.samples().map(|s| scene.sample(&s, &frame)).collect();
     assert_eq!(colors[0], Rgba([255, 0, 0, 255]));
@@ -746,6 +767,7 @@ mod tests {
           defaults: no_variables(),
           values: no_values(),
           modulators: no_modulators(),
+          regions: no_regions(),
         },
       )
     };
@@ -784,6 +806,7 @@ mod tests {
       defaults: no_variables(),
       values: no_values(),
       modulators: no_modulators(),
+      regions: no_regions(),
     };
     let at = Sample::new(Vec2::new(0.5, 0.5), 0.5);
     assert_eq!(read.sample(&at, &frame), scene.sample(&at, &frame));
@@ -829,6 +852,7 @@ mod tests {
       defaults: no_variables(),
       values: no_values(),
       modulators: no_modulators(),
+      regions: no_regions(),
     };
     let at = Sample::new(Vec2::new(1.5, 0.5), 0.5);
     assert_eq!(read.sample(&at, &frame), scene.sample(&at, &frame));
@@ -1018,6 +1042,7 @@ mod tests {
           defaults: no_variables(),
           values: no_values(),
           modulators: no_modulators(),
+          regions: no_regions(),
         };
         let visits = scene.visits(&graph, &frame);
         samples

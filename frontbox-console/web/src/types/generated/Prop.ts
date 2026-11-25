@@ -11,7 +11,7 @@ import type { VisitResponse } from "./VisitResponse";
  * along a path, set off by a traversal's visits, or made to follow something outside the graphics
  *
  * In RON: `Fixed(4.0)`, `Variable("size")`, `Keyframes((keys: [...]))`, `Random((picks: [...], spread: Float(0.0, 1.0)))`,
- * `Modulated((modulator: "pulse", spread: Float(0.0, 1.0)))`, `Sweep((path: (base: Circle(radius: Fixed(5.0))), position: Variable("lap")))`,
+ * `Modulated((modulator: "pulse", spread: Float(0.0, 1.0)))`, `Sweep((layer: "orbit", position: Variable("lap")))`,
  * `Visit((traversal: "bolt", from: 0.0, to: 1.0, smooth_out: 3.0))`, or
  * `ExternalEnvelope((source: Sound(layer: "hits"), spread: Float(0.0, 1.0), release: 0.15))`. Files from before variables were named so can
  * say `Param` for `Variable`.

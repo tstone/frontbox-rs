@@ -5,8 +5,8 @@ use frontbox_gfx::animation::Cycle;
 use frontbox_gfx::scene::file::{self, FormatError};
 use frontbox_gfx::scene::{
   self, Assets, Content, EnvelopeSource, Inputs, Layer, LayerAssetError, LayerFrame, Modulators,
-  Placement, PreparedEnvelope, SceneError, SceneFileError, Timing, Value, Values, Variables,
-  Visits,
+  Placement, PreparedEnvelope, Regions, SceneError, SceneFileError, Shape, Timing, Value, Values,
+  Variables, Visits, check_sweeps,
 };
 use serde::{Deserialize, Serialize};
 
@@ -138,6 +138,13 @@ impl Scene {
           .layer()
           .map_or(Ok(()), |layer| layer.check(index, self.timing)),
       })?;
+    let drawn: Vec<_> = self
+      .layers
+      .iter()
+      .enumerate()
+      .filter_map(|(index, layer)| Some((index, layer.layer()?, layer.drawn_on()?)))
+      .collect();
+    check_sweeps(&drawn)?;
     self.inputs().envelopes.iter().try_for_each(|key| {
       key.check()?;
       let EnvelopeSource::Sound { layer, .. } = &key.source;
@@ -324,11 +331,25 @@ impl Scene {
       defaults: &self.variables,
       values: &self.values,
       modulators: &self.modulators,
+      regions: self,
       assets: &self.assets,
       size,
       surface,
       visits,
     }
+  }
+}
+
+/// The first drawn layer by each name. [`Scene::check`] makes sure a sweep follows the only one.
+impl Regions for Scene {
+  fn region(&self, layer: &str) -> Option<&Shape> {
+    self
+      .layers
+      .iter()
+      .filter_map(SceneLayer::layer)
+      .find(|drawn| drawn.name.as_deref() == Some(layer))?
+      .region
+      .as_ref()
   }
 }
 
@@ -355,6 +376,16 @@ impl SceneLayer {
     match self {
       Self::Lights(layer) => Some(&mut layer.layer),
       Self::Display(layer) => Some(&mut layer.layer),
+      Self::Sound(_) => None,
+    }
+  }
+
+  /// What it's drawn on, as far as what its units are measured against: the same for two layers whose numbers mean the
+  /// same thing. `None` for a sound layer.
+  fn drawn_on(&self) -> Option<DrawnOn<'_>> {
+    match self {
+      Self::Lights(layer) => Some(DrawnOn::Lights(&layer.surface)),
+      Self::Display(layer) => Some(DrawnOn::Display(&layer.display)),
       Self::Sound(_) => None,
     }
   }
@@ -597,6 +628,13 @@ enum SceneFile {
   Scene(Scene),
 }
 
+/// What a drawn layer's numbers are measured against, which a sweep's path has to share
+#[derive(PartialEq)]
+enum DrawnOn<'a> {
+  Lights(&'a LightSurface),
+  Display(&'a str),
+}
+
 #[cfg(test)]
 mod tests {
   use frontbox_gfx::prelude::*;
@@ -606,6 +644,51 @@ mod tests {
 
   fn layer() -> Layer {
     Layer::new(Fill::new(FillNode::Solid(Color(Rgba::red()).into())))
+  }
+
+  /// A layer sweeping along the region of the layer named "track"
+  fn on_track() -> Layer {
+    let sweep = Prop::Sweep(Sweep::new("track", 0.5.into()));
+    layer().region(Shape::new(ShapeNode::circle(1.0)).transform(Transform::Translate(sweep)))
+  }
+
+  fn track() -> Layer {
+    layer()
+      .name("track")
+      .visible(false)
+      .region(Shape::new(ShapeNode::circle(10.0)))
+  }
+
+  #[test]
+  fn a_sweep_follows_a_region_on_the_same_lights() {
+    let scene = Scene::new(vec![
+      LightLayer::area(LightQ::Every, "Playfield", track()).into(),
+      LightLayer::area(LightQ::Every, "Playfield", on_track()).into(),
+    ]);
+    scene.check().unwrap();
+    assert!(scene.region("track").is_some());
+  }
+
+  #[test]
+  fn a_sweep_cant_follow_a_region_on_a_display() {
+    let scene = Scene::new(vec![
+      DisplayLayer::new("Dmd", track()).into(),
+      LightLayer::area(LightQ::Every, "Playfield", on_track()).into(),
+    ]);
+    assert!(matches!(
+      scene.check(),
+      Err(SceneError::PathElsewhere { .. })
+    ));
+  }
+
+  #[test]
+  fn a_sweep_can_follow_a_region_through_a_sound_layer_between_them() {
+    let scene = Scene::new(vec![
+      SoundLayer::new("sounds/zap.mp3").into(),
+      DisplayLayer::new("Dmd", track()).into(),
+      DisplayLayer::new("Dmd", on_track()).into(),
+    ]);
+    scene.check().unwrap();
   }
 
   #[test]

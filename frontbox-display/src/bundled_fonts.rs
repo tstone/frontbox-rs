@@ -57,7 +57,7 @@ mod tests {
   use frontbox_core::prelude::Vec2;
   use frontbox_gfx::scene::{
     Assets, Color, Fill, FillNode, Layer, LayerFrame, Sample, Shape, ShapeNode, Surface, Transform,
-    Variables, no_modulators, no_values, no_variables,
+    Variables, no_modulators, no_regions, no_values, no_variables,
   };
   use image::Rgba;
 
@@ -99,6 +99,7 @@ mod tests {
         defaults: no_variables(),
         values: no_values(),
         modulators: no_modulators(),
+        regions: no_regions(),
         assets: &assets,
         size,
         surface: Surface::Area,

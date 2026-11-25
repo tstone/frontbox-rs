@@ -366,9 +366,10 @@ export function startingValue<T extends SceneValue>(prop: Prop<T>, scene: Scene,
   }
   // an envelope rests at the low end of its spread, where its sound is silent
   if ('ExternalEnvelope' in prop) return spreadFits(prop.ExternalEnvelope.spread, fallback) ? asLike(spreadAt(prop.ExternalEnvelope.spread, 0), fallback) : fallback
+  // where the region it follows is moved to, which for a shape around its own middle is its middle
   if ('Sweep' in prop) {
-    const moved = prop.Sweep.path.transform?.find((transform) => 'Translate' in transform)
-    return moved && 'Translate' in moved ? (startingValue(moved.Translate, scene, fallback as Vec2) as T) : fallback
+    const moved = followedRegion(scene, prop.Sweep.layer)?.transform?.find((transform) => 'Translate' in transform)
+    return moved && 'Translate' in moved && depth < MAX_VALUE_DEPTH ? (startingValue(moved.Translate, scene, fallback as Vec2, depth + 1) as T) : fallback
   }
   const variable = scene.variables?.[prop.Variable]
   // values that point at each other stop, as they do on the machine
@@ -401,11 +402,87 @@ export function shapePoints(base: ShapeNode): Prop<Vec2>[] {
 /** Whether a shape is a line that stops at its last point, and not an edge that comes back around to its first */
 export const isOpen = (base: ShapeNode) => 'Polyline' in base || 'Bezier' in base || 'Spiral' in base || 'Wave' in base
 
-/** A circle around `center`, gone around once over a scene's length, big enough to see in the ranges of the prop on it */
-export function newSweep(center: Vec2, [x, y]: Ranges, duration: number): Sweep {
+/**
+ * The region a sweep follows: the first drawn layer's by that name, as on the machine, which also says it's an error for
+ * more than one to have it
+ */
+export function followedRegion(scene: Scene, name: string) {
+  return scene.layers.find((layer) => layer.name === name)?.region
+}
+
+/** Whether two layers are drawn on the same thing, so that one's numbers mean what the other's do, as a sweep's path has to be */
+export function drawnOnSame(a: SceneLayer, b: SceneLayer) {
+  if (a.display !== undefined || b.display !== undefined) return a.display === b.display
+  return layerPlane(a) === layerPlane(b)
+}
+
+/** The layers a sweep in the layer at `index` can follow: others with a region, on the same thing. Any layer for `null`. */
+export function sweepPaths(scene: Scene, index: number | null) {
+  const own = index === null ? undefined : scene.layers[index]
+  return scene.layers.flatMap((layer, at) => (at !== index && layer.region && (!own || drawnOnSame(own, layer)) ? [at] : []))
+}
+
+/**
+ * A scene whose layer at `index` has a name only it has, for a sweep to follow it by, and that name. A layer keeps a name
+ * no other has, and one without, or with one another has too, is named what it's called, unlike any other.
+ */
+export function withLayerNamed(scene: Scene, index: number): [Scene, string] {
+  const layer = scene.layers[index]
+  const taken = (name: string) => scene.layers.some((other, at) => at !== index && other.name === name)
+  if (layer.name !== undefined && !taken(layer.name)) return [scene, layer.name]
+  const name = freshName(layerLabel({ ...layer, name: undefined }, index), taken)
+  return [{ ...scene, layers: scene.layers.map((other, at) => (at === index ? { ...other, name } : other)) }, name]
+}
+
+/**
+ * A scene with a new layer to be a path, drawn on the same thing as the layer at `index`: a circle around `center` big
+ * enough to see in `ranges`, which isn't visible, as it's only there to be followed. It goes on top, so that no layer
+ * moves from where it was, and gives its name.
+ */
+export function withNewPath(scene: Scene, index: number, center: Vec2, [x, y]: Ranges): [Scene, string] {
+  const name = freshName('Path', (taken) => scene.layers.some((layer) => layer.name === taken))
+  const { lights, surface, display, z } = scene.layers[index]
   const reach = Math.min(x.max - x.min, y.max - y.min) / 4
-  const base = { Circle: { radius: { Fixed: reach } } }
-  return { path: { base, transform: [{ Translate: { Fixed: center } }] }, position: lap(duration) }
+  const path: SceneLayer = {
+    name,
+    visible: { Fixed: false },
+    fill: { base: { Solid: { Fixed: [255, 255, 255, 255] } } },
+    region: { base: { Circle: { radius: { Fixed: reach } } }, transform: [{ Translate: { Fixed: center } }] },
+    ...(display !== undefined ? { display } : { lights, surface }),
+    z,
+  }
+  return [{ ...scene, layers: [...scene.layers, path] }, name]
+}
+
+/** Once around the region of layer `layer` over a scene's length */
+export function newSweep(layer: string, duration: number): Sweep {
+  return { layer, position: lap(duration) }
+}
+
+/** The sweeps in a scene that follow layer `name` */
+function sweepsAlong(scene: Lens<Scene>, name: string) {
+  return propUses(scene).filter(({ lens }) => {
+    const prop = lens.get()
+    return 'Sweep' in prop && prop.Sweep.layer === name
+  })
+}
+
+/**
+ * A scene with its layer at `index` renamed `to`, or left unnamed for `undefined`, and the sweeps following it following.
+ * Sweeps keep following the old name when it's taken away, when another layer has it too, or when `to` is another
+ * layer's name, as there's then no saying which they mean.
+ */
+export function withLayerRenamed(scene: Scene, index: number, to: string | undefined): Scene {
+  const from = scene.layers[index].name
+  let renamed: Scene = { ...scene, layers: scene.layers.map((layer, at) => (at === index ? { ...layer, name: to } : layer)) }
+  const others = scene.layers.filter((_, at) => at !== index)
+  if (from === undefined || to === undefined || from === to || others.some(({ name }) => name === from || name === to)) return renamed
+  const editing: Lens<Scene> = { get: () => renamed, set: (next) => (renamed = next) }
+  for (const { lens } of sweepsAlong(editing, from)) {
+    const prop = lens.get() as Extract<Prop<SceneValue>, { Sweep: unknown }>
+    lens.set({ Sweep: { ...prop.Sweep, layer: to } })
+  }
+  return renamed
 }
 
 /** From 0 to 1 over `duration` seconds, once */
@@ -561,10 +638,6 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
   const use = (lens: unknown, label: string, ranges: Ranges) => {
     uses.push({ lens: lens as PropLens, layer: layerIndex, label, ranges })
     const prop = (lens as PropLens).get()
-    if ('Sweep' in prop) {
-      const path = `${label} · Path`
-      shape(field(variant(lens as PropLens, 'Sweep'), 'path'), path, path)
-    }
     if ('Sweep' in prop) use(field(variant(lens as PropLens, 'Sweep'), 'position'), `${label} · Position`, both(UNIT))
     if ('Modulated' in prop) use(field(variant(lens as PropLens, 'Modulated'), 'phase'), `${label} · Phase`, both(UNIT))
   }

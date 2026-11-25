@@ -63,25 +63,7 @@ fn layers() -> Vec<(&'static str, Layer)> {
       "sweep",
       Layer::new(Fill::new(FillNode::Solid(WHITE.into()))).region(
         Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(
-          Sweep::new(
-            Shape::new(ShapeNode::Bezier {
-              points: vec![
-                BezierPoint {
-                  point: Vec2::new(8.0, 24.0).into(),
-                  handle: Vec2::new(20.0, -20.0).into(),
-                },
-                BezierPoint {
-                  point: Vec2::new(64.0, 8.0).into(),
-                  handle: Vec2::new(20.0, 0.0).into(),
-                },
-                BezierPoint {
-                  point: Vec2::new(120.0, 24.0).into(),
-                  handle: Vec2::new(20.0, 20.0).into(),
-                },
-              ],
-            }),
-            over_time(0.0, 1.0),
-          ),
+          Sweep::new("track", over_time(0.0, 1.0)),
         ))),
       ),
     ),
@@ -134,6 +116,35 @@ fn over_time(from: f32, to: f32) -> Prop<f32> {
   ))
 }
 
+/// The path the sweep follows
+#[derive(Debug)]
+struct Track(Shape);
+
+impl Regions for Track {
+  fn region(&self, layer: &str) -> Option<&Shape> {
+    (layer == "track").then_some(&self.0)
+  }
+}
+
+fn track() -> Track {
+  Track(Shape::new(ShapeNode::Bezier {
+    points: vec![
+      BezierPoint {
+        point: Vec2::new(8.0, 24.0).into(),
+        handle: Vec2::new(20.0, -20.0).into(),
+      },
+      BezierPoint {
+        point: Vec2::new(64.0, 8.0).into(),
+        handle: Vec2::new(20.0, 0.0).into(),
+      },
+      BezierPoint {
+        point: Vec2::new(120.0, 24.0).into(),
+        handle: Vec2::new(20.0, 20.0).into(),
+      },
+    ],
+  }))
+}
+
 fn images() -> Assets {
   let mut assets = Assets::new();
   let checkers = RgbaImage::from_fn(64, 16, |x, y| {
@@ -150,6 +161,7 @@ fn images() -> Assets {
 fn draw(c: &mut Criterion) {
   let variables = Variables::new();
   let assets = images();
+  let track = track();
   let frame = LayerFrame {
     time: 0.4,
     timing: Some(Timing::new(1.0, Cycle::Forever)),
@@ -158,6 +170,7 @@ fn draw(c: &mut Criterion) {
     defaults: no_variables(),
     values: no_values(),
     modulators: no_modulators(),
+    regions: &track,
     assets: &assets,
     size: SIZE,
     surface: Surface::Area,

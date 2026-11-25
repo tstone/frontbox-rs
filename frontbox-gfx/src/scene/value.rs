@@ -5,7 +5,9 @@ use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::animation::Lerp;
-use crate::scene::{Assets, Bounds, Modulators, NamedValue, NodeVisits, Timing, Values};
+use crate::scene::{
+  Assets, Bounds, Modulators, NamedValue, NodeVisits, Regions, Shape, Timing, Values,
+};
 
 /// Variable values by name
 pub type Variables = BTreeMap<String, Value>;
@@ -184,7 +186,9 @@ pub(crate) struct Env<'a> {
   pub values: &'a Values,
   /// The scene's modulators, which modulated props move by
   pub modulators: &'a Modulators,
-  /// How many named values deep this is resolving, so values that point at each other stop
+  /// The regions of the scene's layers, which sweeps follow
+  pub regions: &'a dyn Regions,
+  /// How many named values or swept regions deep this is resolving, so ones that point at each other stop
   pub depth: u8,
   pub assets: &'a Assets,
   /// The visible region, in scene units
@@ -217,15 +221,33 @@ impl<'a> Env<'a> {
       },
     ))
   }
+
+  /// The region of the layer named `layer`, and the environment to resolve it in, which is outside any fill or graph.
+  /// `None` if there's none by that name, or if regions have followed each other too many times over to be going
+  /// anywhere.
+  pub(crate) fn region(&self, layer: &str) -> Option<(&'a Shape, Env<'a>)> {
+    if self.depth >= MAX_VALUE_DEPTH {
+      return None;
+    }
+    Some((
+      self.regions.region(layer)?,
+      Env {
+        depth: self.depth + 1,
+        visits: None,
+        fill_frame: Affine2::IDENTITY,
+        ..*self
+      },
+    ))
+  }
 }
 
-/// How many named values deep a variable can resolve
+/// How many named values or swept regions deep a prop can resolve
 const MAX_VALUE_DEPTH: u8 = 8;
 
 #[cfg(test)]
 pub(crate) mod tests {
   use super::*;
-  use crate::scene::{no_modulators, no_values};
+  use crate::scene::{no_modulators, no_regions, no_values};
 
   pub(crate) fn env<'a>(time: f32, variables: &'a Variables) -> Env<'a> {
     Env {
@@ -237,6 +259,7 @@ pub(crate) mod tests {
       defaults: variables,
       values: no_values(),
       modulators: no_modulators(),
+      regions: no_regions(),
       depth: 0,
       assets: Assets::none(),
       viewport: Bounds::sized(Vec2::new(100.0, 50.0)),

@@ -2,6 +2,7 @@ import { createMemo, createSignal, Index, Show, useContext } from 'solid-js'
 import type { Layer } from '../../types/generated/Layer'
 import type { Prop } from '../../types/generated/Prop'
 import type { RenderedShape } from '../../types/generated/RenderedShape'
+import type { Sweep } from '../../types/generated/Sweep'
 import type { Transform } from '../../types/generated/Transform'
 import type { PreviewSpace } from '../machine/PlayfieldView'
 import { layerColorClass, type LayerColor } from './ScenePortal'
@@ -96,7 +97,7 @@ export default function ShapeHandles(props: { space: PreviewSpace; selection: Se
     const shape = selectedShapeLens(scene, selection)
     if (outOfStep(shape, pose)) return NOTHING
     const write = writer(scene, props.time)
-    const { handles, paths, grids, owners: pathOwners } = pathOverlay(shape, pose, write, IDENTITY, grid)
+    const { handles, paths, grids, owners: pathOwners } = pathOverlay(scene, shape, pose, write, IDENTITY, grid)
     const lines = lineOverlay(shape, pose, write)
     const group = groupOverlay(orEmpty(field(shape, 'transform')), pose, write, props.outlines, grid)
     // a sequence's shapes are along a line, which has no area to turn, scale, or round
@@ -463,21 +464,24 @@ function shapeHandles(shape: Lens<Shape>, pose: RenderedShape, write: Write, gri
 }
 
 /**
- * The paths of a shape's transforms, and any on those in turn. `view` takes where the shape is to the scene being shown,
- * and each path is carried along from the values of its transform to where those put the shape's center.
+ * The paths of a shape's transforms, which are the regions of the layers they sweep along, and any on those in turn.
+ * `view` takes where the shape is to the scene being shown, and each path is carried along from the values of its
+ * transform to where those put the shape's center. Their handles change those layers' regions.
  */
-function pathOverlay(shape: Lens<Shape>, pose: RenderedShape, write: Write, view: Affine, grid: number | null): Overlay & { owners: number[] } {
+function pathOverlay(scene: Lens<Scene>, shape: Lens<Shape>, pose: RenderedShape, write: Write, view: Affine, grid: number | null): Overlay & { owners: number[] } {
   const list = orEmpty(field(shape, 'transform'))
   const parts = pose.paths.flatMap((pathPose, index) => {
     const transform = list.get()[index]
     if (!pathPose || !transform || !('Translate' in transform) || !('Sweep' in transform.Translate)) return []
-    const offset = variant(item(list, index) as Lens<Extract<Transform, { Translate: unknown }>>, 'Translate')
-    const path = field(variant(offset, 'Sweep'), 'path')
+    // the first layer by that name, as on the machine
+    const followed = scene.get().layers.findIndex((layer) => layer.name === (transform.Translate as { Sweep: Sweep }).Sweep.layer)
+    if (followed < 0 || !scene.get().layers[followed].region) return []
+    const path = selectedShapeLens(scene, { layer: followed })
     if (outOfStep(path, pathPose)) return []
 
     const [x, y] = pose.pivots[index]
     const pathView = chain([[1, 0, 0, 1, x, y], ...movesAfter(list.get(), pose, index), view])
-    const further = pathOverlay(path, pathPose, write, pathView, grid)
+    const further = pathOverlay(scene, path, pathPose, write, pathView, grid)
     const paths = [traced(path.get().base, pathPose).map((point) => apply(pathView, point)), ...further.paths]
     return [
       {

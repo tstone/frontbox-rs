@@ -2416,9 +2416,14 @@ mod tests {
       layers: [Lights(surface: Area("Square"), layer: (
         region: (
           base: Ellipse(rx: Fixed(1.0), ry: Fixed(1.0)),
-          transform: [Translate(Sweep(path: (base: Rect(width: Fixed(4.0), height: Fixed(2.0)), transform: [Translate(Fixed(5.0, 5.0))]), position: Keyframes(keys: [(at: 0.5, value: 0.0), (at: 1.5, value: 1.0)])))],
+          transform: [Translate(Sweep(layer: "track", position: Keyframes(keys: [(at: 0.5, value: 0.0), (at: 1.5, value: 1.0)])))],
         ),
         fill: (base: Solid(Fixed(255, 0, 0, 255))),
+      )), Lights(surface: Area("Square"), layer: (
+        name: "track",
+        visible: Fixed(false),
+        region: (base: Rect(width: Fixed(4.0), height: Fixed(2.0)), transform: [Translate(Fixed(5.0, 5.0))]),
+        fill: (base: Solid(Fixed(0, 0, 255, 255))),
       ))],)"#;
     let rendered = render_scene(
       ron(source),

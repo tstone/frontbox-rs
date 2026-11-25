@@ -5,7 +5,8 @@ use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::scene::{
-  Graph, Layer, LayerFrame, Modulators, Sample, SceneError, Surface, Timing, Variables, Visits,
+  Graph, Layer, LayerFrame, Modulators, Regions, Sample, SceneError, Shape, Surface, Timing,
+  Variables, Visits, check_sweeps,
 };
 
 /// Layers sharing variables and timing, as a scene file holds them but with nothing about hardware
@@ -33,7 +34,14 @@ impl Composition {
       .layers
       .iter()
       .enumerate()
-      .try_for_each(|(index, layer)| layer.check(index, self.timing))
+      .try_for_each(|(index, layer)| layer.check(index, self.timing))?;
+    let layers: Vec<_> = self
+      .layers
+      .iter()
+      .enumerate()
+      .map(|(index, layer)| (index, layer, ()))
+      .collect();
+    check_sweeps(&layers)
   }
 
   pub fn image_names(&self) -> impl Iterator<Item = &str> {
@@ -52,6 +60,17 @@ impl Composition {
 
   pub fn middle_cycle_time(&self, time: f32) -> f32 {
     self.cycle_time(1, time)
+  }
+}
+
+impl Regions for Composition {
+  fn region(&self, layer: &str) -> Option<&Shape> {
+    self
+      .layers
+      .iter()
+      .find(|other| other.name.as_deref() == Some(layer))?
+      .region
+      .as_ref()
   }
 }
 
@@ -112,6 +131,7 @@ impl Scene {
       timing: self.timing,
       defaults: &self.variables,
       modulators: &self.modulators,
+      regions: &self.composition,
       ..*frame
     }
   }

@@ -13,7 +13,6 @@ const CLOSE_DELAY = 1000
 /** The angles the camera can look at a plane from: tilted toward the player, then one from a front corner */
 const ANGLES: { label: string; angle: ViewAngle }[] = [
   { label: 'Top', angle: { tilt: 0, turn: 0 } },
-  { label: 'Top 15°', angle: { tilt: 15, turn: 0 } },
   { label: 'Top 30°', angle: { tilt: 30, turn: 0 } },
   { label: 'Top 60°', angle: { tilt: 60, turn: 0 } },
   { label: 'Three-quarter', angle: { tilt: 45, turn: 45 } },

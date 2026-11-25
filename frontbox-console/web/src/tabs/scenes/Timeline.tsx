@@ -21,7 +21,7 @@ import { CurveField, Dropdown, EyeButton, FieldRow, LayerSurfacesContext, Number
 import { curveHeight } from './curves'
 import { contentSoundLength } from '../../state/contentSounds'
 import type { SoundLayer } from '../../types/generated/SoundLayer'
-import { field, isHidden, item, moveMoment, removed, repeats, sceneTracks, soundEnd, soundNaturalEnd, sceneTraversals, snap, startingValue, TIME_STEP, trackTimes, traversalLength, UNIT, variant, waveformHeight, wavePosition, withKey, withKeyCopy, withSoundRenamed, withPick, withHidden, withTimesInLength, withTimesScaled, type Lens, type Ranges, type Scene, type SceneLayer, type SceneValue } from './sceneModel'
+import { field, isHidden, item, moveMoment, removed, repeats, sceneTracks, soundEnd, soundNaturalEnd, sceneTraversals, snap, startingValue, TIME_STEP, trackTimes, traversalLength, UNIT, variant, waveformHeight, wavePosition, withKey, withKeyCopy, withLayerRenamed, withSoundRenamed, withPick, withHidden, withTimesInLength, withTimesScaled, type Lens, type Ranges, type Scene, type SceneLayer, type SceneValue } from './sceneModel'
 
 /** How close in pixels a click can be to a key before it's taken to mean that key */
 const KEY_REACH = 12
@@ -647,9 +647,9 @@ function NameEditor(props: { node: Extract<ConfigNode, { kind: 'layer' | 'sound'
     if (done) return
     done = true
     const to = keep?.trim() || undefined
-    // envelopes follow a sound by its name, so they follow it to its new one
-    const sound = props.node.kind === 'sound' ? props.node.place?.index : undefined
-    if (keep !== null && sound !== undefined) scene.set(withSoundRenamed(scene.get(), sound, to))
+    // envelopes follow a sound by its name, and sweeps a layer by its name, so they follow it to its new one
+    const index = props.node.place?.index
+    if (keep !== null && index !== undefined) scene.set(props.node.kind === 'sound' ? withSoundRenamed(scene.get(), index, to) : withLayerRenamed(scene.get(), index, to))
     else if (keep !== null) name().set(to)
     props.onDone()
   }

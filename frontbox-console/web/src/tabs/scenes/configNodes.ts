@@ -105,8 +105,6 @@ export type NodeData =
   | { kind: 'z'; lens: Lens<SceneLayer> }
   /** With `layer`, a layer's region, which on a light scene can be its graph instead */
   | { kind: 'region'; lens: Lens<Shape | undefined>; layer?: Lens<SceneLayer> }
-  /** The shape a sweep goes around */
-  | { kind: 'path'; lens: Lens<Shape> }
   | { kind: 'fill'; lens: Lens<Fill> }
   | { kind: 'stops'; lens: Lens<Stop[]> }
   /** Whether a layer is a mask over the layers below it, and which side of it they show on */
@@ -357,12 +355,8 @@ function regionNode(id: string, lens: Lens<Shape | undefined>, surface: Surface,
   })
 }
 
-function pathNode(id: string, lens: Lens<Shape>, surface: Surface): ConfigNode {
-  return branch({ id, label: 'Path', kind: 'path', lens, value: lens.get(), children: shapeChildren(id, lens, surface, false) })
-}
-
-/** A shape's sizes, or its points, then its transforms. A sweep follows only a path's own outline, so a path isn't offered a mirror, revolve, or bisect. */
-function shapeChildren(id: string, lens: Lens<Shape>, surface: Surface, copies = true): ConfigNode[] {
+/** A shape's sizes, or its points, then its transforms */
+function shapeChildren(id: string, lens: Lens<Shape>, surface: Surface): ConfigNode[] {
   const base = field(lens, 'base') as Lens<ShapeNode>
   const current = base.get()
   const sizes: ConfigNode[] = shapeProps(base, surface).map(({ key, label, fallback, lens: propLens, ranges }) =>
@@ -372,7 +366,7 @@ function shapeChildren(id: string, lens: Lens<Shape>, surface: Surface, copies =
   if ('Polyline' in current) sizes.push(pointsNode(`${id}/points`, 'Polyline', field(variant(base, 'Polyline'), 'points'), surface))
   if ('Bezier' in current) sizes.push(pointsNode(`${id}/points`, 'Bezier', field(variant(base, 'Bezier'), 'points'), surface))
 
-  return [...sizes, ...modifierNodes(id, orEmpty(field(lens, 'transform')), 'shape', surface, undefined, copies ? lens : undefined)]
+  return [...sizes, ...modifierNodes(id, orEmpty(field(lens, 'transform')), 'shape', surface, undefined, lens)]
 }
 
 /** A polygon has to have three points, and a line two */
@@ -433,7 +427,7 @@ function modifierNodes(id: string, transforms: Lens<Transform[]>, space: Transfo
           : kind === 'Bulge'
             ? { lens: variant(lens, 'Bulge') as Lens<Prop<SceneValue>>, variableName: 'bulge', fallback: BULGE.rest!, ranges: both(BULGE) }
             : { lens: variant(lens, 'Round') as Lens<Prop<SceneValue>>, variableName: 'corner_radius', fallback: 0, ranges: both(cornerRange(surface)) }
-    // a translate is a position, so it can sweep around a path, which the prop has under it
+    // a translate is a position, so it can sweep along another layer's region, with its position along it under it
     if (index === placement) return { ...propNode(transformId, 'Position', spec, surface), place, modifier: kind, placement: true }
     return { ...propNode(transformId, TRANSFORM_LABELS[kind], spec, surface), place, modifier: kind }
   })
@@ -593,14 +587,14 @@ function nodeRefNode(id: string, label: string, lens: Lens<NodeRef>, surface: Su
   return branch({ id, label, kind: 'node-ref', lens, value: current, fields: 'Name' in current, children })
 }
 
-/** A prop opens to its field. One that sweeps has its path and its position along it under it, and one in a wave its phase. */
+/** A prop opens to its field. One that sweeps has its position along its path under it, and one in a wave its phase. */
 function propNode(id: string, label: string, spec: PropSpec, surface: Surface): ConfigNode {
   const prop = spec.lens.get()
   const under = (name: 'position' | 'phase', label: string, lens: Lens<unknown>) =>
     propNode(`${id}/${name}`, label, { lens: lens as Lens<Prop<SceneValue>>, variableName: `${spec.variableName}_${name}`, fallback: 0, ranges: both(UNIT) }, surface)
   const children =
     'Sweep' in prop
-      ? [pathNode(`${id}/path`, field(variant(spec.lens, 'Sweep'), 'path'), surface), under('position', 'Position', field(variant(spec.lens, 'Sweep'), 'position'))]
+      ? [under('position', 'Position', field(variant(spec.lens, 'Sweep'), 'position'))]
       : 'Modulated' in prop
         ? [under('phase', 'Phase', field(variant(spec.lens, 'Modulated') as Lens<Modulated>, 'phase'))]
         : []

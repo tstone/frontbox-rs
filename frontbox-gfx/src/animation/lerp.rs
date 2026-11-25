@@ -102,9 +102,8 @@ impl Lerp for image::Rgba<u8> {
       return image::Rgba(self.0.interpolate(&other.0, t));
     }
     let (near, far) = (from * (1.0 - t), to * t);
-    let channel = |c: usize| {
-      ((self.0[c] as f32 * near + other.0[c] as f32 * far) / (near + far)).round() as u8
-    };
+    let channel =
+      |c: usize| ((self.0[c] as f32 * near + other.0[c] as f32 * far) / (near + far)).round() as u8;
     image::Rgba([
       channel(0),
       channel(1),
@@ -203,7 +202,10 @@ mod tests {
     assert_eq!(red.interpolate(&clear, 0.0), red);
     // the more opaque color counts for more
     let faint_blue = image::Rgba([0, 0, 255, 85]);
-    assert_eq!(red.interpolate(&faint_blue, 0.5), image::Rgba([191, 0, 64, 170]));
+    assert_eq!(
+      red.interpolate(&faint_blue, 0.5),
+      image::Rgba([191, 0, 64, 170])
+    );
   }
 
   #[test]

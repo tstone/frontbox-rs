@@ -305,10 +305,10 @@ impl Transform {
     }
   }
 
-  /// The path of a `Sweep` translate, if this is one
-  pub(crate) fn path(&self) -> Option<&Shape> {
+  /// The region a `Sweep` translate follows, if this is one, and the environment to resolve it in
+  pub(crate) fn path<'a>(&self, env: &Env<'a>) -> Option<(&'a Shape, Env<'a>)> {
     match self {
-      Self::Translate(Prop::Sweep(sweep)) => Some(&sweep.path),
+      Self::Translate(Prop::Sweep(sweep)) => env.region(&sweep.layer),
       _ => None,
     }
   }

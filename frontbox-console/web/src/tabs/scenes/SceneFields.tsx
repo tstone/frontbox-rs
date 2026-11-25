@@ -5,7 +5,7 @@ import { createListCollection, Select } from '@ark-ui/solid/select'
 import { Slider } from '@ark-ui/solid/slider'
 import { Switch as Toggle } from '@ark-ui/solid/switch'
 import { SegmentGroup } from '@ark-ui/solid/segment-group'
-import { createContext, createMemo, createSignal, For, Index, Match, Show, Switch, useContext, type Accessor, type Signal } from 'solid-js'
+import { createContext, createMemo, createSignal, For, Index, Match, onCleanup, Show, Switch, useContext, type Accessor, type Signal } from 'solid-js'
 import ScenePortal, { layerColorClass, type LayerColor } from './ScenePortal'
 import { AudioLines, AudioWaveform, ChartSpline, Dices, Eye, EyeOff, Footprints, Orbit, Pin, Pipette, Plus, SlidersHorizontal, Variable, X } from '../../components/icons'
 import type { Color } from '../../types/generated/Color'
@@ -19,12 +19,14 @@ import type { Modulated } from '../../types/generated/Modulated'
 import type { Modulator } from '../../types/generated/Modulator'
 import type { Overlap } from '../../types/generated/Overlap'
 import type { Spread } from '../../types/generated/Spread'
+import type { Sweep } from '../../types/generated/Sweep'
+import type { SweepEnds } from '../../types/generated/SweepEnds'
 import type { Value } from '../../types/generated/Value'
 import type { VisitResponse } from '../../types/generated/VisitResponse'
 import CurvePicker, { CurveGraph } from './CurvePicker'
 import { curveHeight, curveText, PLAIN_CURVES } from './curves'
 import NumberBox from './NumberBox'
-import { field, freshVariableName, fullSpread, HUE, item, newPick, newSweep, newVisit, poolOf, removed, SLEW, soundLabel, unwrapValue, variableReads, spreadFits, startingValue, STEPS, variant, WAVE_RATE, withNewModulator, withSoundNamed, withVariable, withTiming, wrapValue, type Lens, type PropValue,type Range, type Ranges, type LayerSurfaces, type Scene, type SceneValue, type Selection, type Surface, type Vec2 } from './sceneModel'
+import { field, followedRegion, freshVariableName, fullSpread, HUE, isOpen, item, layerLabel, newPick, newSweep, newVisit, sweepPaths, withLayerNamed, withNewPath, poolOf, removed, SLEW, soundLabel, unwrapValue, variableReads, spreadFits, startingValue, STEPS, variant, WAVE_RATE, withNewModulator, withSoundNamed, withVariable, withTiming, wrapValue, type Lens, type PropValue,type Range, type Ranges, type LayerSurfaces, type Scene, type SceneValue, type Selection, type Surface, type Vec2 } from './sceneModel'
 
 /** The scene being edited, for fields whose edits reach past their own place in it */
 export const SceneContext = createContext<Lens<Scene>>()
@@ -47,6 +49,12 @@ export type NodePicking = {
 }
 
 export const NodePickingContext = createContext<NodePicking>()
+
+/** Where the fields being shown are among the scene's drawn layers, or `null` for fields that aren't in one */
+export const LayerIndexContext = createContext<Accessor<number | null>>(() => null)
+
+/** What a click on a layer in the preview chooses that layer for, while a sweep's path is being chosen there */
+export const RegionPickingContext = createContext<Signal<{ choose: (layer: number) => void } | null>>()
 
 /**
  * Whether a layer's region, or its graph, is drawn over the preview while it's selected. Only for the editing,
@@ -609,7 +617,7 @@ type PropProps<T extends SceneValue> = {
 
 /**
  * A prop: whether it's fixed, read from a variable, keyframed, picked at random, moved in a wave, swept along a path,
- * set off by visits, or following a sound, and the control for that. A sweep's path is under the prop's row in the tree, and selected there to edit it.
+ * set off by visits, or following a sound, and the control for that. A sweep's position along its path is under the prop's row in the tree.
  */
 export function PropField<T extends SceneValue>(
   props: PropProps<T> & {
@@ -678,7 +686,7 @@ export function PropField<T extends SceneValue>(
           <ModulatedField label={props.label} ranges={props.ranges} fallback={props.fallback} lens={variant(props.lens as Lens<Prop<SceneValue>>, 'Modulated')} />
         </Match>
         <Match when={kind() === 'Sweep'}>
-          <p class="scene-note">Its path is under it, and how far along the path it is, from 0 to 1. Keyframing that from 0 to 1 goes around once.</p>
+          <SweepField label={props.label} lens={variant(props.lens as Lens<Prop<SceneValue>>, 'Sweep')} />
         </Match>
         <Match when={kind() === 'Visit'}>
           <VisitField label={props.label} ranges={props.ranges} lens={variant(props.lens as Lens<Prop<SceneValue>>, 'Visit')} />
@@ -706,6 +714,7 @@ export function PropSource<T extends SceneValue>(props: PropProps<T>) {
   const isPosition = () => Array.isArray(props.fallback) && props.fallback.length === 2
   // visits are only there to respond to in a layer with traversals, and an envelope in a scene with sounds
   const traversals = useContext(TraversalsContext)
+  const layerIndex = useContext(LayerIndexContext)
   const kinds = () =>
     PROP_KINDS.filter(
       (option) =>
@@ -736,9 +745,16 @@ export function PropSource<T extends SceneValue>(props: PropProps<T>) {
       props.lens.set({ Modulated: { modulator, spread: fullSpread(current, props.ranges), phase: { Fixed: 0 } } })
     }
     if (next === 'Sweep') {
-      const timed = withTiming(scene.get())
+      // follows the first layer it can, or a new one around where it is now if there's none, which can then be changed
+      let timed = withTiming(scene.get())
+      const own = layerIndex()
+      let path = sweepPaths(timed, own)[0]
+      let name: string
+      if (path === undefined && own !== null) [timed, name] = withNewPath(timed, own, current as Vec2, props.ranges)
+      else if (path !== undefined) [timed, name] = withLayerNamed(timed, path)
+      else name = ''
       scene.set(timed)
-      props.lens.set({ Sweep: newSweep(current as Vec2, props.ranges, timed.timing!.duration) })
+      props.lens.set({ Sweep: newSweep(name, timed.timing!.duration) })
     }
     if (next === 'Variable') {
       const name = freshVariableName(scene.get(), props.variableName)
@@ -926,6 +942,93 @@ function ModulatedField(props: { label: string; lens: Lens<Modulated>; ranges: R
       </Show>
       <SpreadField label={props.label} ranges={props.ranges} like={props.fallback} lens={field(props.lens, 'spread')} />
       <p class="scene-note">The modulator sets the wave's shape and rate, and can be shared. The phase under it shifts this prop's wave along, and keyframing it can speed the wave up or slow it down.</p>
+    </>
+  )
+}
+
+const ENDS_OPTIONS: { value: SweepEnds; label: string }[] = [
+  { value: 'Wrap', label: 'Go around again' },
+  { value: 'Hold', label: 'Hold' },
+  { value: 'PingPong', label: 'Ping-pong' },
+]
+
+/**
+ * Which layer's shape a sweep follows, which can be picked from a list or by clicking it in the preview, and what it does
+ * past either end. Following a layer with no name, or a name another has too, gives it one of its own, as a sweep
+ * follows a layer by its name.
+ */
+function SweepField(props: { label: string; lens: Lens<Sweep> }) {
+  const scene = useScene()
+  const own = useContext(LayerIndexContext)
+  const picking = useContext(RegionPickingContext)
+  const chosen = () => props.lens.get().layer
+  const paths = () => sweepPaths(scene.get(), own())
+  const index = () => scene.get().layers.findIndex((layer) => layer.name === chosen())
+  const shared = () => scene.get().layers.filter((layer) => layer.name === chosen()).length > 1
+  const usable = () => !shared() && paths().includes(index())
+  // one it can't follow stays chosen, so it can be seen and changed
+  const options = () => [
+    ...paths().map((at) => ({ value: String(at), label: layerLabel(scene.get().layers[at], at) })),
+    ...(usable() ? [] : [{ value: 'missing', label: chosen() || 'None' }]),
+  ]
+  const follow = (at: number) => {
+    if (!paths().includes(at)) return
+    const [named, layer] = withLayerNamed(scene.get(), at)
+    scene.set(named)
+    field(props.lens, 'layer').set(layer)
+  }
+
+  // this field's own choosing, as another's may be under way
+  let mine: { choose: (layer: number) => void } | null = null
+  const choosing = () => picking !== undefined && picking[0]() !== null && picking[0]() === mine
+  const toggleChoosing = () => {
+    if (!picking) return
+    if (choosing()) return picking[1](null)
+    mine = { choose: follow }
+    picking[1](mine)
+  }
+  onCleanup(() => {
+    if (choosing()) picking![1](null)
+  })
+
+  // left out, a line holds at its ends and anything else goes around again, as on the machine
+  const line = () => {
+    const region = followedRegion(scene.get(), chosen())
+    return region !== undefined && isOpen(region.base)
+  }
+  const ends = () => props.lens.get().ends ?? (line() ? 'Hold' : 'Wrap')
+
+  return (
+    <>
+      <FieldRow label="Path">
+        <div class="scene-node-pick">
+          <Dropdown label={`${props.label} path`} options={options()} value={usable() ? String(index()) : 'missing'} onChange={(value) => value !== 'missing' && follow(Number(value))} />
+          <Show when={picking}>
+            <button
+              type="button"
+              class="scene-button"
+              aria-pressed={choosing()}
+              title={choosing() ? 'Stop picking' : `Pick the shape ${props.label.toLowerCase()} follows by clicking it in the preview`}
+              onClick={toggleChoosing}
+            >
+              {choosing() ? 'Picking…' : 'Pick'}
+            </button>
+          </Show>
+        </div>
+      </FieldRow>
+      <Show when={index() < 0}>
+        <p class="scene-note scene-note-warn">No layer has that name, so the scene won't play until this follows one that does.</p>
+      </Show>
+      <Show when={shared()}>
+        <p class="scene-note scene-note-warn">More than one layer has that name, so the scene won't play until one is renamed.</p>
+      </Show>
+      <Show when={index() >= 0 && !shared() && !usable()}>
+        <p class="scene-note scene-note-warn">That layer has no shape on the same lights or display as this one, so the scene won't play until this follows another.</p>
+      </Show>
+      <FieldRow label="Past the ends">
+        <Dropdown label={`${props.label} past the ends`} options={ENDS_OPTIONS} value={ends()} onChange={(next) => field(props.lens, 'ends').set(next)} />
+      </FieldRow>
+      <p class="scene-note">Follows the outline of another layer's shape, which can be a layer that isn't visible. Its position, under it, is how far along that is, from 0 to 1, and keyframing it from 0 to 1 goes along once. Past 1, it goes around again, holds at the end, or comes back the way it went.</p>
     </>
   )
 }

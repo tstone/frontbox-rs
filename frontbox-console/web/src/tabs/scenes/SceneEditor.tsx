@@ -32,7 +32,7 @@ import PlayfieldView, { countOnPlane, type PreviewSpace, type ViewAngle } from '
 import PropertiesPanel, { drawnAspect } from './PropertiesPanel'
 import ConfirmDialog from './ConfirmDialog'
 import { createPlayback } from './playback'
-import { Dropdown, NumberBox, LayerSurfacesContext, NodePickingContext, RegionVisibilityContext, SceneContext, ShapePosesContext, type NodePicking, type RegionVisibility, type ShapePoses } from './SceneFields'
+import { Dropdown, NumberBox, LayerSurfacesContext, NodePickingContext, RegionPickingContext, RegionVisibilityContext, SceneContext, ShapePosesContext, type NodePicking, type RegionVisibility, type ShapePoses } from './SceneFields'
 import { configNodes, is, openTransform, selectionNode } from './configNodes'
 import { ConfigTreeContext, createConfigTree } from './configTree'
 import { changesEachCycle, cycleCount, editedScene, isOpen, layerPlace, layerPlane, placeDisplay, sceneSource, selectedShape, snap as snapTime, withKey, withPick, withoutDroppedVariables, withoutDroppedTiming, type Lens, type LayerPlace, type Scene, type SceneLayer, type Selection, type Vec2 } from './sceneModel'
@@ -704,11 +704,19 @@ export default function SceneEditor(props: {
 
   /**
    * Selects the region at a point, or leaves it with nothing selected. A layer with no region isn't selected this way.
-   * While a field is choosing a node of the open layer's graph, it gets the one nearest the point instead.
+   * While a field is choosing a node of the open layer's graph, it gets the one nearest the point instead, and while a
+   * sweep is choosing a path, the layer at the point, if there is one.
    */
   const pick = (point: Vec2 | null) => {
     const [open, setOpen] = selection
     if (playback.playing() || error() !== null || !drawn()) return
+    const path = regionPicking[0]()
+    if (path) {
+      const under = point && layerUnder(scene()!, drawn()!.outlines, point, onView, layerSurface)
+      if (under !== null) path.choose(under)
+      regionPicking[1](null)
+      return
+    }
     const choosing = nodePicking.choosing[0]()
     const graph = selectedGraph()
     if (choosing && graph && point) {
@@ -781,8 +789,17 @@ export default function SceneEditor(props: {
     highlighted: createSignal<string | null>(null),
   }
 
+  // what a click in the preview picks for a sweep to follow, while it's picking one
+  const regionPicking = createSignal<{ choose: (layer: number) => void } | null>(null)
+
   // a choice is for the layer it started in
-  createEffect(on(() => selection[0]()?.layer, () => nodePicking.choosing[1](null), { defer: true }))
+  createEffect(
+    on(
+      () => selection[0]()?.layer,
+      () => (nodePicking.choosing[1](null), regionPicking[1](null)),
+      { defer: true },
+    ),
+  )
 
   /** What goes over the preview: the open layer's handles, or what draws a shape while one's being drawn there */
   const handles = (space: PreviewSpace, shown: () => boolean) => (
@@ -879,6 +896,7 @@ export default function SceneEditor(props: {
     <SceneContext.Provider value={editing}>
       <LightClickingContext.Provider value={lightClicking}>
       <NodePickingContext.Provider value={nodePicking}>
+      <RegionPickingContext.Provider value={regionPicking}>
       <LayerSurfacesContext.Provider value={layerSurface}>
         <ConfigTreeContext.Provider value={tree}>
         <LayerMenuContext.Provider value={layerMenu}>
@@ -991,7 +1009,7 @@ export default function SceneEditor(props: {
                   </div>
                   <Show when={error()}>{(text) => <pre class="scene-error">{text()}</pre>}</Show>
                   {/* both stay up, so the camera and the last render are still there on the way back */}
-                  <div class="scene-machine" classList={{ stale: error() !== null, 'scene-choosing-node': nodePicking.choosing[0]() !== null }} hidden={!onMachine()} onContextMenu={handleMenu}>
+                  <div class="scene-machine" classList={{ stale: error() !== null, 'scene-choosing-node': nodePicking.choosing[0]() !== null || regionPicking[0]() !== null }} hidden={!onMachine()} onContextMenu={handleMenu}>
                     <PlayfieldView
                       ledColor={lightColor}
                       displayFrame={previewDisplayFrame}
@@ -1135,6 +1153,7 @@ export default function SceneEditor(props: {
         </LayerMenuContext.Provider>
         </ConfigTreeContext.Provider>
       </LayerSurfacesContext.Provider>
+      </RegionPickingContext.Provider>
       </NodePickingContext.Provider>
       </LightClickingContext.Provider>
     </SceneContext.Provider>
