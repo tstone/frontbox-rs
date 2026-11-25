@@ -1142,7 +1142,8 @@ fn keyframes_are_found_wherever_a_scene_has_them() {
     }
   }
   let in_transform = Layer::new(solid(RED)).region(
-    Shape::new(ShapeNode::circle(0.5)).transform(Transform::Rotate(Prop::Keyframes(track()))),
+    Shape::new(ShapeNode::circle(0.5))
+      .transform(Transform::Rotate(Prop::Keyframes(track()).into())),
   );
   let in_point = Layer::new(solid(RED)).region(Shape::new(ShapeNode::Polygon {
     points: vec![Prop::Keyframes(track())],

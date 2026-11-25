@@ -17,11 +17,11 @@ const MAX_COPIES: f32 = 360.0;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Transform {
   Translate(#[cfg_attr(feature = "ts", ts(as = "Prop<[f32; 2]>"))] Prop<Vec2>),
-  /// Degrees clockwise (y points down), around the node's center as placed by the transforms before this one.
+  /// Degrees clockwise (y points down), around an anchor.
   ///
   /// A `Sequence` has no second axis, so there it scrolls the drawing along the line with the ends wrapped together:
-  /// 360 degrees is one full lap.
-  Rotate(Prop<f32>),
+  /// 360 degrees is one full lap, and the anchor does nothing.
+  Rotate(Rotation),
   /// The same on both axes, around an anchor. A shape's own size, such as a `Rect`'s width and height, gives it a
   /// different one on each.
   Scale(Scaling),
@@ -96,11 +96,13 @@ impl Transform {
   pub(crate) fn affine(&self, center: Vec2, env: &Env) -> Affine2 {
     match self {
       Self::Translate(offset) => Affine2::from_translation(offset.resolve(env)),
-      Self::Rotate(degrees) => match env.lap {
+      Self::Rotate(Rotation { degrees, .. }) => match env.lap {
         Some(lap) => Affine2::from_translation(Vec2::new(lap * degrees.resolve(env) / 360.0, 0.0)),
         None => {
-          let turn = Affine2::from_angle(degrees.resolve(env).to_radians());
-          Affine2::from_translation(center) * turn * Affine2::from_translation(-center)
+          let anchor = self.anchor(center, env).unwrap_or(center);
+          Affine2::from_translation(anchor)
+            * Affine2::from_angle(degrees.resolve(env).to_radians())
+            * Affine2::from_translation(-anchor)
         }
       },
       Self::Scale(Scaling { amount, .. }) => {
@@ -195,10 +197,14 @@ impl Transform {
     }
   }
 
-  /// The point a `Scale` keeps still, given where the transforms before it put the node's center
+  /// The point a `Scale` or `Rotate` keeps still, given where the transforms before it put the node's center. None for
+  /// a `Rotate` along a `Sequence`, which scrolls rather than turns.
   pub(crate) fn anchor(&self, center: Vec2, env: &Env) -> Option<Vec2> {
     match self {
       Self::Scale(Scaling { anchor, .. }) => Some(center + anchor.resolve(env)),
+      Self::Rotate(Rotation { anchor, .. }) if env.lap.is_none() => {
+        Some(center + anchor.resolve(env))
+      }
       _ => None,
     }
   }
@@ -270,7 +276,8 @@ impl Transform {
   pub(crate) fn is_animated(&self) -> bool {
     match self {
       Self::Translate(prop) => prop.is_animated(),
-      Self::Rotate(prop) | Self::Bulge(prop) | Self::Round(prop) => prop.is_animated(),
+      Self::Bulge(prop) | Self::Round(prop) => prop.is_animated(),
+      Self::Rotate(Rotation { degrees, anchor }) => degrees.is_animated() || anchor.is_animated(),
       Self::Scale(Scaling { amount, anchor }) => amount.is_animated() || anchor.is_animated(),
       Self::Fit(_) => true,
       Self::Mirror { center, rotation } | Self::Bisect { center, rotation } => {
@@ -296,7 +303,11 @@ impl Transform {
   pub(crate) fn read_inputs(&self, inputs: &mut Inputs) {
     match self {
       Self::Translate(prop) => prop.read_inputs(inputs),
-      Self::Rotate(prop) | Self::Bulge(prop) | Self::Round(prop) => prop.read_inputs(inputs),
+      Self::Bulge(prop) | Self::Round(prop) => prop.read_inputs(inputs),
+      Self::Rotate(Rotation { degrees, anchor }) => {
+        degrees.read_inputs(inputs);
+        anchor.read_inputs(inputs);
+      }
       Self::Scale(Scaling { amount, anchor }) => {
         amount.read_inputs(inputs);
         anchor.read_inputs(inputs);
@@ -379,6 +390,62 @@ impl From<ScalingFile> for Scaling {
         amount,
         anchor: Prop::Fixed(Vec2::ZERO),
       },
+    }
+  }
+}
+
+/// How far a [`Transform::Rotate`] turns, and around what
+///
+/// In RON: `Rotate(degrees: Fixed(90.0), anchor: Fixed((-10.0, -5.0)))`, with `anchor` left out for the center. A file
+/// can give only the degrees, `Rotate(Fixed(90.0))`, as files did before there was an anchor.
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(from = "RotationFile")]
+pub struct Rotation {
+  pub degrees: Prop<f32>,
+  /// The point it turns around, from the node's center as placed by the transforms before this one, in the same
+  /// space. The center by default.
+  #[cfg_attr(feature = "ts", ts(as = "Prop<[f32; 2]>"))]
+  pub anchor: Prop<Vec2>,
+}
+
+impl From<Prop<f32>> for Rotation {
+  /// Turns by `degrees` around the center
+  fn from(degrees: Prop<f32>) -> Self {
+    Self {
+      degrees,
+      anchor: Vec2::ZERO.into(),
+    }
+  }
+}
+
+impl From<f32> for Rotation {
+  /// Turns by `degrees` around the center
+  fn from(degrees: f32) -> Self {
+    Prop::from(degrees).into()
+  }
+}
+
+/// A [`Rotation`] as a file gives it: with an anchor, or only the degrees
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RotationFile {
+  Anchored {
+    degrees: Prop<f32>,
+    #[serde(default)]
+    anchor: Option<Prop<Vec2>>,
+  },
+  Degrees(Prop<f32>),
+}
+
+impl From<RotationFile> for Rotation {
+  fn from(file: RotationFile) -> Self {
+    match file {
+      RotationFile::Anchored { degrees, anchor } => Self {
+        degrees,
+        anchor: anchor.unwrap_or(Prop::Fixed(Vec2::ZERO)),
+      },
+      RotationFile::Degrees(degrees) => degrees.into(),
     }
   }
 }

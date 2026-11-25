@@ -32,7 +32,6 @@
 
 - `Transform::Warp` on shapes: bend the outline by noise too, as fills already are. A shape's edges need cutting into short pieces first, or a rect barely bends.
 - Plug in custom shapes or graphics with their own settings (e.g. a kinematics/skeleton extension)
-- Rotate transform gets an adjustable center point (X/Y prop)
 - Line-based fills (polyline, spiral, logarithmic spiral, etc. snake patterns) 
 - Line based fill patterns usable for Sweep
 - Outline/stroke shouldn't take over fill

@@ -568,7 +568,6 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
     transform.get().forEach((w, index) => {
       const lens = item(transform, index)
       if ('Translate' in w) use(variant(lens, 'Translate'), `${label} · Offset`, translateRanges(surface, space))
-      else if ('Rotate' in w) use(variant(lens, 'Rotate'), `${label} · Rotation`, both(ROTATION))
       else {
         const name = `${label} · ${Object.keys(w)[0]}`
         transformProps(lens, surface, space).forEach((prop) => use(prop.lens, `${name} · ${prop.label}`, prop.ranges))
@@ -1189,14 +1188,19 @@ export const RESHAPE_KINDS: ReshapeKind[] = ['Shift', 'Bulge', 'Round']
 export type PropField = { key: string; label: string; fallback: SceneValue; lens: Lens<Prop<SceneValue>>; ranges: Ranges }
 
 /**
- * The props of a transform that has props of its own rather than being one. For a scale, how much, then the point that
- * stays put, from the center. For a mirror, revolve, or bisect, its center, which is in the space the transforms before
+ * The props of a transform that has props of its own rather than being one. For a rotate, how far it turns, then the
+ * point it turns around, from the center. For a scale, how much, then the point that stays put, from the center. For a mirror, revolve, or bisect, its center, which is in the space the transforms before
  * it put the shape in, then how its line is turned or how its copies are spread. For a shift, how far it moves the
  * shape's middle, then how its line is turned. For a warp, how far it pushes, how big its ripples are, and its
  * evolution. None for other transforms.
  */
 export function transformProps(transform: Lens<Transform>, surface: Surface, space: TransformSpace): PropField[] {
   const current = transform.get()
+  if ('Rotate' in current) {
+    const rotate = variant(transform as Lens<Extract<Transform, { Rotate: unknown }>>, 'Rotate')
+    const anchor = space === 'fill' ? both(FILL_MOVE) : pointRanges(surface)
+    return [propField('degrees', 'Rotation', 0, both(ROTATION), field(rotate, 'degrees')), propField('anchor', 'Anchor', [0, 0], anchor, field(rotate, 'anchor'))]
+  }
   if ('Scale' in current) {
     const scale = variant(transform as Lens<Extract<Transform, { Scale: unknown }>>, 'Scale')
     const anchor = space === 'fill' ? both(FILL_MOVE) : pointRanges(surface)

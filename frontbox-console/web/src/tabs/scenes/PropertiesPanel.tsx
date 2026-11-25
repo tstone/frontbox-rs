@@ -54,7 +54,7 @@ import {
 } from './configNodes'
 import { ImagePicker } from './ImagePicker'
 import { SoundPicker } from './SoundPicker'
-import { anchorPresets, writer } from './ShapeHandles'
+import { ANCHOR_SPOTS, anchorPresets, writer } from './ShapeHandles'
 import { displayNames, LayerLights, LightsNote } from './LayerPlace'
 import { evenlySpread, spreadStops } from './configTree'
 import { randomSeed } from './curves'
@@ -1005,8 +1005,9 @@ function NodeFields(props: { node: ConfigNode }) {
 }
 
 /**
- * Buttons that put a scale's anchor on a corner or the center of the shape's box, as the machine last drew it. They're
- * off while there's no drawing of the shape to go by, or the anchor can't take a value, such as while it's random.
+ * A three by three grid of buttons that put a rotate's or scale's anchor on a corner, the middle of a side, or the center
+ * of the shape's box, as the machine last drew it. They're off while there's no drawing of the shape to go by, or the
+ * anchor can't take a value, such as while it's random.
  */
 function AnchorPresets(props: { lens: Lens<Prop<Vec2>>; shape: Lens<Shape>; index: number }) {
   const scene = useContext(SceneContext)!
@@ -1036,9 +1037,6 @@ function AnchorPresets(props: { lens: Lens<Prop<Vec2>>; shape: Lens<Shape>; inde
     </div>
   )
 }
-
-/** The anchor buttons, in their order, for while there's no drawing of the shape to place them by */
-const ANCHOR_SPOTS = ['Top left', 'Bottom left', 'Center', 'Top right', 'Bottom right']
 
 const propFieldSpec = (spec: PropSpec) => ({
   variableName: spec.variableName,
@@ -2078,7 +2076,7 @@ function pastEnd(before: Vec2, end: Vec2): Vec2 {
  */
 function newTransform(kind: TransformKind, traversals: string[], size: Vec2): Transform {
   if (kind === 'Translate') return { Translate: { Fixed: [0, 0] } }
-  if (kind === 'Rotate') return { Rotate: { Fixed: 0 } }
+  if (kind === 'Rotate') return { Rotate: { degrees: { Fixed: 0 }, anchor: { Fixed: [0, 0] } } }
   if (kind === 'Scale') return { Scale: { amount: { Fixed: 1 }, anchor: { Fixed: [0, 0] } } }
   if (kind === 'Mirror') return { Mirror: { center: { Fixed: [size[0] / 2, -size[1] / 2] }, rotation: { Fixed: 0 } } }
   if (kind === 'Revolve') return { Revolve: { center: { Fixed: [0, 0] }, angle: { Fixed: REVOLVE_ANGLE.rest! }, count: { Fixed: COPIES.rest! } } }

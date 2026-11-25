@@ -22,7 +22,7 @@ fn layers() -> Vec<(&'static str, Layer)> {
     (
       "gradient",
       Layer::new(
-        gradient(GradientStyle::Linear).transform(Transform::Rotate(over_time(0.0, 360.0))),
+        gradient(GradientStyle::Linear).transform(Transform::Rotate(over_time(0.0, 360.0).into())),
       ),
     ),
     (
@@ -32,7 +32,7 @@ fn layers() -> Vec<(&'static str, Layer)> {
           width: 40.0.into(),
           height: 12.0.into(),
         })
-        .transform(Transform::Rotate(over_time(0.0, 90.0)))
+        .transform(Transform::Rotate(over_time(0.0, 90.0).into()))
         .transform(Transform::Translate(Prop::Keyframes(Keyframes::new(
           vec![
             Key::new(0.0, Vec2::new(20.0, 16.0), Curve::EaseInOut),

@@ -3,9 +3,9 @@ use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::scene::{
-  Bounds, Contour, Cut, Env, Inputs, Node, PreparedAdjust, PreparedShadow, PreparedStroke, Prop, Reshape, Sample, ShapeAdjust,
-  ShiftLine, TextAlign, TextOutline, TextOverflow, TextSource, Transform, VerticalAlign, Wrap,
-  layout_text,
+  Bounds, Contour, Cut, Env, Inputs, Node, PreparedAdjust, PreparedShadow, PreparedStroke, Prop,
+  Reshape, Sample, ShapeAdjust, ShiftLine, TextAlign, TextOutline, TextOverflow, TextSource,
+  Transform, VerticalAlign, Wrap, layout_text,
 };
 
 /// Points in the outline polygon of a round shape
@@ -174,9 +174,7 @@ impl Shape {
       .into_iter()
       .map(|placed| PreparedCopy {
         to_local: placed.to_scene.inverse(),
-        reach: wrap
-          .is_none()
-          .then(|| extent.transformed(placed.to_scene)),
+        reach: wrap.is_none().then(|| extent.transformed(placed.to_scene)),
         cuts: placed.cuts,
       })
       .collect();
@@ -710,7 +708,11 @@ impl PreparedShape {
   pub(crate) fn cover(&self, at: &Sample) -> Option<Cover> {
     // the nearest copy's distance to each colored stroke's band
     let mut bands = vec![f32::INFINITY; self.colored];
-    let nearest = self.nearest(at.pos, at.radius + self.edge_reach + self.feather / 2.0, &mut bands);
+    let nearest = self.nearest(
+      at.pos,
+      at.radius + self.edge_reach + self.feather / 2.0,
+      &mut bands,
+    );
     let colors = self.strokes.iter().filter_map(|stroke| stroke.color);
     let strokes: Vec<(f32, Rgba<u8>)> = bands
       .into_iter()
@@ -1344,7 +1346,10 @@ mod tests {
     assert_eq!(covered(&soft, 0.0, 0.0, 0.0), 1.0);
     assert_eq!(covered(&soft, 8.0, 0.0, 0.0), 1.0);
     assert!((covered(&soft, 10.0, 0.0, 0.0) - 0.5).abs() < 1e-5);
-    let (inner, outer) = (covered(&soft, 9.0, 0.0, 0.0), covered(&soft, 11.0, 0.0, 0.0));
+    let (inner, outer) = (
+      covered(&soft, 9.0, 0.0, 0.0),
+      covered(&soft, 11.0, 0.0, 0.0),
+    );
     assert!(inner > 0.5 && inner < 1.0, "{inner}");
     assert!((inner + outer - 1.0).abs() < 1e-5, "{inner} and {outer}");
     assert_eq!(covered(&soft, 12.0, 0.0, 0.0), 0.0);
@@ -1421,7 +1426,10 @@ mod tests {
     shape
       .cover(&Sample::new(Vec2::new(x, y), 0.0))
       .map_or((0.0, 0.0), |cover| {
-        (cover.amount, cover.shadows.first().map_or(0.0, |shadow| shadow.0))
+        (
+          cover.amount,
+          cover.shadows.first().map_or(0.0, |shadow| shadow.0),
+        )
       })
   }
 
@@ -1905,6 +1913,25 @@ mod tests {
       .transform(Transform::Scale(scaling));
     let pose = shape.pose(&env(0.0, &variables)).unwrap();
     // from the center the translate moved it to
+    assert_eq!(pose.anchors, vec![None, Some(Vec2::new(9.0, 3.0))]);
+    assert!(
+      pose.transforms[1]
+        .transform_point2(Vec2::new(9.0, 3.0))
+        .abs_diff_eq(Vec2::new(9.0, 3.0), 1e-4)
+    );
+  }
+
+  #[test]
+  fn a_pose_has_the_point_each_rotate_turns_around() {
+    let variables = Variables::new();
+    let rotation = crate::scene::Rotation {
+      degrees: 90.0.into(),
+      anchor: Vec2::new(-1.0, -2.0).into(),
+    };
+    let shape = Shape::new(ShapeNode::circle(1.0))
+      .transform(Transform::Translate(Vec2::new(10.0, 5.0).into()))
+      .transform(Transform::Rotate(rotation));
+    let pose = shape.pose(&env(0.0, &variables)).unwrap();
     assert_eq!(pose.anchors, vec![None, Some(Vec2::new(9.0, 3.0))]);
     assert!(
       pose.transforms[1]

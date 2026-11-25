@@ -37,7 +37,6 @@ import {
   pointRanges,
   RATE,
   reachRange,
-  ROTATION,
   shapeProps,
   soundLabel,
   strokeProps,
@@ -147,7 +146,7 @@ export type PropSpec = {
   /** For a prop with nothing to take a value from */
   fallback: SceneValue
   ranges: Ranges
-  /** For a scale's anchor in a layer's region: the shape, and where the scale is in its transforms */
+  /** For a rotate's or scale's anchor in a layer's region: the shape, and where the transform is in its transforms */
   anchorOf?: { shape: Lens<Shape>; index: number }
 }
 
@@ -410,7 +409,7 @@ function modifierNodes(id: string, transforms: Lens<Transform[]>, space: Transfo
     const place = { list: transforms as Lens<unknown[]>, listId: transformList, index }
     const kind = transformKind(transform)
     if (kind === 'Fit') return { id: transformId, label: TRANSFORM_LABELS.Fit, kind: 'fit', lens, value: transform, place }
-    if (kind === 'Mirror' || kind === 'Revolve' || kind === 'Bisect' || kind === 'Shift' || kind === 'Scale' || kind === 'Warp') {
+    if (kind === 'Mirror' || kind === 'Revolve' || kind === 'Bisect' || kind === 'Shift' || kind === 'Rotate' || kind === 'Scale' || kind === 'Warp') {
       const children = transformProps(lens, surface, space).map(({ key, label, fallback, lens: propLens, ranges }) => {
         const anchorOf = key === 'anchor' && shape ? { shape, index } : undefined
         return propNode(`${transformId}/${key}`, label, { lens: propLens, variableName: `${kind.toLowerCase()}_${key}`, fallback, ranges, anchorOf }, surface)
@@ -421,11 +420,9 @@ function modifierNodes(id: string, transforms: Lens<Transform[]>, space: Transfo
     const spec: PropSpec =
       kind === 'Translate'
         ? { lens: variant(lens, 'Translate') as Lens<Prop<SceneValue>>, variableName: 'offset', fallback: [0, 0], ranges: translateRanges(surface, space) }
-        : kind === 'Rotate'
-          ? { lens: variant(lens, 'Rotate') as Lens<Prop<SceneValue>>, variableName: 'rotation', fallback: 0, ranges: both(ROTATION) }
-          : kind === 'Bulge'
-            ? { lens: variant(lens, 'Bulge') as Lens<Prop<SceneValue>>, variableName: 'bulge', fallback: BULGE.rest!, ranges: both(BULGE) }
-            : { lens: variant(lens, 'Round') as Lens<Prop<SceneValue>>, variableName: 'corner_radius', fallback: 0, ranges: both(cornerRange(surface)) }
+        : kind === 'Bulge'
+          ? { lens: variant(lens, 'Bulge') as Lens<Prop<SceneValue>>, variableName: 'bulge', fallback: BULGE.rest!, ranges: both(BULGE) }
+          : { lens: variant(lens, 'Round') as Lens<Prop<SceneValue>>, variableName: 'corner_radius', fallback: 0, ranges: both(cornerRange(surface)) }
     // a translate is a position, so it can sweep around a path, which the prop has under it
     if (index === placement) return { ...propNode(transformId, 'Position', spec, surface), place, modifier: kind, placement: true }
     return { ...propNode(transformId, TRANSFORM_LABELS[kind], spec, surface), place, modifier: kind }

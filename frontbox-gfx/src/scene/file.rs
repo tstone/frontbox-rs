@@ -410,7 +410,7 @@ mod tests {
     assert!(load(&scene(&format!("Translate({sweep})"), radius, color)).is_ok());
 
     let not_positions = [
-      scene(&format!("Rotate({sweep})"), radius, color),
+      scene(&format!("Bulge({sweep})"), radius, color),
       scene("", sweep, color),
       scene("", radius, sweep),
     ];
@@ -418,6 +418,30 @@ mod tests {
       let error = load(&source).unwrap_err().to_string();
       assert!(error.contains("only a position"), "{error}");
     }
+  }
+
+  #[test]
+  fn a_rotate_loads_with_an_anchor_or_only_its_degrees() {
+    let rotate = |transform: &str| {
+      let scene: Scene = load(&format!("(timing: (duration: 1.0), layers: [(fill: (transform: [{transform}], base: Solid(Fixed(255, 0, 0, 255))))])")).unwrap();
+      let Some(Transform::Rotate(rotation)) = scene.layers[0].fill.transform.first().cloned()
+      else {
+        panic!("{scene:?}");
+      };
+      rotation
+    };
+    let only_degrees = rotate("Rotate(Fixed(90.0))");
+    assert!(matches!(
+      (only_degrees.degrees, only_degrees.anchor),
+      (Prop::Fixed(90.0), Prop::Fixed(Vec2::ZERO))
+    ));
+    let anchored = rotate("Rotate(degrees: Fixed(90.0), anchor: Fixed((1.0, -1.0)))");
+    assert!(matches!(anchored.anchor, Prop::Fixed(anchor) if anchor == Vec2::new(1.0, -1.0)));
+    let written = super::save(&Transform::Rotate(Rotation::from(90.0))).unwrap();
+    assert!(
+      matches!(super::load::<Transform>(&written), Ok(Transform::Rotate(_))),
+      "{written}"
+    );
   }
 
   #[test]

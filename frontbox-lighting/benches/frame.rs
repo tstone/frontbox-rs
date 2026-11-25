@@ -129,7 +129,7 @@ fn play(context: &TestContext, scene: Scene) {
 
 /// A gradient turning across the playfield, changing every light each frame
 fn area_sweep() -> Scene {
-  let fill = gradient().transform(Transform::Rotate(over_time(0.0, 360.0)));
+  let fill = gradient().transform(Transform::Rotate(over_time(0.0, 360.0).into()));
   Scene::new(vec![
     LightLayer::area(LightQ::every(), "Playfield", Layer::new(fill)).into(),
   ])

@@ -608,21 +608,28 @@ function groupOverlay(list: Lens<Transform[]>, pose: RenderedShape, write: Write
 }
 
 /**
- * The anchor of each scale, the point it keeps still. It's held as an offset from the shape's center going into the
- * scale, in the space the transforms before it put the shape in.
+ * The anchor of each rotate or scale, the point it turns around or keeps still. It's held as an offset from the shape's
+ * center going into the transform, in the space the transforms before it put the shape in. Dragged near one of the
+ * spots `anchorPresets` gives, it snaps onto it.
  */
 function anchorHandles(list: Lens<Transform[]>, pose: RenderedShape, write: Write, open: number | null): Handle[] {
   return list.get().flatMap((transform, index) => {
     const anchor = pose.anchors[index]
-    if (index !== open || !('Scale' in transform) || !anchor) return []
-    const prop = field(variant(item(list, index) as Lens<Extract<Transform, { Scale: unknown }>>, 'Scale'), 'anchor')
-    // the scale keeps its anchor where it is, so it's only the transforms after it that place it
+    const kind = 'Rotate' in transform ? 'Rotate' : 'Scale' in transform ? 'Scale' : null
+    if (index !== open || !kind || !anchor) return []
+    const lens = item(list, index)
+    const prop =
+      kind === 'Rotate'
+        ? field(variant(lens as Lens<Extract<Transform, { Rotate: unknown }>>, 'Rotate'), 'anchor')
+        : field(variant(lens as Lens<Extract<Transform, { Scale: unknown }>>, 'Scale'), 'anchor')
+    // the transform keeps its anchor where it is, so it's only the transforms after it that place it
     const toScene = chain(pose.transforms.slice(index + 1))
     const fromScene = invert(toScene)
     if (!fromScene) return []
     const [x, y] = pose.pivots[index]
+    const spots = anchorPresets(pose, index) ?? []
     const handle: Handle = {
-      label: 'Scale anchor, the point the scale keeps still. Drag to move it.',
+      label: kind === 'Rotate' ? 'Rotate anchor, the point the shape turns around. Drag to move it.' : 'Scale anchor, the point the scale keeps still. Drag to move it.',
       kind: 'anchor',
       cursor: 'move',
       transform: index,
@@ -630,20 +637,32 @@ function anchorHandles(list: Lens<Transform[]>, pose: RenderedShape, write: Writ
       locked: !write.can(prop.get(), [0, 0]),
       drag: (to) => {
         const [ax, ay] = apply(fromScene, to)
-        write.to(prop, roundedPoint([ax - x, ay - y]))
+        write.to(prop, snapToSpot(roundedPoint([ax - x, ay - y]), spots, pose))
       },
     }
     return [handle]
   })
 }
 
-/** Where a scale's anchor can be put with a button, as offsets from the shape's center */
+/** How near a dragged anchor has to come to a spot to snap onto it, as a share of the shape's box's longer side */
+const SPOT_SNAP = 0.08
+
+/** `anchor`, or the spot it's within `SPOT_SNAP` of */
+function snapToSpot(anchor: Vec2, spots: AnchorPreset[], pose: RenderedShape): Vec2 {
+  const reach = SPOT_SNAP * Math.max(pose.max[0] - pose.min[0], pose.max[1] - pose.min[1])
+  const distance = (spot: AnchorPreset) => Math.hypot(spot.anchor[0] - anchor[0], spot.anchor[1] - anchor[1])
+  const nearest = spots.reduce<AnchorPreset | null>((best, spot) => (best && distance(best) <= distance(spot) ? best : spot), null)
+  return nearest && distance(nearest) <= reach ? nearest.anchor : anchor
+}
+
+/** Where a rotate's or scale's anchor can be put with a button, as offsets from the shape's center */
 export type AnchorPreset = { label: string; anchor: Vec2 }
 
 /**
- * The corners and center of the shape's box going into the scale at `index`, as anchors for it: from the shape's
- * center, in the space the transforms before it put the shape in. Up is toward smaller y. The box is around the shape
- * itself, so it's left out of what a mirror or revolve before the scale draws.
+ * The corners, the middles of the sides, and the center of the shape's box going into the rotate or scale at `index`,
+ * as anchors for it, row by row from the top left: from the shape's center, in the space the transforms before it put
+ * the shape in. Up is toward smaller y. The box is around the shape itself, so it's left out of what a mirror or revolve
+ * before the transform draws.
  */
 export function anchorPresets(pose: RenderedShape, index: number): AnchorPreset[] | null {
   const pivot = pose.pivots[index]
@@ -653,15 +672,17 @@ export function anchorPresets(pose: RenderedShape, index: number): AnchorPreset[
   const corners = [[minX, minY], [maxX, minY], [maxX, maxY], [minX, maxY]].map((corner) => apply(before, corner as Vec2))
   const [xs, ys] = [corners.map(([x]) => x), corners.map(([, y]) => y)]
   const [left, right, top, bottom] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)]
-  const from = (x: number, y: number) => roundedPoint([x - pivot[0], y - pivot[1]])
-  return [
-    { label: 'Top left', anchor: from(left, top) },
-    { label: 'Bottom left', anchor: from(left, bottom) },
-    { label: 'Center', anchor: [0, 0] },
-    { label: 'Top right', anchor: from(right, top) },
-    { label: 'Bottom right', anchor: from(right, bottom) },
-  ]
+  const across = [left, (left + right) / 2, right]
+  const down = [top, (top + bottom) / 2, bottom]
+  return ANCHOR_SPOTS.map((label, spot) => {
+    const [x, y] = [across[spot % 3], down[Math.floor(spot / 3)]]
+    // the center's the shape's own, which a box turned by the transforms before isn't always around
+    return { label, anchor: label === 'Center' ? [0, 0] : roundedPoint([x - pivot[0], y - pivot[1]]) }
+  })
 }
+
+/** The spots an anchor can be put on, row by row from the top left */
+export const ANCHOR_SPOTS = ['Top left', 'Top', 'Top right', 'Left', 'Center', 'Right', 'Bottom left', 'Bottom', 'Bottom right']
 
 /** The center of each revolve, which is in the space the transforms before it put the shape in */
 function revolveHandles(list: Lens<Transform[]>, pose: RenderedShape, write: Write): Handle[] {
@@ -831,19 +852,22 @@ function cornerHandles(shape: Lens<Shape>, pose: RenderedShape, write: Write, ch
     glyph: CORNER_GLYPHS[mode],
     transform: changes,
   })
-  const angleTo = ([x, y]: Vec2) => (Math.atan2(y - center[1], x - center[0]) * 180) / Math.PI
 
   if (mode === 'rotate') {
-    const { index, lens } = found('Rotate', limit, { Rotate: { Fixed: 0 } })
+    const { index, lens } = found('Rotate', limit, { Rotate: { degrees: { Fixed: 0 }, anchor: { Fixed: [0, 0] } } })
     changes = index < 0 ? undefined : index
-    const prop = () => variant(lens() as Lens<Extract<Transform, { Rotate: unknown }>>, 'Rotate')
+    const prop = () => field(variant(lens() as Lens<Extract<Transform, { Rotate: unknown }>>, 'Rotate'), 'degrees')
     // the turn it has now, as the machine drew it, which a drag adds to
     const [a, b] = index < 0 ? [1, 0] : pose.transforms[index]
     const was = (Math.atan2(b, a) * 180) / Math.PI
-    const from = angleTo(corner)
+    // it turns around its anchor, which stays where it is, so only the transforms after it place it
+    const anchor = index < 0 ? undefined : pose.anchors[index]
+    const around = anchor ? apply(chain(pose.transforms.slice(index + 1)), anchor) : center
+    const angleAround = ([x, y]: Vec2) => (Math.atan2(y - around[1], x - around[0]) * 180) / Math.PI
+    const from = angleAround(corner)
     return [
       handle('Turn the shape. Hold shift to turn in steps of 15°.', 'grab', index < 0 ? null : () => prop().get(), (to, stepped) => {
-        const turned = was + angleTo(to) - from
+        const turned = was + angleAround(to) - from
         write.to(prop(), rounded(stepped ? Math.round(turned / TURN_STEP) * TURN_STEP : turned))
       }),
     ]

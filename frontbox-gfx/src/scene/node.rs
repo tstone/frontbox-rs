@@ -109,7 +109,7 @@ impl Wrap {
 mod tests {
   use super::*;
   use crate::scene::value::tests::env;
-  use crate::scene::{Scaling, Variables};
+  use crate::scene::{Rotation, Scaling, Variables};
 
   fn node(transform: Vec<Transform>) -> Node<(), ()> {
     Node {
@@ -187,6 +187,28 @@ mod tests {
       local
         .transform_point2(at)
         .abs_diff_eq(Vec2::new(1.0, 0.0), 1e-6)
+    );
+  }
+
+  #[test]
+  fn rotate_turns_around_its_anchor() {
+    let variables = Variables::new();
+    // anchored 1 left of the center at (1, 0), so on the origin: the center turns a quarter around it, to (0, 1)
+    let n = node(vec![Transform::Rotate(Rotation {
+      degrees: 90.0.into(),
+      anchor: Vec2::new(-1.0, 0.0).into(),
+    })]);
+    let center = Vec2::new(1.0, 0.0);
+    let to_scene = n.to_scene(center, &env(0.0, &variables)).unwrap();
+    assert!(
+      to_scene
+        .transform_point2(Vec2::ZERO)
+        .abs_diff_eq(Vec2::ZERO, 1e-5)
+    );
+    assert!(
+      to_scene
+        .transform_point2(center)
+        .abs_diff_eq(Vec2::new(0.0, 1.0), 1e-5)
     );
   }
 
