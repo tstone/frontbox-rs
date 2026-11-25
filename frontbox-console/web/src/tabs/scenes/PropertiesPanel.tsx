@@ -100,6 +100,7 @@ import {
   newShapeSize,
   newStroke,
   newFeather,
+  newShadow,
   NOTCH,
   orEmpty,
   RATE,
@@ -234,9 +235,10 @@ const MASK_OPTIONS: { value: 'Off' | 'Outside' | 'Inside'; label: string }[] = [
 ]
 const ADJUST_OPTIONS = (Object.keys(ADJUSTS) as AdjustKind[]).map((value) => ({ value, label: ADJUSTS[value].label }))
 /** Only for a shape that's drawn, rather than a sweep's path */
-const SHAPE_ADJUST_OPTIONS: { value: 'Stroke' | 'Feather'; label: string }[] = [
+const SHAPE_ADJUST_OPTIONS: { value: 'Stroke' | 'Feather' | 'Shadow'; label: string }[] = [
   { value: 'Stroke', label: 'Stroke' },
   { value: 'Feather', label: 'Feather' },
+  { value: 'Shadow', label: 'Shadow' },
 ]
 type TextSourceKind = 'Fixed' | 'Variable' | 'Number'
 const TEXT_SOURCE_OPTIONS: { value: TextSourceKind; label: string }[] = [
@@ -324,7 +326,7 @@ const SHAPE_ICONS: Record<RegionKind, Icon> = {
 }
 const FILL_ICONS: Record<FillKind, Icon> = { Solid: icons.PaintBucket, Linear: icons.Blend, Radial: icons.Blend, Conical: icons.Blend, Noise: icons.Cloud, Cells: icons.Hexagon, Image: icons.ImageIcon, Spritesheet: icons.ImageIcon }
 /** A transform's or an adjust's icon says which kind it is, in place of where its value comes from */
-const MODIFIER_ICONS: Record<TransformKind | AdjustKind | 'Feather', Icon> = {
+const MODIFIER_ICONS: Record<TransformKind | AdjustKind | 'Feather' | 'Shadow', Icon> = {
   Translate: icons.Move,
   Rotate: icons.RotateCw,
   Scale: icons.Scaling,
@@ -341,6 +343,7 @@ const MODIFIER_ICONS: Record<TransformKind | AdjustKind | 'Feather', Icon> = {
   Brightness: icons.Sun,
   Contrast: icons.Contrast,
   Feather: icons.Feather,
+  Shadow: icons.Sparkle,
 }
 const KIND_ICONS: Partial<Record<NodeKind, Icon>> = {
   place: icons.MapIcon,
@@ -2090,14 +2093,14 @@ function newTransform(kind: TransformKind, traversals: string[], size: Vec2): Tr
 /** The row for adding modifiers to a shape or a fill */
 export type ModifiersNode = Extract<ConfigNode, { kind: 'modifiers' }>
 
-/** A modifier that can be added: a transform, an adjust, or a stroke or feather on a shape's edge */
-export type ModifierKind = TransformKind | AdjustKind | 'Stroke' | 'Feather'
+/** A modifier that can be added: a transform, an adjust, or a stroke, feather, or shadow on a shape's edge */
+export type ModifierKind = TransformKind | AdjustKind | 'Stroke' | 'Feather' | 'Shadow'
 
 type ModifierOption = { value: ModifierKind; label: string }
 
 /**
  * The modifiers a row offers, with `traversals` the layer's: transforms, with those only for a drawn shape and a fit
- * only for a layer with traversals to fit to, then transforms only for a fill and adjusts on a fill, then a stroke or feather on
+ * only for a layer with traversals to fit to, then transforms only for a fill and adjusts on a fill, then a stroke, feather, or shadow on
  * a drawn shape.
  */
 export function modifierOptions(
@@ -2116,7 +2119,7 @@ export function modifierOptions(
 export const modifierIcon = (kind: ModifierKind): Icon => (kind === 'Stroke' ? KIND_ICONS.stroke! : MODIFIER_ICONS[kind])
 
 /**
- * Adds a transform, an adjust, or a stroke or feather to a row's, after those already there, and selects it. A transform only for
+ * Adds a transform, an adjust, or a stroke, feather, or shadow to a row's, after those already there, and selects it. A transform only for
  * shapes goes before a shape's first translate instead, so that it works in the shape's own space and moves with the
  * shape. `surface` and `traversals` are the layer's.
  */
@@ -2128,10 +2131,11 @@ export function addModifier(tree: ConfigTree, scene: Scene, node: ModifiersNode,
     tree.expand(id)
   }
   batch(() => {
-    if (kind === 'Stroke' || kind === 'Feather') {
+    if (kind === 'Stroke' || kind === 'Feather' || kind === 'Shadow') {
       const strokes = orEmpty(field(node.shape!, 'adjust'))
       const list = strokes.get()
-      strokes.set([...list, kind === 'Stroke' ? newStroke(surface) : newFeather(surface)])
+      const adjust = kind === 'Stroke' ? newStroke(surface) : kind === 'Feather' ? newFeather(surface) : newShadow(surface)
+      strokes.set([...list, adjust])
       show(`${owner}/adjust/${list.length}`)
     } else if (kind in ADJUSTS) {
       const list = node.adjusts!.get()
@@ -2153,7 +2157,7 @@ export function addModifier(tree: ConfigTree, scene: Scene, node: ModifiersNode,
 }
 
 /**
- * Adds a transform, an adjust, or a stroke or feather, listed together. It says "Modifier" unless given what to show,
+ * Adds a transform, an adjust, or a stroke, feather, or shadow, listed together. It says "Modifier" unless given what to show,
  * such as just an icon, and then `label` says what it's for.
  */
 function AddModifier(props: { node: ModifiersNode; class?: string; label?: string; children?: JSX.Element }) {

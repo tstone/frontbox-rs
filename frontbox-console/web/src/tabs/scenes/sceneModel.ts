@@ -596,6 +596,7 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
     const strokes = orEmpty(field(lens, 'adjust'))
     strokes.get().forEach((adjust, i) => {
       if ('Feather' in adjust) return use(field(variant(item(strokes, i), 'Feather'), 'width'), `${label} · Feather`, both(featherRange(surface)))
+      if ('Shadow' in adjust) return shadowProps(item(strokes, i), surface).forEach((prop) => use(prop.lens, `${label} · Shadow · ${prop.label}`, prop.ranges))
       strokeProps(item(strokes, i), surface).forEach((prop) => use(prop.lens, `${label} · Stroke · ${prop.label}`, prop.ranges))
     })
   }
@@ -1239,6 +1240,26 @@ export function strokeProps(adjust: Lens<ShapeAdjust>, surface: Surface): PropFi
   return [width, propField('color', 'Color', [255, 255, 255, 255], both(UNIT), field(stroke, 'color'))]
 }
 
+/** A shadow's offset, how soft it is, how far it grows past the shape, and its color */
+export function shadowProps(adjust: Lens<ShapeAdjust>, surface: Surface): PropField[] {
+  const shadow = variant(adjust, 'Shadow')
+  return [
+    propField('offset', 'Offset', [0, 0], shadowOffsetRanges(surface), field(shadow, 'offset')),
+    propField('blur', 'Blur', 0, both(featherRange(surface)), field(shadow, 'blur')),
+    propField('spread', 'Spread', 0, both(roundRange(surface)), field(shadow, 'spread')),
+    propField('color', 'Color', [255, 255, 255, 255], both(UNIT), field(shadow, 'color')),
+  ]
+}
+
+/**
+ * A white glow: no offset, as soft as a new feather, and grown by half that, so it's at its brightest at the shape's
+ * edge and fades out past it
+ */
+export function newShadow(surface: Surface): ShapeAdjust {
+  const blur = featherRange(surface).rest!
+  return { Shadow: { offset: { Fixed: [0, 0] }, blur: { Fixed: blur }, spread: { Fixed: blur / 2 }, color: { Fixed: [255, 255, 255, 255] } } }
+}
+
 /** A feather a fifth the size of a new shape */
 export function newFeather(surface: Surface): ShapeAdjust {
   return { Feather: { width: { Fixed: featherRange(surface).rest! } } }
@@ -1384,6 +1405,12 @@ export function strokeRange(surface: Surface): Range {
 export function featherRange(surface: Surface): Range {
   const range = roundRange(surface)
   return { ...range, rest: Math.max(Math.round(newShapeSize(surface) / 5 / range.step), 1) * range.step }
+}
+
+/** How far a shadow can be moved from its shape, either way, as far as `roundRange` goes */
+export function shadowOffsetRanges(surface: Surface): Ranges {
+  const range = roundRange(surface)
+  return both({ ...range, min: -range.max, rest: 0 })
 }
 
 /** A polygon's points, in the shape's own space around its center */

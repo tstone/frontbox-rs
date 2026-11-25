@@ -32,7 +32,6 @@
 
 - `Transform::Warp` on shapes: bend the outline by noise too, as fills already are. A shape's edges need cutting into short pieces first, or a rect barely bends.
 - Plug in custom shapes or graphics with their own settings (e.g. a kinematics/skeleton extension)
-- Outer glow/drop shadow: a layer that reuses another's shape (as Sweep should), so a glow can't drift from what it's around. Until then it's a copy of the shape with an outside Stroke and a Feather, plus a Translate for a shadow.
 - Rotate transform gets an adjustable center point (X/Y prop)
 - Line-based fills (polyline, spiral, logarithmic spiral, etc. snake patterns) 
 - Line based fill patterns usable for Sweep

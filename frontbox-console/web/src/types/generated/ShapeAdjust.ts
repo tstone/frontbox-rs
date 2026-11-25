@@ -6,4 +6,4 @@ import type { StrokeAlign } from "./StrokeAlign";
 /**
  * Changes to a shape's edge, applied in order after its transforms
  */
-export type ShapeAdjust = { "Stroke": { width: Prop<number>, align?: StrokeAlign, color?: Prop<Color>, } } | { "Feather": { width: Prop<number>, } };
+export type ShapeAdjust = { "Stroke": { width: Prop<number>, align?: StrokeAlign, color?: Prop<Color>, } } | { "Feather": { width: Prop<number>, } } | { "Shadow": { offset: Prop<[number, number]>, blur: Prop<number>, spread: Prop<number>, color: Prop<Color>, } };

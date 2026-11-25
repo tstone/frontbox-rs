@@ -1868,6 +1868,41 @@ fn a_colored_stroke_is_drawn_over_the_fill_and_one_without_a_color_takes_it() {
   assert_eq!(sample(&scene, 59.0, 25.0, 0.1), RED);
 }
 
+#[test]
+fn a_shadow_is_drawn_under_the_fill() {
+  let circle = Shape::new(ShapeNode::circle(10.0))
+    .transform(Transform::Translate(Vec2::new(50.0, 25.0).into()))
+    .adjust(ShapeAdjust::Shadow {
+      offset: Vec2::new(4.0, 0.0).into(),
+      blur: 0.0.into(),
+      spread: 0.0.into(),
+      color: Color(BLUE).into(),
+    });
+  let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).region(circle)]);
+  assert_eq!(sample(&scene, 55.0, 25.0, 0.1), RED);
+  assert_eq!(sample(&scene, 62.0, 25.0, 0.1), BLUE);
+  assert_eq!(sample(&scene, 39.0, 25.0, 0.1), Rgba([0, 0, 0, 0]));
+}
+
+#[test]
+fn text_glows_around_its_letters() {
+  let glowing = text_box(
+    "I",
+    16.0,
+    Vec2::ZERO,
+    Vec2::new(16.0, 14.0),
+    TextAlign::Center,
+    VerticalAlign::Top,
+  )
+  .adjust(ShapeAdjust::Shadow {
+    offset: Vec2::ZERO.into(),
+    blur: 0.0.into(),
+    spread: 1.0.into(),
+    color: Color(BLUE).into(),
+  });
+  assert_eq!(text_pixels(glowing, 16, 14)[1], ".....#####......");
+}
+
 fn text(text: &str, size: f32) -> Shape {
   Shape::new(ShapeNode::text(text, "pixel.ttf", size, Vec2::splat(20.0)))
 }

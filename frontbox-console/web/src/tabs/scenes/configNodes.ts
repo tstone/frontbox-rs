@@ -42,6 +42,7 @@ import {
   soundLabel,
   strokeProps,
   featherRange,
+  shadowProps,
   traversalTarget,
   translateRanges,
   UNIT,
@@ -80,7 +81,7 @@ export type ConfigNode = NodeData & {
   /** Its place in a list, which its row has buttons for moving it around in and taking it out of */
   place?: ListPlace
   /** For a prop that's a transform or an adjust, which kind it is */
-  modifier?: TransformKind | AdjustKind | 'Feather'
+  modifier?: TransformKind | AdjustKind | 'Feather' | 'Shadow'
   /** For a shape's first translate, which is where the shape is rather than a modifier added to it */
   placement?: boolean
   /** For a node with fields and nothing under it, which still opens to show them */
@@ -119,6 +120,8 @@ export type NodeData =
   | { kind: 'modifiers'; transforms: Lens<Transform[]>; adjusts?: Lens<ColorAdjust[]>; shape?: Lens<Shape> }
   /** A stroke along a shape's edge, which has its props under it */
   | { kind: 'stroke'; lens: Lens<ShapeAdjust> }
+  /** A shadow or glow under a shape, which has its props under it */
+  | { kind: 'shadow'; lens: Lens<ShapeAdjust> }
   | { kind: 'points'; shape: PointsShape; lens: Lens<Prop<Vec2>[]> | Lens<BezierPoint[]> }
   | { kind: 'bezier-point' }
   | { kind: 'traversals'; lens: Lens<Traversal[]>; layer: Lens<SceneLayer> }
@@ -443,6 +446,12 @@ function modifierNodes(id: string, transforms: Lens<Transform[]>, space: Transfo
     if ('Feather' in stroke) {
       const spec: PropSpec = { lens: field(variant(lens, 'Feather'), 'width') as Lens<Prop<SceneValue>>, variableName: 'feather', fallback: 0, ranges: both(featherRange(surface)) }
       return { ...propNode(strokeId, 'Feather', spec, surface), place, modifier: 'Feather' }
+    }
+    if ('Shadow' in stroke) {
+      const children = shadowProps(lens, surface).map(({ key, label, fallback, lens: propLens, ranges }) =>
+        propNode(`${strokeId}/${key}`, label, { lens: propLens, variableName: `shadow_${key}`, fallback, ranges }, surface),
+      )
+      return branch({ id: strokeId, label: 'Shadow', kind: 'shadow', lens, value: stroke, place, modifier: 'Shadow', children })
     }
     const children = strokeProps(lens, surface).map(({ key, label, fallback, lens: propLens, ranges }) =>
       propNode(`${strokeId}/${key}`, label, { lens: propLens, variableName: `stroke_${key}`, fallback, ranges }, surface),

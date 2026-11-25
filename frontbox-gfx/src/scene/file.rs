@@ -229,6 +229,12 @@ mod tests {
             })
             .adjust(ShapeAdjust::Feather {
               width: Prop::Variable("softness".into()),
+            })
+            .adjust(ShapeAdjust::Shadow {
+              offset: Vec2::new(1.0, -1.0).into(),
+              blur: 2.0.into(),
+              spread: 0.5.into(),
+              color: Color(Rgba([0, 0, 0, 128])).into(),
             }),
         ),
         Layer::new(Fill::new(FillNode::Solid(

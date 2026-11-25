@@ -1,3 +1,4 @@
+use glam::Vec2;
 use image::Rgba;
 use serde::{Deserialize, Serialize};
 
@@ -24,6 +25,17 @@ pub enum ShapeAdjust {
   /// stroke's band too. Feathers add up, wherever they are in the list. With a solid fill and an outside stroke before
   /// it, it's a glow; moved with a `Translate`, a drop shadow.
   Feather { width: Prop<f32> },
+  /// The shape again, under it, in `color`: moved by `offset` and grown by `spread`, both in scene units, then softened
+  /// across `blur` as a [`Feather`](Self::Feather) softens. With no offset it's a glow around the shape. It follows the
+  /// edge strokes with no color leave, wherever they are in the list, and isn't feathered with the shape. Each shadow
+  /// is drawn over the ones before it.
+  Shadow {
+    #[cfg_attr(feature = "ts", ts(as = "Prop<[f32; 2]>"))]
+    offset: Prop<Vec2>,
+    blur: Prop<f32>,
+    spread: Prop<f32>,
+    color: Prop<Color>,
+  },
 }
 
 /// Which side of the edge a stroke's band is on
@@ -49,6 +61,17 @@ impl ShapeAdjust {
         color: color.as_ref().map(|color| color.resolve(env).0),
       }),
       Self::Feather { width } => PreparedAdjust::Feather(width.resolve(env).max(0.0)),
+      Self::Shadow {
+        offset,
+        blur,
+        spread,
+        color,
+      } => PreparedAdjust::Shadow(PreparedShadow {
+        offset: offset.resolve(env),
+        blur: blur.resolve(env).max(0.0),
+        spread: spread.resolve(env),
+        color: color.resolve(env).0,
+      }),
     }
   }
 
@@ -58,6 +81,12 @@ impl ShapeAdjust {
         width.is_animated() || color.as_ref().is_some_and(Prop::is_animated)
       }
       Self::Feather { width } => width.is_animated(),
+      Self::Shadow {
+        offset,
+        blur,
+        spread,
+        color,
+      } => offset.is_animated() || blur.is_animated() || spread.is_animated() || color.is_animated(),
     }
   }
 
@@ -68,6 +97,17 @@ impl ShapeAdjust {
         color.iter().for_each(|color| color.read_inputs(inputs));
       }
       Self::Feather { width } => width.read_inputs(inputs),
+      Self::Shadow {
+        offset,
+        blur,
+        spread,
+        color,
+      } => {
+        offset.read_inputs(inputs);
+        blur.read_inputs(inputs);
+        spread.read_inputs(inputs);
+        color.read_inputs(inputs);
+      }
     }
   }
 }
@@ -83,6 +123,24 @@ pub(crate) enum PreparedAdjust {
   Stroke(PreparedStroke),
   /// How wide, never below 0
   Feather(f32),
+  Shadow(PreparedShadow),
+}
+
+/// A [`ShapeAdjust::Shadow`] with its props resolved
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PreparedShadow {
+  pub offset: Vec2,
+  /// Never below 0
+  pub blur: f32,
+  pub spread: f32,
+  pub color: Rgba<u8>,
+}
+
+impl PreparedShadow {
+  /// How far past the shape's edge it reaches, before its offset
+  pub(crate) fn reach(&self) -> f32 {
+    (self.spread + self.blur / 2.0).max(0.0)
+  }
 }
 
 /// A [`ShapeAdjust::Stroke`] with its props resolved

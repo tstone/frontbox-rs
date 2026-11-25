@@ -349,7 +349,7 @@ pub(crate) struct PreparedArea<'a> {
 }
 
 impl PreparedArea<'_> {
-  /// The fill's color at a sample, with edge coverage in alpha, and a shape's colored strokes drawn over it
+  /// The fill's color at a sample, with edge coverage in alpha, a shape's shadows under it, and its colored strokes over it
   pub(crate) fn color(&self, at: &Sample) -> Rgba<u8> {
     match &self.clip {
       Clip::Viewport(viewport) if !viewport.contains(at.pos) => Rgba([0, 0, 0, 0]),
@@ -361,12 +361,20 @@ impl PreparedArea<'_> {
     }
   }
 
-  /// The fill where a shape covers it, with the shape's colored strokes over it
+  /// The fill where a shape covers it, over the shape's shadows and under its colored strokes
   fn covered(&self, shape: &PreparedShape, cover: Cover) -> Rgba<u8> {
-    let color = covering(
-      self.fill.color(shape.bounds.to_unit(cover.local)),
-      cover.amount,
-    );
+    let shadows = cover
+      .shadows
+      .into_iter()
+      .fold(Rgba([0, 0, 0, 0]), |color, (amount, shadow)| {
+        Rgba::over(covering(shadow, amount), color)
+      });
+    let color = if cover.amount > 0.0 {
+      let fill = self.fill.color(shape.bounds.to_unit(cover.local));
+      Rgba::over(covering(fill, cover.amount), shadows)
+    } else {
+      shadows
+    };
     cover
       .strokes
       .into_iter()

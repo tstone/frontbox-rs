@@ -3,7 +3,7 @@ use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::scene::{
-  Bounds, Contour, Cut, Env, Inputs, Node, PreparedAdjust, PreparedStroke, Prop, Reshape, Sample, ShapeAdjust,
+  Bounds, Contour, Cut, Env, Inputs, Node, PreparedAdjust, PreparedShadow, PreparedStroke, Prop, Reshape, Sample, ShapeAdjust,
   ShiftLine, TextAlign, TextOutline, TextOverflow, TextSource, Transform, VerticalAlign, Wrap,
   layout_text,
 };
@@ -159,15 +159,16 @@ impl Shape {
     };
     let wrap = self.wrap(bounds.center(), to_scene, env);
     let extent = edge.extent();
-    let (mut strokes, mut feather) = (Vec::new(), 0.0);
+    let (mut strokes, mut shadows, mut feather) = (Vec::new(), Vec::new(), 0.0);
     for adjust in &self.adjust {
       match adjust.prepare(env) {
         PreparedAdjust::Stroke(stroke) => strokes.push(stroke),
         PreparedAdjust::Feather(width) => feather += width,
+        PreparedAdjust::Shadow(shadow) => shadows.push(shadow),
       }
     }
-    // each band can reach past the edge of the one before, and a feather past the last
-    let stroke_reach = strokes.iter().map(PreparedStroke::reach).sum::<f32>() + feather / 2.0;
+    // each band can reach past the edge of the one before
+    let edge_reach = strokes.iter().map(PreparedStroke::reach).sum::<f32>();
     let copies = self
       .placements(bounds.center(), env)
       .into_iter()
@@ -175,7 +176,7 @@ impl Shape {
         to_local: placed.to_scene.inverse(),
         reach: wrap
           .is_none()
-          .then(|| extent.transformed(placed.to_scene).grown(stroke_reach)),
+          .then(|| extent.transformed(placed.to_scene)),
         cuts: placed.cuts,
       })
       .collect();
@@ -192,6 +193,8 @@ impl Shape {
       strokes,
       colored,
       feather,
+      edge_reach,
+      shadows,
     })
   }
 
@@ -696,28 +699,66 @@ pub(crate) struct PreparedShape {
   colored: usize,
   /// How wide the edge and the colored strokes' bands are softened, in scene units
   feather: f32,
+  /// How far the strokes can reach past the shape's own edge
+  edge_reach: f32,
+  /// In order, the first drawn lowest
+  shadows: Vec<PreparedShadow>,
 }
 
 impl PreparedShape {
-  /// How much of the sample the shape and its colored strokes cover. `None` if the sample is outside every copy.
+  /// How much of the sample the shape, its colored strokes, and its shadows cover. `None` if none of them reach it.
   pub(crate) fn cover(&self, at: &Sample) -> Option<Cover> {
-    let pos = self.wrap.map_or(at.pos, |wrap| wrap.apply(at.pos));
-    let mut nearest: Option<(f32, Vec2)> = None;
     // the nearest copy's distance to each colored stroke's band
     let mut bands = vec![f32::INFINITY; self.colored];
+    let nearest = self.nearest(at.pos, at.radius + self.edge_reach + self.feather / 2.0, &mut bands);
+    let colors = self.strokes.iter().filter_map(|stroke| stroke.color);
+    let strokes: Vec<(f32, Rgba<u8>)> = bands
+      .into_iter()
+      .zip(colors)
+      .map(|(band, color)| (coverage(band, at.radius, self.feather), color))
+      .filter(|(amount, _)| *amount > 0.0)
+      .collect();
+    let shadows: Vec<(f32, Rgba<u8>)> = self
+      .shadows
+      .iter()
+      .filter_map(|shadow| {
+        let reach = at.radius + self.edge_reach + shadow.reach();
+        let (distance, _) = self.nearest(at.pos - shadow.offset, reach, &mut [])?;
+        let amount = coverage(distance - shadow.spread, at.radius, shadow.blur);
+        (amount > 0.0).then_some((amount, shadow.color))
+      })
+      .collect();
+    let (amount, local) = nearest.map_or((0.0, Vec2::ZERO), |(distance, local)| {
+      (coverage(distance, at.radius, self.feather), local)
+    });
+    (amount > 0.0 || !strokes.is_empty() || !shadows.is_empty()).then_some(Cover {
+      amount,
+      local,
+      strokes,
+      shadows,
+    })
+  }
+
+  /// The signed distance at `pos` to the edge of the nearest copy, after the strokes with no color, and where `pos` is
+  /// in that copy's local space. Each colored stroke's distance to its band, from the nearest copy to it, goes in
+  /// `bands`, which can be left empty. Copies whose box, grown by `reach`, is away from `pos` are skipped, and `None`
+  /// if every one is.
+  fn nearest(&self, pos: Vec2, reach: f32, bands: &mut [f32]) -> Option<(f32, Vec2)> {
+    let wrapped = self.wrap.map_or(pos, |wrap| wrap.apply(pos));
+    let mut nearest: Option<(f32, Vec2)> = None;
     for copy in &self.copies {
       if copy
         .reach
-        .is_some_and(|reach| !reach.grown(at.radius).contains(at.pos))
+        .is_some_and(|extent| !extent.grown(reach).contains(pos))
       {
         continue;
       }
-      let local = copy.to_local.transform_point2(pos);
+      let local = copy.to_local.transform_point2(wrapped);
       let (distance, gradient) = self.edge.distance(local);
       // inside the edge and on the kept side of every cut, so the farthest of them
       let mut distance = copy.cuts.iter().fold(
         scene_distance(distance, gradient, &copy.to_local),
-        |distance, cut| distance.max(cut.distance(pos)),
+        |distance, cut| distance.max(cut.distance(wrapped)),
       );
       let mut colored = bands.iter_mut();
       for stroke in &self.strokes {
@@ -731,20 +772,7 @@ impl PreparedShape {
         nearest = Some((distance, local));
       }
     }
-    let (distance, local) = nearest?;
-    let colors = self.strokes.iter().filter_map(|stroke| stroke.color);
-    let strokes: Vec<(f32, Rgba<u8>)> = bands
-      .into_iter()
-      .zip(colors)
-      .map(|(band, color)| (coverage(band, at.radius, self.feather), color))
-      .filter(|(amount, _)| *amount > 0.0)
-      .collect();
-    let amount = coverage(distance, at.radius, self.feather);
-    (amount > 0.0 || !strokes.is_empty()).then_some(Cover {
-      amount,
-      local,
-      strokes,
-    })
+    nearest
   }
 }
 
@@ -756,6 +784,8 @@ pub(crate) struct Cover {
   pub local: Vec2,
   /// Each colored stroke that covers some of the sample, in order: how much, and its color
   pub strokes: Vec<(f32, Rgba<u8>)>,
+  /// Each shadow that covers some of the sample, in order, to be drawn under the shape: how much, and its color
+  pub shadows: Vec<(f32, Rgba<u8>)>,
 }
 
 /// One copy of a [`PreparedShape`]
@@ -763,7 +793,8 @@ struct PreparedCopy {
   to_local: Affine2,
   /// In scene space
   cuts: Vec<Cut>,
-  /// Everything it can cover, in scene space. `None` when it wraps around a `Sequence`.
+  /// Its edge's extent in scene space, before strokes, feathers, and shadows reach past it. `None` when it wraps around
+  /// a `Sequence`.
   reach: Option<Bounds>,
 }
 
@@ -1370,6 +1401,85 @@ mod tests {
     .unwrap();
     let edge = shape.cover(&Sample::new(Vec2::new(6.0, 0.0), 0.0)).unwrap();
     assert!((edge.strokes[0].0 - 0.5).abs() < 1e-5, "{:?}", edge.strokes);
+  }
+
+  fn shadowed(shape: Shape, offset: (f32, f32), blur: f32, spread: f32) -> PreparedShape {
+    let variables = Variables::new();
+    shape
+      .adjust(ShapeAdjust::Shadow {
+        offset: Vec2::new(offset.0, offset.1).into(),
+        blur: blur.into(),
+        spread: spread.into(),
+        color: Color(Rgba([0, 0, 255, 255])).into(),
+      })
+      .prepare(&env(0.0, &variables))
+      .unwrap()
+  }
+
+  /// How much of a point the shape covers and how much its first shadow does
+  fn covers(shape: &PreparedShape, x: f32, y: f32) -> (f32, f32) {
+    shape
+      .cover(&Sample::new(Vec2::new(x, y), 0.0))
+      .map_or((0.0, 0.0), |cover| {
+        (cover.amount, cover.shadows.first().map_or(0.0, |shadow| shadow.0))
+      })
+  }
+
+  #[test]
+  fn a_shadow_with_no_offset_is_a_glow_grown_by_its_spread() {
+    let glow = shadowed(Shape::new(ShapeNode::circle(10.0)), (0.0, 0.0), 0.0, 2.0);
+    assert_eq!(covers(&glow, 0.0, 0.0), (1.0, 1.0));
+    assert_eq!(covers(&glow, 11.0, 0.0), (0.0, 1.0));
+    assert_eq!(covers(&glow, 0.0, -11.9), (0.0, 1.0));
+    assert_eq!(covers(&glow, 12.1, 0.0), (0.0, 0.0));
+  }
+
+  #[test]
+  fn a_shadow_is_moved_by_its_offset() {
+    let shadow = shadowed(Shape::new(ShapeNode::circle(10.0)), (5.0, 3.0), 0.0, 0.0);
+    assert_eq!(covers(&shadow, 14.0, 3.0), (0.0, 1.0));
+    assert_eq!(covers(&shadow, -9.0, 0.0), (1.0, 0.0));
+    assert_eq!(covers(&shadow, 16.0, 3.0), (0.0, 0.0));
+  }
+
+  #[test]
+  fn a_shadows_blur_softens_it_as_a_feather_does() {
+    let glow = shadowed(Shape::new(ShapeNode::circle(10.0)), (0.0, 0.0), 4.0, 2.0);
+    let soft = feathered(Shape::new(ShapeNode::circle(12.0)), 4.0);
+    for x in [11.0, 12.0, 13.0, 13.9, 14.1] {
+      assert!(
+        (covers(&glow, x, 0.0).1 - covered(&soft, x, 0.0, 0.0)).abs() < 1e-5,
+        "at {x}"
+      );
+    }
+  }
+
+  #[test]
+  fn a_shadow_follows_the_band_a_stroke_with_no_color_leaves() {
+    let ring = shadowed(ring(10.0, 2.0), (0.0, 0.0), 0.0, 1.0);
+    assert_eq!(covers(&ring, 0.0, 0.0), (0.0, 0.0));
+    assert_eq!(covers(&ring, 9.5, 0.0), (0.0, 1.0));
+    assert_eq!(covers(&ring, 11.0, 0.0), (1.0, 1.0));
+    assert_eq!(covers(&ring, 12.5, 0.0), (0.0, 1.0));
+    assert_eq!(covers(&ring, 8.5, 0.0), (0.0, 0.0));
+  }
+
+  #[test]
+  fn a_shadow_can_be_animated() {
+    let moves = Prop::Keyframes(Keyframes {
+      keys: vec![Key::new(0.0, Vec2::ZERO, Curve::Linear)],
+      cycle: Cycle::Once,
+    });
+    assert!(
+      Shape::new(ShapeNode::circle(1.0))
+        .adjust(ShapeAdjust::Shadow {
+          offset: moves,
+          blur: 0.0.into(),
+          spread: 0.0.into(),
+          color: Color(Rgba([0, 0, 0, 255])).into(),
+        })
+        .is_animated()
+    );
   }
 
   #[test]
