@@ -540,7 +540,7 @@
   cursor: pointer;
 }
 
-.scene-drawing-closing svg .scene-drawing-first {
+.scene-drawing-closing svg .scene-drawing-end {
   fill: var(--accent);
 }
 
@@ -562,6 +562,12 @@ svg.scene-hover-outline polygon {
 }
 
 /* the selected layer that covers everything, which has no handles, dashed like a selected shape's box */
+svg.scene-hover-outline polyline {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
 svg.scene-hover-outline.scene-selected-outline polygon {
   fill: none;
   stroke-width: 2;
@@ -658,7 +664,8 @@ svg.scene-hover-outline.scene-selected-outline polygon {
   pointer-events: none;
 }
 
-.scene-dmd polygon {
+.scene-dmd polygon,
+.scene-dmd polyline.scene-outline {
   fill: none;
   /* over the scene's own colors, which can be anything, so this needs to read against all of them */
   stroke: #fff;

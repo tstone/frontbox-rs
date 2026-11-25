@@ -11,7 +11,7 @@ pub enum ShapeAdjust {
   /// A band `width` across along the edge, in scene units, so a `Scale` before it doesn't thicken it, drawn with its own
   /// `fill` over the layer's. The fill is stretched over the shape's bounds, as the layer's is. Each stroke runs along
   /// the shape's edge, and each copy a `Mirror` or `Revolve` makes gets its own band. For a band alone, make the layer's
-  /// fill transparent.
+  /// fill transparent. A line has no inside, so its strokes are what draw it, and they're centered on it.
   Stroke {
     width: Prop<f32>,
     #[serde(default, skip_serializing_if = "StrokeAlign::is_centered")]
@@ -26,7 +26,8 @@ pub enum ShapeAdjust {
   Feather { width: Prop<f32> },
   /// The shape again, under it, in `color`: moved by `offset` and grown by `spread`, both in scene units, then softened
   /// across `blur` as a [`Feather`](Self::Feather) softens. With no offset it's a glow around the shape. It follows the
-  /// shape's edge, not its strokes, and isn't feathered with the shape. Each shadow is drawn over the ones before it.
+  /// shape's edge, not its strokes, and isn't feathered with the shape. A line's shadow is the line grown by `spread`,
+  /// so it takes a spread of half a stroke's width to shadow the stroke. Each shadow is drawn over the ones before it.
   Shadow {
     #[cfg_attr(feature = "ts", ts(as = "Prop<[f32; 2]>"))]
     offset: Prop<Vec2>,
@@ -77,7 +78,9 @@ impl ShapeAdjust {
         blur,
         spread,
         color,
-      } => offset.is_animated() || blur.is_animated() || spread.is_animated() || color.is_animated(),
+      } => {
+        offset.is_animated() || blur.is_animated() || spread.is_animated() || color.is_animated()
+      }
     }
   }
 
@@ -142,6 +145,14 @@ pub(crate) struct PreparedStroke {
 }
 
 impl PreparedStroke {
+  /// The same band, centered on the edge
+  pub(crate) fn centered(self) -> Self {
+    Self {
+      align: StrokeAlign::Centered,
+      ..self
+    }
+  }
+
   /// Signed distance to the band (negative inside it), given the signed distance to the edge it runs along
   pub(crate) fn band(&self, distance: f32) -> f32 {
     if self.width <= 0.0 {

@@ -29,6 +29,7 @@ import {
   field,
   frameRanges,
   GROWTH_DENSITY,
+  isOpen,
   item,
   layerLabel,
   layerVisible,
@@ -118,8 +119,11 @@ export type NodeData =
    * bisect, or stroke.
    */
   | { kind: 'modifiers'; transforms: Lens<Transform[]>; adjusts?: Lens<ColorAdjust[]>; shape?: Lens<Shape> }
-  /** A stroke along a shape's edge, which has its props under it */
-  | { kind: 'stroke'; lens: Lens<ShapeAdjust> }
+  /**
+   * A stroke along a shape's edge, which has its props under it. One `ofLine` is what draws a line, which has no fill of
+   * its own, so it's shown with its layer as a shape's fill is, rather than in a row of its own.
+   */
+  | { kind: 'stroke'; lens: Lens<ShapeAdjust>; ofLine?: boolean }
   /** A shadow or glow under a shape, which has its props under it */
   | { kind: 'shadow'; lens: Lens<ShapeAdjust> }
   | { kind: 'points'; shape: PointsShape; lens: Lens<Prop<Vec2>[]> | Lens<BezierPoint[]> }
@@ -314,10 +318,12 @@ function layerChildren(id: string, lens: Lens<SceneLayer>, surface: Surface): Co
   ]
   // a sequence's lights are already the ones it shows on, so it only has a region its file gave it, to be removed
   const regions = light && layer.surface === 'Sequence' && !layer.region ? [] : [regionNode(`${id}/region`, field(lens, 'region'), surface, lens)]
-  const fill = fillNode(`${id}/fill`, field(lens, 'fill'), surface)
+  // a line has no inside, so its fill draws nothing, and its strokes are shown in its place
+  const line = layer.region !== undefined && isOpen(layer.region.base)
+  const fill = line ? [] : [fillNode(`${id}/fill`, field(lens, 'fill'), surface)]
   const mask: ConfigNode = { id: `${id}/mask`, label: 'Mask', kind: 'mask', lens, value: layer.mask }
   const visible = propNode(`${id}/visible`, 'Visible', { lens: layerVisible(lens) as Lens<Prop<SceneValue>>, variableName: 'visible', fallback: true, ranges: both(UNIT) }, surface)
-  return [visible, mask, ...place, ...regions, fill]
+  return [visible, mask, ...place, ...regions, ...fill]
 }
 
 /** A layer's region, which can be its graph instead */
@@ -344,8 +350,8 @@ function regionNode(id: string, lens: Lens<Shape | undefined>, surface: Surface,
     lens,
     layer,
     value: shape,
-    // text has its words and font as fields
-    fields: shape !== undefined && 'Text' in shape.base,
+    // text has its words and font as fields, and a wave its form
+    fields: shape !== undefined && ('Text' in shape.base || 'Wave' in shape.base),
     children: shape ? shapeChildren(id, lens as Lens<Shape>, surface) : [],
   })
 }
@@ -437,6 +443,7 @@ function modifierNodes(id: string, transforms: Lens<Transform[]>, space: Transfo
     return { ...propNode(`${adjustList}/${index}`, label, spec, surface), place: { list: adjusts as Lens<unknown[]>, listId: adjustList, index }, modifier: kind }
   })
   const strokes = shape && orEmpty(field(shape, 'adjust'))
+  const line = shape !== undefined && isOpen(shape.get().base)
   const strokeNodes = (strokes?.get() ?? []).map((stroke, index): ConfigNode => {
     const strokeId = `${adjustList}/${index}`
     const lens = item(strokes!, index)
@@ -455,6 +462,8 @@ function modifierNodes(id: string, transforms: Lens<Transform[]>, space: Transfo
       propNode(`${strokeId}/${key}`, label, { lens: propLens, variableName: `stroke_${key}`, fallback, ranges }, surface),
     )
     children.push(fillNode(`${strokeId}/fill`, field(variant(lens, 'Stroke'), 'fill'), surface))
+    // a line's stroke is centered on it whatever its align, so it has nothing to set
+    if (line) return branch({ id: strokeId, label: 'Stroke', kind: 'stroke', lens, value: stroke, place, ofLine: true, children })
     return branch({ id: strokeId, label: 'Stroke', kind: 'stroke', lens, value: stroke, place, fields: true, children })
   })
   const add: ConfigNode = { id: `${id}/modifiers`, label: 'Modifier', kind: 'modifiers', transforms, adjusts, shape, value: undefined }

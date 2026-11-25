@@ -73,6 +73,9 @@ export type TransformSpace = 'shape' | 'fill'
 /**
  * A place in the scene that can be read and replaced. Fields take a lens rather than a value and a callback so that
  * an editor can be handed any part of the scene and doesn't need to know where it sits.
+ *
+ * A lens into a place that's gone, such as a solid's color once the fill is noise, reads `undefined` rather than
+ * throwing. Its field can still be on show for a moment before it's taken down, and reads it in that moment.
  */
 export type Lens<T> = {
   get(): T
@@ -84,14 +87,14 @@ type VariantOf<T, K extends PropertyKey> = T extends Record<K, infer V> ? V : ne
 
 export function field<T, K extends keyof T>(lens: Lens<T>, key: K): Lens<T[K]> {
   return {
-    get: () => lens.get()[key],
+    get: () => lens.get()?.[key] as T[K],
     set: (value) => lens.set({ ...lens.get(), [key]: value }),
   }
 }
 
 export function item<T>(lens: Lens<T[]>, index: number): Lens<T> {
   return {
-    get: () => lens.get()[index],
+    get: () => lens.get()?.[index] as T,
     set: (value) => lens.set(lens.get().map((existing, i) => (i === index ? value : existing))),
   }
 }
@@ -109,7 +112,7 @@ export function orElse<T>(lens: Lens<T | undefined>, fallback: T): Lens<T> {
 /** What's inside an enum variant. Only for use while the enum is that variant. */
 export function variant<T, K extends KeysOf<T>>(lens: Lens<T>, key: K): Lens<VariantOf<T, K>> {
   return {
-    get: () => (lens.get() as Record<K, VariantOf<T, K>>)[key],
+    get: () => (lens.get() as Record<K, VariantOf<T, K>> | undefined)?.[key] as VariantOf<T, K>,
     set: (value) => lens.set({ [key]: value } as T),
   }
 }
@@ -394,7 +397,7 @@ export function shapePoints(base: ShapeNode): Prop<Vec2>[] {
 }
 
 /** Whether a shape is a line that stops at its last point, and not an edge that comes back around to its first */
-export const isOpen = (base: ShapeNode) => 'Polyline' in base || 'Bezier' in base
+export const isOpen = (base: ShapeNode) => 'Polyline' in base || 'Bezier' in base || 'Spiral' in base || 'Wave' in base
 
 /** A circle around `center`, gone around once over a scene's length, big enough to see in the ranges of the prop on it */
 export function newSweep(center: Vec2, [x, y]: Ranges, duration: number): Sweep {
@@ -1131,6 +1134,12 @@ export const NOTCH: Range = { ...UNIT, rest: 0.5 }
 /** How wide a star's legs are where they meet, as a fraction of its radius. It rests at 2·tan(18°), where a 5-legged
  * star's sides line up into a pentagram. */
 export const LEG_WIDTH: Range = { min: 0, max: 2, step: 0.01, rest: 0.65 }
+/** How many times a spiral goes around, as `MAX_TURNS` in frontbox-gfx caps it */
+export const TURNS: Range = { min: 0, max: 64, step: 0.05, rest: 3 }
+/** How much farther apart each of a spiral's turns is than the one inside it, from even at 0 */
+export const FLARE: Range = { min: 0, max: 3, step: 0.01, rest: 0 }
+/** How many times a wave crosses its box, which drops a fraction as a star's legs do */
+export const RUNS: Range = { min: 1, max: 64, step: 1, spreadEnd: 65, rest: 6 }
 
 export type AdjustKind = KeysOf<ColorAdjust>
 
@@ -1319,6 +1328,22 @@ export function shapeProps(base: Lens<ShapeNode>, surface: Surface): PropField[]
       size('width', 'Width', both(across), field(chevron, 'width')),
       size('height', 'Height', both(down), field(chevron, 'height')),
       shaped('notch', 'Notch', NOTCH, field(chevron, 'notch')),
+    ]
+  }
+  if ('Spiral' in current) {
+    const spiral = variant(base, 'Spiral')
+    return [
+      size('radius', 'Radius', round, field(spiral, 'radius')),
+      shaped('turns', 'Turns', TURNS, field(spiral, 'turns')),
+      shaped('flare', 'Flare', FLARE, field(spiral, 'flare')),
+    ]
+  }
+  if ('Wave' in current) {
+    const wave = variant(base, 'Wave')
+    return [
+      size('width', 'Width', both(across), field(wave, 'width')),
+      size('height', 'Height', both(down), field(wave, 'height')),
+      shaped('runs', 'Runs', RUNS, field(wave, 'runs')),
     ]
   }
   if ('Text' in current) {

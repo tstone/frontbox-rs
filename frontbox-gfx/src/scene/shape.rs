@@ -3,8 +3,8 @@ use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::scene::{
-  Bounds, Contour, Cut, Env, Fill, Inputs, Node, PreparedAdjust, PreparedShadow, PreparedStroke, Prop,
-  Reshape, Sample, ShapeAdjust, ShiftLine, TextAlign, TextOutline, TextOverflow, TextSource,
+  Bounds, Contour, Cut, Env, Fill, Inputs, Node, PreparedAdjust, PreparedShadow, PreparedStroke,
+  Prop, Reshape, Sample, ShapeAdjust, ShiftLine, TextAlign, TextOutline, TextOverflow, TextSource,
   Transform, VerticalAlign, Wrap, layout_text,
 };
 
@@ -19,6 +19,15 @@ const MAX_COPIES: usize = 1024;
 
 /// Line segments per bezier span when flattening it to a polyline
 const BEZIER_STEPS: usize = 24;
+
+/// Cap on a spiral's turns, well past where they can be told apart
+const MAX_TURNS: f32 = 64.0;
+
+/// Cap on a wave's runs, well past where they can be told apart
+const MAX_RUNS: f32 = 256.0;
+
+/// Line segments per run of a smooth wave
+const WAVE_STEPS: usize = 16;
 
 /// The area a layer is drawn in
 pub type Shape = Node<ShapeNode, ShapeAdjust>;
@@ -66,17 +75,38 @@ pub enum ShapeNode {
     #[cfg_attr(feature = "ts", ts(as = "Vec<Prop<[f32; 2]>>"))]
     points: Vec<Prop<Vec2>>,
   },
-  /// An open polyline. It has no inside, so it draws nothing as a layer's shape; it's only for a [`Sweep`] to follow.
+  /// A line through points, from the first to the last. It has no inside, so a layer's fill covers none of it: a
+  /// [`Stroke`] draws it, centered on it whatever its `align`, with round ends and corners. A [`Sweep`] can follow it.
   ///
+  /// [`Stroke`]: crate::scene::ShapeAdjust::Stroke
   /// [`Sweep`]: crate::scene::Sweep
   #[serde(alias = "Route")]
   Polyline {
     #[cfg_attr(feature = "ts", ts(as = "Vec<Prop<[f32; 2]>>"))]
     points: Vec<Prop<Vec2>>,
   },
-  /// An open, smooth curve through points. Like [`ShapeNode::Polyline`], it's only for a sweep to follow.
+  /// A smooth line through points. Like a [`ShapeNode::Polyline`], it has no inside, and a stroke draws it.
   Bezier {
     points: Vec<BezierPoint>,
+  },
+  /// A line winding out clockwise from the origin, `turns` times around, to end `radius` out from it pointing up. With
+  /// a `flare` of 0 its turns are evenly spaced, and with more each is `1 + flare` times as far from the one inside it
+  /// as that is from the one inside it, so they crowd in toward the middle as a logarithmic spiral's do. Like a
+  /// [`ShapeNode::Polyline`], it has no inside, and a stroke draws it.
+  Spiral {
+    radius: Prop<f32>,
+    turns: Prop<f32>,
+    flare: Prop<f32>,
+  },
+  /// A line across a box `width` by `height`, left to right, crossing from its bottom to its top and back `runs` times
+  /// in the way its `form` says. `runs` is truncated to a whole number. Like a
+  /// [`ShapeNode::Polyline`], it has no inside, and a stroke draws it.
+  Wave {
+    width: Prop<f32>,
+    height: Prop<f32>,
+    runs: Prop<f32>,
+    #[serde(default)]
+    form: WaveForm,
   },
   /// `text` in the font named `font`, in a box `width` by `height` around the origin. `size` is the font's em. Lines
   /// break at line breaks, and between words where the next would run past the box, or are cut short with an ellipsis
@@ -102,6 +132,21 @@ pub enum ShapeNode {
     #[cfg_attr(feature = "ts", ts(as = "Option<TextOverflow>", optional))]
     overflow: TextOverflow,
   },
+}
+
+/// How a [`ShapeNode::Wave`] crosses from one side of its box to the other
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WaveForm {
+  /// Easing off at each side, as a sine wave does
+  #[default]
+  Smooth,
+  /// Straight from each side to the other, turning sharply at them
+  Zigzag,
+  /// Straight up or down, then straight along a side to the next run, snaking back and forth through the box in square
+  /// turns. Its first run is up the box's left side and its last up or down its right, with the rest evenly spaced
+  /// between, so it starts and ends on a run rather than partway along a side.
+  Square,
 }
 
 /// A point a [`ShapeNode::Bezier`] passes through
@@ -153,15 +198,19 @@ impl Shape {
   pub(crate) fn prepare(&self, env: &Env) -> Option<PreparedShape> {
     let bounds = self.base.bounds(env);
     let to_scene = self.to_scene(bounds.center(), env)?;
+    let open = self.base.is_open();
     let edge = match self.reshaped(env) {
-      Some((outline, _)) if !self.base.is_open() => Edge::Polygon(outline),
-      _ => self.base.edge(env, to_scene),
+      Some((outline, _)) if open => Edge::Line(outline),
+      Some((outline, _)) => Edge::Polygon(outline),
+      None => self.base.edge(env, to_scene),
     };
     let wrap = self.wrap(bounds.center(), to_scene, env);
     let extent = edge.extent();
     let (mut strokes, mut shadows, mut feather) = (Vec::new(), Vec::new(), 0.0);
     for adjust in &self.adjust {
       match adjust.prepare(env) {
+        // a line has no inside for a stroke to be on, or outside to be off
+        PreparedAdjust::Stroke(stroke) if open => strokes.push(stroke.centered()),
         PreparedAdjust::Stroke(stroke) => strokes.push(stroke),
         PreparedAdjust::Feather(width) => feather += width,
         PreparedAdjust::Shadow(shadow) => shadows.push(shadow),
@@ -449,6 +498,17 @@ impl ShapeNode {
         radius: a,
         legs: b,
         leg_width: c,
+      }
+      | Self::Spiral {
+        radius: a,
+        turns: b,
+        flare: c,
+      }
+      | Self::Wave {
+        width: a,
+        height: b,
+        runs: c,
+        ..
       } => a.is_animated() || b.is_animated() || c.is_animated(),
       Self::Polygon { points } | Self::Polyline { points } => points.iter().any(Prop::is_animated),
       Self::Bezier { points } => points
@@ -492,6 +552,17 @@ impl ShapeNode {
         radius: a,
         legs: b,
         leg_width: c,
+      }
+      | Self::Spiral {
+        radius: a,
+        turns: b,
+        flare: c,
+      }
+      | Self::Wave {
+        width: a,
+        height: b,
+        runs: c,
+        ..
       } => [a, b, c].iter().for_each(|prop| prop.read_inputs(inputs)),
       Self::Polygon { points } | Self::Polyline { points } => {
         points.iter().for_each(|point| point.read_inputs(inputs))
@@ -526,6 +597,8 @@ impl ShapeNode {
       | Self::Diamond { .. }
       | Self::Star { .. }
       | Self::Chevron { .. }
+      | Self::Spiral { .. }
+      | Self::Wave { .. }
       | Self::Text { .. } => {
         let reach = self.reach(env);
         Bounds::new(-reach, reach)
@@ -570,7 +643,7 @@ impl ShapeNode {
       } => {
         let radius = radius.resolve(env);
         star_outline(
-          whole_legs(legs, env),
+          whole_count(legs, MAX_LEGS, env),
           radius,
           radius * leg_width.resolve(env) / 2.0,
         )
@@ -591,15 +664,28 @@ impl ShapeNode {
         points.iter().map(|p| p.resolve(env)).collect()
       }
       Self::Bezier { points } => bezier_line(points, env),
+      Self::Spiral { turns, flare, .. } => spiral_line(
+        self.reach(env).x,
+        turns.resolve(env).clamp(0.0, MAX_TURNS),
+        flare.resolve(env).max(0.0),
+      ),
+      Self::Wave { runs, form, .. } => {
+        wave_line(self.reach(env), whole_count(runs, MAX_RUNS, env), *form)
+      }
     }
   }
 
   /// The outline, with which of its points are corners and which of its edges are straight
   fn contour(&self, env: &Env) -> Contour {
     match self {
-      Self::Circle { .. } | Self::Ellipse { .. } | Self::Bezier { .. } => {
-        Contour::curved(self.outline(env), !self.is_open())
-      }
+      Self::Circle { .. }
+      | Self::Ellipse { .. }
+      | Self::Bezier { .. }
+      | Self::Spiral { .. }
+      | Self::Wave {
+        form: WaveForm::Smooth,
+        ..
+      } => Contour::curved(self.outline(env), !self.is_open()),
       _ => Contour::straight(self.outline(env), !self.is_open()),
     }
   }
@@ -611,14 +697,19 @@ impl ShapeNode {
       Self::Circle { .. } | Self::Ellipse { .. } => {
         Vec2::from_angle(std::f32::consts::TAU * phase) * self.reach(env)
       }
-      Self::Polyline { .. } | Self::Bezier { .. } => along_line(&self.outline(env), phase),
+      Self::Polyline { .. } | Self::Bezier { .. } | Self::Spiral { .. } | Self::Wave { .. } => {
+        along_line(&self.outline(env), phase)
+      }
       _ => along_loop(&self.outline(env), phase),
     }
   }
 
   /// Whether it's a line, with no inside
   fn is_open(&self) -> bool {
-    matches!(self, Self::Polyline { .. } | Self::Bezier { .. })
+    matches!(
+      self,
+      Self::Polyline { .. } | Self::Bezier { .. } | Self::Spiral { .. } | Self::Wave { .. }
+    )
   }
 
   /// Half-extents of a shape that isn't made of points or text. Zero for those that are.
@@ -629,10 +720,13 @@ impl ShapeNode {
       Self::Rect { width, height }
       | Self::Diamond { width, height, .. }
       | Self::Chevron { width, height, .. }
+      | Self::Wave { width, height, .. }
       | Self::Text { width, height, .. } => {
         Vec2::new(width.resolve(env), height.resolve(env)) / 2.0
       }
-      Self::Star { radius, .. } => Vec2::splat(radius.resolve(env).max(0.0)),
+      Self::Star { radius, .. } | Self::Spiral { radius, .. } => {
+        Vec2::splat(radius.resolve(env).max(0.0))
+      }
       Self::Polygon { .. } | Self::Polyline { .. } | Self::Bezier { .. } => Vec2::ZERO,
     }
   }
@@ -679,9 +773,11 @@ impl ShapeNode {
             reach,
           )
         }
-        None => Edge::Open,
+        None => Edge::Empty,
       },
-      Self::Polyline { .. } | Self::Bezier { .. } => Edge::Open,
+      Self::Polyline { .. } | Self::Bezier { .. } | Self::Spiral { .. } | Self::Wave { .. } => {
+        Edge::Line(self.outline(env))
+      }
     }
   }
 }
@@ -726,6 +822,10 @@ impl PreparedShape {
       .shadows
       .iter()
       .filter_map(|shadow| {
+        // a line's is the line grown by its spread, so with none it has nothing to cover
+        if self.is_line() && shadow.spread <= 0.0 {
+          return None;
+        }
         let reach = at.radius + self.edge_reach + shadow.reach();
         let (distance, _) = self.nearest(at.pos - shadow.offset, reach, &mut [])?;
         let amount = coverage(distance - shadow.spread, at.radius, shadow.blur);
@@ -733,7 +833,13 @@ impl PreparedShape {
       })
       .collect();
     let (amount, local) = nearest.map_or((0.0, Vec2::ZERO), |(distance, local)| {
-      (coverage(distance, at.radius, self.feather), local)
+      // a line has no inside to cover
+      let amount = if self.is_line() {
+        0.0
+      } else {
+        coverage(distance, at.radius, self.feather)
+      };
+      (amount, local)
     });
     (amount > 0.0 || !strokes.is_empty() || !shadows.is_empty()).then_some(Cover {
       amount,
@@ -741,6 +847,10 @@ impl PreparedShape {
       strokes,
       shadows,
     })
+  }
+
+  fn is_line(&self) -> bool {
+    matches!(self.edge, Edge::Line(_))
   }
 
   /// The signed distance at `pos` to the edge of the nearest copy, and where `pos` is in that copy's local space. Each
@@ -823,8 +933,10 @@ enum Edge {
   Polygon(Vec<Vec2>),
   /// Laid out in a box, with half its width and height, that it's cut off at
   Text(TextOutline, Vec2),
-  /// A polyline or bezier, which has no inside
-  Open,
+  /// A polyline or bezier, which has no inside, so its distance is never negative
+  Line(Vec<Vec2>),
+  /// Text with no font, which draws nothing
+  Empty,
 }
 
 impl Edge {
@@ -839,7 +951,8 @@ impl Edge {
         let (text, frame) = (outline.distance(p), rect_distance(*reach, p));
         if frame.0 > text.0 { frame } else { text }
       }
-      Self::Open => (f32::INFINITY, Vec2::X),
+      Self::Line(points) => line_distance(points, p),
+      Self::Empty => (f32::INFINITY, Vec2::X),
     }
   }
 
@@ -849,12 +962,12 @@ impl Edge {
     let around = |reach: Vec2| Bounds::new(-reach, reach);
     match self {
       Self::Ellipse(reach) | Self::Rect(reach) => around(reach.abs()),
-      Self::Polygon(points) => bounds_of(points.iter().copied()),
+      Self::Polygon(points) | Self::Line(points) => bounds_of(points.iter().copied()),
       Self::Text(outline, reach) => {
         let extent = outline.extent();
         Bounds::new(extent.min.max(-*reach), extent.max.min(*reach))
       }
-      Self::Open => Bounds::new(Vec2::ZERO, Vec2::ZERO),
+      Self::Empty => Bounds::new(Vec2::ZERO, Vec2::ZERO),
     }
   }
 }
@@ -958,8 +1071,71 @@ fn no_spacing() -> Prop<f32> {
   Prop::Fixed(0.0)
 }
 
-fn whole_legs(legs: &Prop<f32>, env: &Env) -> u32 {
-  legs.resolve_truncated(env).floor().clamp(0.0, MAX_LEGS) as u32
+fn whole_count(count: &Prop<f32>, max: f32, env: &Env) -> u32 {
+  count.resolve_truncated(env).floor().clamp(0.0, max) as u32
+}
+
+/// A [`ShapeNode::Spiral`]'s line, from the origin out to `radius`
+fn spiral_line(radius: f32, turns: f32, flare: f32) -> Vec<Vec2> {
+  if radius <= 0.0 || turns <= 0.0 {
+    return Vec::new();
+  }
+  // how far out it is `t` of the way along, from 0 to 1, growing by `1 + flare` a turn. Worked from the outer end in,
+  // as growing from the inner one overflows for a spiral of many turns that flares a lot.
+  let growth = turns * (1.0 + flare).ln();
+  let out = |t: f32| {
+    if growth < 1e-4 {
+      t
+    } else {
+      ((growth * (t - 1.0)).exp() - (-growth).exp()) / (1.0 - (-growth).exp())
+    }
+  };
+  let steps = (turns * ROUND_OUTLINE_POINTS as f32).ceil() as usize;
+  (0..=steps)
+    .map(|step| {
+      let t = step as f32 / steps as f32;
+      let angle = -std::f32::consts::FRAC_PI_2 - std::f32::consts::TAU * turns * (1.0 - t);
+      Vec2::from_angle(angle) * radius * out(t)
+    })
+    .collect()
+}
+
+/// A [`ShapeNode::Wave`]'s line across a box out to `reach` either side of the origin, starting at its bottom left
+fn wave_line(reach: Vec2, runs: u32, form: WaveForm) -> Vec<Vec2> {
+  if runs == 0 {
+    return Vec::new();
+  }
+  let bottom_first = |run: u32| if run % 2 == 0 { reach.y } else { -reach.y };
+  if form == WaveForm::Square {
+    // each run is a column, the first and last on the box's sides, joined along them
+    return (0..runs)
+      .flat_map(|run| {
+        let x = match runs {
+          1 => 0.0,
+          _ => -reach.x + 2.0 * reach.x * run as f32 / (runs - 1) as f32,
+        };
+        [Vec2::new(x, bottom_first(run)), Vec2::new(x, bottom_first(run + 1))]
+      })
+      .collect();
+  }
+  // where each run starts and ends, on one side or the other
+  let side = |run: u32| {
+    let x = -reach.x + 2.0 * reach.x * run as f32 / runs as f32;
+    Vec2::new(x, bottom_first(run))
+  };
+  let mut points = vec![side(0)];
+  for run in 0..runs {
+    let (from, to) = (side(run), side(run + 1));
+    match form {
+      WaveForm::Smooth => points.extend((1..=WAVE_STEPS).map(|step| {
+        let t = step as f32 / WAVE_STEPS as f32;
+        let eased = (1.0 - (std::f32::consts::PI * t).cos()) / 2.0;
+        Vec2::new(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * eased)
+      })),
+      WaveForm::Zigzag | WaveForm::Square => points.push(to),
+    }
+  }
+  points
 }
 
 fn unit_fraction(fraction: &Prop<f32>, env: &Env) -> f32 {
@@ -1072,6 +1248,29 @@ fn polygon_distance(points: &[Vec2], p: Vec2) -> (f32, Vec2) {
     sign * nearest_sq.sqrt(),
     sign * nearest.normalize_or(Vec2::X),
   )
+}
+
+/// Distance to an open polyline, never negative, and its gradient. A single point is a dot, and no points are nothing.
+fn line_distance(points: &[Vec2], p: Vec2) -> (f32, Vec2) {
+  let Some(first) = points.first() else {
+    return (f32::INFINITY, Vec2::X);
+  };
+  let mut nearest = p - *first;
+  for stretch in points.windows(2) {
+    let (a, b) = (stretch[0], stretch[1]);
+    let (edge, to_p) = (b - a, p - a);
+    let length_sq = edge.length_squared();
+    let along = if length_sq > 0.0 {
+      (to_p.dot(edge) / length_sq).clamp(0.0, 1.0)
+    } else {
+      0.0
+    };
+    let offset = to_p - edge * along;
+    if offset.length_squared() < nearest.length_squared() {
+      nearest = offset;
+    }
+  }
+  (nearest.length(), nearest.normalize_or(Vec2::X))
 }
 
 #[cfg(test)]
@@ -1250,11 +1449,7 @@ mod tests {
       (StrokeAlign::Outside, 10.0, 12.0),
     ] {
       let band = stroked(rect(), 2.0, align);
-      assert_eq!(
-        banded(&band, (from + to) / 2.0, 0.0, 0.1),
-        1.0,
-        "{align:?}"
-      );
+      assert_eq!(banded(&band, (from + to) / 2.0, 0.0, 0.1), 1.0, "{align:?}");
       assert_eq!(banded(&band, from - 0.5, 0.0, 0.1), 0.0, "{align:?}");
       assert_eq!(banded(&band, to + 0.5, 0.0, 0.1), 0.0, "{align:?}");
     }
@@ -1304,7 +1499,9 @@ mod tests {
       .adjust(stroke(0.5, StrokeAlign::Outside))
       .prepare(&env(0.0, &variables))
       .unwrap();
-    let both = shape.cover(&Sample::new(Vec2::new(4.25, 0.0), 0.1)).unwrap();
+    let both = shape
+      .cover(&Sample::new(Vec2::new(4.25, 0.0), 0.1))
+      .unwrap();
     assert_eq!(both.strokes, vec![(1.0, 0), (1.0, 1)]);
     let wide = shape.cover(&Sample::new(Vec2::new(5.5, 0.0), 0.1)).unwrap();
     assert_eq!(wide.strokes, vec![(1.0, 0)]);
@@ -2018,6 +2215,150 @@ mod tests {
     assert_eq!(covered(&Shape::new(polyline(&square)), 5.0, 0.0, 0.5), 0.0);
     let curve = bezier(&[((0.0, 0.0), (0.0, 10.0)), ((10.0, 0.0), (0.0, -10.0))]);
     assert_eq!(covered(&Shape::new(curve), 5.0, 5.0, 0.5), 0.0);
+  }
+
+  #[test]
+  fn a_stroke_draws_a_line_along_it() {
+    let line = stroked(
+      polyline(&[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0)]),
+      2.0,
+      StrokeAlign::Centered,
+    );
+    assert_eq!(banded(&line, 5.0, 0.0, 0.0), 1.0);
+    assert_eq!(banded(&line, 5.0, 0.9, 0.0), 1.0);
+    assert_eq!(banded(&line, 5.0, -1.1, 0.0), 0.0);
+    assert_eq!(banded(&line, 10.0, 5.0, 0.0), 1.0);
+    // it doesn't close back to its first point
+    assert_eq!(banded(&line, 5.0, 5.0, 0.0), 0.0);
+    // with round ends
+    assert_eq!(banded(&line, -0.9, 0.0, 0.0), 1.0);
+    assert_eq!(banded(&line, -0.8, -0.8, 0.0), 0.0);
+    let curve = Shape::new(bezier(&[
+      ((0.0, 0.0), (0.0, 0.0)),
+      ((10.0, 0.0), (0.0, 0.0)),
+    ]))
+    .adjust(stroke(2.0, StrokeAlign::Centered));
+    assert_eq!(banded(&curve, 5.0, 0.5, 0.0), 1.0);
+    assert_eq!(banded(&curve, 5.0, 1.5, 0.0), 0.0);
+  }
+
+  #[test]
+  fn a_spiral_winds_out_to_its_radius_with_its_turns_evenly_spaced() {
+    let spiral = stroked(
+      ShapeNode::Spiral {
+        radius: 10.0.into(),
+        turns: 2.0.into(),
+        flare: 0.0.into(),
+      },
+      1.0,
+      StrokeAlign::Centered,
+    );
+    // straight up from the middle, it crosses each turn, ending at its radius
+    assert_eq!(banded(&spiral, 0.0, -10.0, 0.0), 1.0);
+    assert_eq!(banded(&spiral, 0.0, -5.0, 0.0), 1.0);
+    assert_eq!(banded(&spiral, 0.0, -7.5, 0.0), 0.0);
+    assert_eq!(banded(&spiral, 0.0, -2.5, 0.0), 0.0);
+    // and it ends there, rather than going on around
+    assert_eq!(banded(&spiral, 10.0, 0.0, 0.0), 0.0);
+  }
+
+  #[test]
+  fn a_flared_spirals_turns_each_spread_out_by_its_flare() {
+    let spiral = stroked(
+      ShapeNode::Spiral {
+        radius: 10.0.into(),
+        turns: 2.0.into(),
+        flare: 1.0.into(),
+      },
+      0.5,
+      StrokeAlign::Centered,
+    );
+    // the outer turn is twice as far from the inner one as that is from the middle
+    assert_eq!(banded(&spiral, 0.0, -10.0 / 3.0, 0.0), 1.0);
+    assert_eq!(banded(&spiral, 0.0, -5.0, 0.0), 0.0);
+  }
+
+  #[test]
+  fn a_wave_crosses_its_box_its_number_of_runs_in_its_form() {
+    let wave = |form| {
+      stroked(
+        ShapeNode::Wave {
+          width: 10.0.into(),
+          height: 4.0.into(),
+          runs: 2.5.into(),
+          form,
+        },
+        1.0,
+        StrokeAlign::Centered,
+      )
+    };
+    for form in [WaveForm::Smooth, WaveForm::Zigzag, WaveForm::Square] {
+      let wave = wave(form);
+      // from the bottom left, up to the top in the middle, and back down at the right
+      assert_eq!(banded(&wave, -5.0, 2.0, 0.0), 1.0, "{form:?}");
+      assert_eq!(banded(&wave, 0.0, -2.0, 0.0), 1.0, "{form:?}");
+      assert_eq!(banded(&wave, 5.0, 2.0, 0.0), 1.0, "{form:?}");
+      assert_eq!(banded(&wave, 0.0, 2.0, 0.0), 0.0, "{form:?}");
+    }
+    // a square wave's runs are columns, the first up its left side and the last down its right, joined along the top
+    let square = wave(WaveForm::Square);
+    assert_eq!(banded(&square, -5.0, 0.0, 0.0), 1.0);
+    assert_eq!(banded(&square, 5.0, 0.0, 0.0), 1.0);
+    assert_eq!(banded(&square, -2.5, 0.0, 0.0), 0.0);
+    // with nothing leading into it or out of it along the bottom
+    assert_eq!(banded(&square, -2.5, 2.0, 0.0), 0.0);
+    // where a zigzag goes straight across
+    assert_eq!(banded(&wave(WaveForm::Zigzag), -2.5, 0.0, 0.0), 1.0);
+    assert_eq!(banded(&wave(WaveForm::Zigzag), -1.0, 2.0, 0.0), 0.0);
+  }
+
+  #[test]
+  fn a_stroke_on_a_line_is_centered_on_it_however_it_is_aligned() {
+    for align in [StrokeAlign::Inside, StrokeAlign::Outside] {
+      let line = stroked(polyline(&[(0.0, 0.0), (10.0, 0.0)]), 2.0, align);
+      assert_eq!(banded(&line, 5.0, 0.9, 0.0), 1.0, "{align:?}");
+      assert_eq!(banded(&line, 5.0, -0.9, 0.0), 1.0, "{align:?}");
+      assert_eq!(banded(&line, 5.0, 1.1, 0.0), 0.0, "{align:?}");
+    }
+  }
+
+  #[test]
+  fn a_stroke_on_a_line_is_in_scene_units_however_the_line_is_scaled() {
+    let line = stroked(
+      polyline(&[(0.0, 0.0), (1.0, 0.0)]),
+      2.0,
+      StrokeAlign::Centered,
+    )
+    .transform(Transform::Scale(10.0.into()));
+    assert_eq!(banded(&line, 0.0, 0.9, 0.0), 1.0);
+    assert_eq!(banded(&line, 0.0, 1.1, 0.0), 0.0);
+  }
+
+  #[test]
+  fn a_reshaped_line_is_stroked_along_its_new_course() {
+    let line = Shape::new(polyline(&[(-10.0, 0.0), (0.0, -10.0), (10.0, 0.0)]))
+      .transform(Transform::Round(5.0.into()))
+      .adjust(stroke(1.0, StrokeAlign::Centered));
+    // the corner it rounded off is left bare
+    assert_eq!(banded(&line, 0.0, -10.0, 0.0), 0.0);
+    assert_eq!(banded(&line, -10.0, 0.0, 0.0), 1.0);
+  }
+
+  #[test]
+  fn a_lines_shadow_is_the_line_grown_by_its_spread() {
+    let line = || Shape::new(polyline(&[(0.0, 0.0), (10.0, 0.0)]));
+    assert_eq!(
+      covers(&shadowed(line(), (0.0, 0.0), 0.0, 1.0), 5.0, 0.9),
+      (0.0, 1.0)
+    );
+    assert_eq!(
+      covers(&shadowed(line(), (0.0, 0.0), 0.0, 1.0), 5.0, 1.1),
+      (0.0, 0.0)
+    );
+    assert_eq!(
+      covers(&shadowed(line(), (0.0, 0.0), 0.0, 0.0), 5.0, 0.0),
+      (0.0, 0.0)
+    );
   }
 
   #[test]

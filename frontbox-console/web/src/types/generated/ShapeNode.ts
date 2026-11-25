@@ -5,8 +5,9 @@ import type { TextAlign } from "./TextAlign";
 import type { TextOverflow } from "./TextOverflow";
 import type { TextSource } from "./TextSource";
 import type { VerticalAlign } from "./VerticalAlign";
+import type { WaveForm } from "./WaveForm";
 
 /**
  * Base shapes, defined around the origin in local space. Transforms place them in the scene.
  */
-export type ShapeNode = { "Circle": { radius: Prop<number>, } } | { "Ellipse": { rx: Prop<number>, ry: Prop<number>, } } | { "Rect": { width: Prop<number>, height: Prop<number>, } } | { "Diamond": { width: Prop<number>, height: Prop<number>, } } | { "Star": { radius: Prop<number>, legs: Prop<number>, leg_width: Prop<number>, } } | { "Chevron": { width: Prop<number>, height: Prop<number>, notch: Prop<number>, } } | { "Polygon": { points: Array<Prop<[number, number]>>, } } | { "Polyline": { points: Array<Prop<[number, number]>>, } } | { "Bezier": { points: Array<BezierPoint>, } } | { "Text": { text: TextSource, font: string, size: Prop<number>, width: Prop<number>, height: Prop<number>, align: TextAlign, vertical_align: VerticalAlign, kerning: Prop<number>, leading: Prop<number>, overflow?: TextOverflow, } };
+export type ShapeNode = { "Circle": { radius: Prop<number>, } } | { "Ellipse": { rx: Prop<number>, ry: Prop<number>, } } | { "Rect": { width: Prop<number>, height: Prop<number>, } } | { "Diamond": { width: Prop<number>, height: Prop<number>, } } | { "Star": { radius: Prop<number>, legs: Prop<number>, leg_width: Prop<number>, } } | { "Chevron": { width: Prop<number>, height: Prop<number>, notch: Prop<number>, } } | { "Polygon": { points: Array<Prop<[number, number]>>, } } | { "Polyline": { points: Array<Prop<[number, number]>>, } } | { "Bezier": { points: Array<BezierPoint>, } } | { "Spiral": { radius: Prop<number>, turns: Prop<number>, flare: Prop<number>, } } | { "Wave": { width: Prop<number>, height: Prop<number>, runs: Prop<number>, form: WaveForm, } } | { "Text": { text: TextSource, font: string, size: Prop<number>, width: Prop<number>, height: Prop<number>, align: TextAlign, vertical_align: VerticalAlign, kerning: Prop<number>, leading: Prop<number>, overflow?: TextOverflow, } };

@@ -93,16 +93,17 @@ export default function ShapeDrawing(props: { space: PreviewSpace; aspect: numbe
   )
 }
 
-/** The corners of a polygon drawn over the preview, in order, in the units of what it's on */
+/** The points of a polygon or line drawn over the preview, in order, in the units of what it's on */
 export type DrawnPoints = { points: Vec2[] }
 
 /**
- * Covers the preview while a polygon is being drawn, a corner at a time. Each click puts down a corner, with a dashed
- * line from the last one out to the pointer, and clicking the first again, once there are three, closes it and hands
- * the corners to `onDrawn`. Backspace takes back the last corner. Escape or a right-click calls `onCancel`, which
- * leaves nothing drawn.
+ * Covers the preview while a polygon or a line is being drawn, a point at a time. Each click puts down a point, with a
+ * dashed line from the last one out to the pointer. A polygon is finished by clicking its first point again, once there
+ * are three, which closes it, and a line that's `open` by clicking its last point again (so a double-click ends it), once
+ * there are two. Enter finishes either. `onDrawn` gets the points. Backspace takes back the last point. Escape or a
+ * right-click calls `onCancel`, which leaves nothing drawn.
  */
-export function PolygonDrawing(props: { space: PreviewSpace; color: LayerColor; onDrawn: (drawn: DrawnPoints) => void; onCancel: () => void }) {
+export function PointsDrawing(props: { space: PreviewSpace; open: boolean; color: LayerColor; onDrawn: (drawn: DrawnPoints) => void; onCancel: () => void }) {
   const [points, setPoints] = createSignal<Vec2[]>([])
   // where the pointer is on what's being drawn on, while it's over it
   const [pointer, setPointer] = createSignal<Vec2 | null>(null)
@@ -112,6 +113,9 @@ export function PolygonDrawing(props: { space: PreviewSpace; color: LayerColor; 
       if (e.key === 'Escape') {
         e.preventDefault()
         props.onCancel()
+      } else if (e.key === 'Enter' && !typingIn(e.target) && enough()) {
+        e.preventDefault()
+        props.onDrawn({ points: points() })
       } else if (e.key === 'Backspace' && !typingIn(e.target)) {
         e.preventDefault()
         setPoints((list) => list.slice(0, -1))
@@ -125,10 +129,13 @@ export function PolygonDrawing(props: { space: PreviewSpace; color: LayerColor; 
     const at = props.space.project(point)
     return at ? [at] : []
   })
-  /** Whether a point on screen is on the first corner, where a click closes the polygon */
+  const enough = () => points().length >= (props.open ? 2 : 3)
+  /** The point on screen a click on finishes it: a polygon's first, which closes it, or a line's last */
+  const end = () => (props.open ? onScreen().at(-1) : onScreen()[0])
+  /** Whether a point on screen is on the end, where a click finishes it */
   const closesAt = (at: Vec2 | null) => {
-    const first = onScreen()[0]
-    return points().length >= 3 && at !== null && first !== undefined && Math.hypot(at[0] - first[0], at[1] - first[1]) <= CLOSE_RADIUS
+    const to = end()
+    return enough() && at !== null && to !== undefined && Math.hypot(at[0] - to[0], at[1] - to[1]) <= CLOSE_RADIUS
   }
   const pointerOnScreen = () => {
     const at = pointer()
@@ -146,18 +153,21 @@ export function PolygonDrawing(props: { space: PreviewSpace; color: LayerColor; 
       props.onDrawn({ points: points() })
       return
     }
-    // a double-click puts down one corner, not two in the same place
+    // a double-click on a polygon puts down one corner, not two in the same place
     const last = onScreen().at(-1)
     if (last && at && Math.hypot(at[0] - last[0], at[1] - last[1]) < CLICK_SLOP) return
     setPoints((list) => [...list, point])
   }
 
-  /** The dashed line from the last corner out to the pointer, which reaches the first corner exactly where a click would close it */
+  /** The dashed line from the last point out to the pointer, which reaches a polygon's first corner exactly where a click would close it */
   const nextLine = () => {
     const last = onScreen().at(-1)
+    if (closing() && props.open) return null
     const to = closing() ? onScreen()[0] : pointerOnScreen()
     return last && to ? { from: last, to } : null
   }
+
+  const isEnd = (index: number) => index === (props.open ? points().length - 1 : 0)
 
   return (
     <div
@@ -174,7 +184,7 @@ export function PolygonDrawing(props: { space: PreviewSpace; color: LayerColor; 
       <svg aria-hidden="true">
         <polyline class="scene-drawing-placed" points={onScreen().map((at) => at.join(',')).join(' ')} />
         <Show when={nextLine()}>{(line) => <line class="scene-drawing-next" x1={line().from[0]} y1={line().from[1]} x2={line().to[0]} y2={line().to[1]} />}</Show>
-        <For each={onScreen()}>{(at, index) => <circle classList={{ 'scene-drawing-first': index() === 0 }} cx={at[0]} cy={at[1]} r={index() === 0 && closing() ? 6 : 3.5} />}</For>
+        <For each={onScreen()}>{(at, index) => <circle classList={{ 'scene-drawing-end': isEnd(index()) }} cx={at[0]} cy={at[1]} r={isEnd(index()) && closing() ? 6 : 3.5} />}</For>
       </svg>
     </div>
   )
@@ -183,5 +193,5 @@ export function PolygonDrawing(props: { space: PreviewSpace; color: LayerColor; 
 /** How far the pointer can move between press and release and still count as a click, in pixels */
 const CLICK_SLOP = 4
 
-/** How near the first corner a click closes a polygon, in pixels */
+/** How near its end a click finishes a polygon or line, in pixels */
 const CLOSE_RADIUS = 8

@@ -24,19 +24,16 @@
   aren't lights (motors, relays, etc.), owned by a system and kept out of light management so scenes can't turn
   them on. Core's boot check should count these as using a channel too, so a light and an output can't share one.
 - Switch test mode for display menu
-- Operator metrics can be reset (e.g. when a coil is replaced)
+- Operator metrics can be reset (e.g. when a coil is replaced) lifetime vs current
 - Config: No extra balls/points instead
 - Metrics show on DMD menu
 
 ### Scenes/Editor
 
-- `Transform::Warp` on shapes: bend the outline by noise too, as fills already are. A shape's edges need cutting into short pieces first, or a rect barely bends.
+- New Prop type: Envelope - follows the rise/fall of a sound
 - Plug in custom shapes or graphics with their own settings (e.g. a kinematics/skeleton extension)
-- Line-based fills (polyline, spiral, logarithmic spiral, etc. snake patterns) 
-- Line based fill patterns usable for Sweep
 - Change sweep to, instead of having a nested line/shape, you choose to use an existing one.
 - Graph algorithms have a "Reverse" option to perform the algo in reverse (ie. calculate then play backwards)
-- Graph region: a "cellular" mode that highlights all segments of a cell
 - Changing a sound's volume while it plays (fades, modulators). Scene sound volume is a fixed number for now, as sounds are fire-and-forget; kira's `set_volume` on a kept handle could do it, but it may not belong in the scene.
 - Ability to compose LightQ in editor (are Reverse, Take, etc. still needed?)
 - SVG import for layer shapes
@@ -48,8 +45,8 @@
 - Scene transitions (cut, cross-fade, wipe, push) between two playbacks. First version drives opacity or a mask on both; with nested scenes, a transition is a scene with two slots.
 - Live reload of scenes and fonts, as `Content` already does for images.
 - Golden-image tests: render a scene at a time to PNG and compare with a stored one.
-- New Prop type: Envelope - follows the rise/fall of a sound
 - All the different scene features will probably need a library of demos/templates ("presets")
+- `Transform::Warp` on shapes: bend the outline by noise too, as fills already are. A shape's edges need cutting into short pieces first, or a rect barely bends.
 
 ### gfx
 

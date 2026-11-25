@@ -691,7 +691,9 @@ export function PropField<T extends SceneValue>(
 export function PropSource<T extends SceneValue>(props: PropProps<T>) {
   const scene = useScene()
   const prop = () => props.lens.get()
-  const kind = () => propKind(prop())
+  // a prop whose variant was just switched away from, such as a solid fill's color when it becomes noise, reads nothing
+  // for as long as it's still on show, which is until its row is taken down
+  const kind = () => (prop() === undefined ? 'Fixed' : propKind(prop()))
   const value = () => startingValue(prop(), scene.get(), props.fallback)
   // only a position can follow a path, though a scene that has one anywhere else can still be switched off it
   const isPosition = () => Array.isArray(props.fallback) && props.fallback.length === 2

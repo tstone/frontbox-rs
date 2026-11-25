@@ -34,6 +34,7 @@ import type { Traversal } from '../../types/generated/Traversal'
 import type { TraversalAlgorithm } from '../../types/generated/TraversalAlgorithm'
 import type { TextOverflow } from '../../types/generated/TextOverflow'
 import type { VerticalAlign } from '../../types/generated/VerticalAlign'
+import type { WaveForm } from '../../types/generated/WaveForm'
 import {
   algorithmKind,
   ancestry,
@@ -99,10 +100,14 @@ import {
   newAdjust,
   newShapeSize,
   newStroke,
+  isOpen,
   isNoFill,
   newFeather,
   newShadow,
   NOTCH,
+  RUNS,
+  TURNS,
+  FLARE,
   orEmpty,
   RATE,
   reachRange,
@@ -146,9 +151,9 @@ type CellsFill = Extract<FillNode, { Cells: unknown }>['Cells']
 type WarpTransform = Extract<Transform, { Warp: unknown }>
 type ImageFill = Extract<FillNode, { Image: unknown }>['Image']
 type SpritesheetFill = Extract<FillNode, { Spritesheet: unknown }>['Spritesheet']
-export type ShapeKind = 'None' | 'Circle' | 'Ellipse' | 'Rect' | 'Diamond' | 'Star' | 'Chevron' | 'Text' | 'Polygon' | 'Polyline' | 'Bezier'
+export type ShapeKind = 'None' | 'Circle' | 'Ellipse' | 'Rect' | 'Diamond' | 'Star' | 'Chevron' | 'Text' | 'Polygon' | 'Polyline' | 'Bezier' | 'Spiral' | 'Wave'
 /** A shape set up from the others, which is a shape of their kind once it's picked */
-export type TemplateKind = 'Pinwheel' | 'Propeller' | 'Triangle'
+export type TemplateKind = 'Pinwheel' | 'Propeller' | 'Triangle' | 'Zigzag' | 'Serpentine'
 /** What a layer's region can be: a shape, or on a light scene its graph */
 type RegionKind = ShapeKind | 'Graph'
 type Icon = typeof icons.Circle
@@ -193,10 +198,22 @@ const TEMPLATES: ShapeOption[] = [
   { value: 'Propeller', label: 'Propeller', group: 'Templates' },
   { value: 'Triangle', label: 'Triangle', group: 'Templates' },
 ]
-const isTemplate = (kind: RegionKind | TemplateKind): kind is TemplateKind => TEMPLATES.some((option) => option.value === kind)
+/** The waves set up in a form other than the smooth one they start in */
+const WAVE_TEMPLATES: Partial<Record<TemplateKind, WaveForm>> = { Zigzag: 'Zigzag', Serpentine: 'Square' }
+/** What has no inside and is drawn by a stroke, including the waves set up in each form */
+const LINES: ShapeOption[] = ([
+  { value: 'Polyline', label: 'Line' },
+  { value: 'Bezier', label: 'Curve' },
+  { value: 'Spiral', label: 'Spiral' },
+  { value: 'Wave', label: 'Wave' },
+  { value: 'Zigzag', label: 'Zigzag' },
+  { value: 'Serpentine', label: 'Serpentine' },
+] as ShapeOption[]).map((option) => ({ ...option, group: 'Lines' }))
+const isTemplate = (kind: RegionKind | TemplateKind): kind is TemplateKind =>
+  TEMPLATES.some((option) => option.value === kind) || WAVE_TEMPLATES[kind as TemplateKind] !== undefined
 const ALL: ShapeOption = { value: 'None', label: 'All' }
-/** "All", then the shapes by label, then the templates made of them */
-const SHAPE_OPTIONS: ShapeOption[] = [ALL, ...SHAPES, ...TEMPLATES]
+/** "All", then the shapes by label, then the templates made of them, then lines */
+const SHAPE_OPTIONS: ShapeOption[] = [ALL, ...SHAPES, ...TEMPLATES, ...LINES]
 /**
  * A path has to be something, and can also be a line, which has no inside to draw as a shape. A sweep follows only a
  * path's own outline, so it has no templates. Text isn't offered, as only its box is an outline to follow.
@@ -205,12 +222,14 @@ const PATH_OPTIONS: ShapeOption[] = [
   ...SHAPES.filter((option) => option.value !== 'Text'),
   { value: 'Polyline', label: 'Polyline', group: 'Shapes' } as ShapeOption,
   { value: 'Bezier', label: 'Bezier', group: 'Shapes' } as ShapeOption,
+  { value: 'Spiral', label: 'Spiral', group: 'Shapes' } as ShapeOption,
+  { value: 'Wave', label: 'Wave', group: 'Shapes' } as ShapeOption,
 ].sort(byLabel)
 const TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = (['Translate', 'Rotate', 'Scale'] as const).map((value) => ({ value, label: TRANSFORM_LABELS[value] }))
 /** Only for a shape that's drawn, rather than a sweep's path */
 const SHAPE_TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = [...COPY_KINDS, ...RESHAPE_KINDS].map((value) => ({ value, label: TRANSFORM_LABELS[value] }))
 /** Only for a layer on a light scene */
-const GRAPH_REGION_OPTIONS: ShapeOption[] = [ALL, { value: 'Graph', label: 'Graph' }, ...SHAPES, ...TEMPLATES]
+const GRAPH_REGION_OPTIONS: ShapeOption[] = [ALL, { value: 'Graph', label: 'Graph' }, ...SHAPES, ...TEMPLATES, ...LINES]
 /** Only for a layer with traversals to fit to */
 const FIT_OPTION: { value: TransformKind; label: string } = { value: 'Fit', label: TRANSFORM_LABELS.Fit }
 /** Only for a fill */
@@ -262,6 +281,11 @@ const TEXT_ALIGN_OPTIONS: { value: TextAlign; label: string }[] = [
   { value: 'Left', label: 'Left' },
   { value: 'Center', label: 'Center' },
   { value: 'Right', label: 'Right' },
+]
+const WAVE_FORM_OPTIONS: { value: WaveForm; label: string }[] = [
+  { value: 'Smooth', label: 'Smooth' },
+  { value: 'Zigzag', label: 'Zigzag' },
+  { value: 'Square', label: 'Square (serpentine)' },
 ]
 const VERTICAL_ALIGN_OPTIONS: { value: VerticalAlign; label: string }[] = [
   { value: 'Top', label: 'Top' },
@@ -319,7 +343,9 @@ const SHAPE_ICONS: Record<RegionKind, Icon> = {
   Chevron: icons.ChevronUp,
   Text: icons.Type,
   Polyline: icons.Activity,
-  Bezier: icons.Spline,
+  Bezier: icons.Curve,
+  Spiral: icons.Spiral,
+  Wave: icons.Wave,
   Graph: icons.Network,
 }
 const FILL_ICONS: Record<FillKind, Icon> = { None: icons.Ban, Solid: icons.PaintBucket, Linear: icons.Blend, Radial: icons.Blend, Conical: icons.Blend, Noise: icons.Cloud, Cells: icons.Hexagon, Image: icons.ImageIcon, Spritesheet: icons.ImageIcon }
@@ -575,7 +601,7 @@ function NodeProperties(props: { node: ConfigNode }) {
   )
 }
 
-/** A layer's settings and values, then its shape and its fill */
+/** A layer's settings and values, then its shape and its fill, or for a line, each of its strokes with what it's drawn in */
 function PartsProperties(props: { node: ConfigNode }) {
   const children = () => props.node.children ?? []
   const settings = () => children().filter((child) => SETTING_KINDS.includes(child.kind))
@@ -587,6 +613,7 @@ function PartsProperties(props: { node: ConfigNode }) {
     const region = found && is(found, 'region')
     return region && (region.value !== undefined || region.layer?.get().graph) ? region : undefined
   }
+  const lineStrokes = () => (shape()?.children ?? []).filter((child) => child.kind === 'stroke' && child.ofLine)
   return (
     <>
       <NodeHeading node={props.node} />
@@ -606,6 +633,16 @@ function PartsProperties(props: { node: ConfigNode }) {
         {(region) => <PartSection node={region()} title={region().layer?.get().graph ? 'Graph' : (REGION_LABELS.get(regionKind(region().lens, region().layer)) ?? 'Shape')} />}
       </Show>
       <Show when={fill()}>{(node) => <PartSection node={node()} title="Fill" />}</Show>
+      {/* with what it's drawn in, which can be none for a line that isn't shown */}
+      <Index each={lineStrokes()}>
+        {(stroke, index) => (
+          <PartSection
+            node={stroke()}
+            then={(stroke().children ?? []).find((child) => child.kind === 'fill')}
+            title={lineStrokes().length > 1 ? `Stroke ${index + 1}` : 'Stroke'}
+          />
+        )}
+      </Index>
     </>
   )
 }
@@ -613,16 +650,11 @@ function PartsProperties(props: { node: ConfigNode }) {
 /**
  * A layer's shape or fill, as a part of its properties: a button in its heading for adding a modifier to it, then its
  * fields and values, and a gradient's colors and a polygon's points in place. Its modifiers aren't listed, as they have
- * rows and properties of their own.
+ * rows and properties of their own. A part can be followed by another `then` under the same heading, such as a line's
+ * stroke by the stroke's fill, which is then what the button adds a modifier to.
  */
-function PartSection(props: { node: ConfigNode; title: string }) {
-  const children = () => props.node.children ?? []
-  const values = () => children().filter((child) => (child.kind === 'prop' && (child.modifier === undefined || child.placement)) || child.kind === 'node-ref')
-  const stops = () => children().find((child) => child.kind === 'stops')
-  const points = () => children().find((child) => child.kind === 'points')
-  const traversals = () => children().find((child) => child.kind === 'traversals')
-  const modifiers = () => children().find((child) => child.kind === 'modifiers') as ModifiersNode | undefined
-  const hasFields = () => props.node.fields === true
+function PartSection(props: { node: ConfigNode; title: string; then?: ConfigNode }) {
+  const modifiers = () => [props.then, props.node].flatMap((node) => node?.children ?? []).find((child) => child.kind === 'modifiers') as ModifiersNode | undefined
   return (
     <section class="scene-part" aria-label={props.title}>
       <header class="scene-part-heading">
@@ -635,6 +667,22 @@ function PartSection(props: { node: ConfigNode; title: string }) {
           )}
         </Show>
       </header>
+      <PartBody node={props.node} />
+      <Show when={props.then}>{(then) => <PartBody node={then()} />}</Show>
+    </section>
+  )
+}
+
+/** What's under a part's heading */
+function PartBody(props: { node: ConfigNode }) {
+  const children = () => props.node.children ?? []
+  const values = () => children().filter((child) => (child.kind === 'prop' && (child.modifier === undefined || child.placement)) || child.kind === 'node-ref')
+  const stops = () => children().find((child) => child.kind === 'stops')
+  const points = () => children().find((child) => child.kind === 'points')
+  const traversals = () => children().find((child) => child.kind === 'traversals')
+  const hasFields = () => props.node.fields === true
+  return (
+    <>
       <Show when={is(props.node, 'fill')}>
         <FieldRow inline label="Type">
           <NodeControl node={props.node} />
@@ -657,7 +705,7 @@ function PartSection(props: { node: ConfigNode; title: string }) {
       </Show>
       <Show when={points()}>{(list) => <PartList node={list()} label="Points" />}</Show>
       <Show when={traversals()}>{(list) => <NodeSetting node={list()} />}</Show>
-    </section>
+    </>
   )
 }
 
@@ -983,9 +1031,14 @@ function NodeFields(props: { node: ConfigNode }) {
       <Match when={is(props.node, 'sound')}>{(sound) => <SoundFields lens={sound().lens} />}</Match>
       <Match when={is(props.node, 'region')}>
         {(region) => (
-          <Show when={region().layer?.get().graph} fallback={<TextFields lens={region().lens as Lens<Shape>} layer={region().layer} />}>
-            <GraphFields layer={region().layer!} />
-          </Show>
+          <Switch fallback={<TextFields lens={region().lens as Lens<Shape>} layer={region().layer} />}>
+            <Match when={region().layer?.get().graph}>
+              <GraphFields layer={region().layer!} />
+            </Match>
+            <Match when={region().value !== undefined && 'Wave' in (region().value as Shape).base}>
+              <WaveFields lens={region().lens as Lens<Shape>} />
+            </Match>
+          </Switch>
         )}
       </Match>
       <Match when={is(props.node, 'fill')}>{(fill) => <FillFields lens={fill().lens} />}</Match>
@@ -1145,6 +1198,16 @@ function StrokeFields(props: { node: Extract<ConfigNode, { kind: 'stroke' }> }) 
 }
 
 /** Text's font, its words, and where they sit in its box, which can be made to cover what the layer is on */
+/** How a wave crosses its box, which a zigzag and a serpentine are set up with */
+function WaveFields(props: { lens: Lens<Shape> }) {
+  const wave = () => variant(field(props.lens, 'base') as Lens<ShapeNode>, 'Wave')
+  return (
+    <FieldRow label="Form">
+      <Dropdown label="Form" options={WAVE_FORM_OPTIONS} value={wave().get().form} onChange={(form) => field(wave(), 'form').set(form)} />
+    </FieldRow>
+  )
+}
+
 function TextFields(props: { lens: Lens<Shape>; layer?: Lens<SceneLayer> }) {
   const scene = useContext(SceneContext)!
   const surface = useContext(SurfaceContext)!
@@ -1843,11 +1906,21 @@ function ShapeKindPicker(props: { node: Extract<ConfigNode, { kind: 'region' | '
       return owner.set({ ...owner.get(), graph: undefined, region: next === 'None' ? undefined : newShape(next, surface()) })
     }
     if (next === 'None') return lens().set(undefined)
+    // a line has no inside to fill, so one with no stroke would draw nothing
+    if (owner && isOpen(newShape(next, surface()).base)) {
+      const adjust = owner.get().region?.adjust ?? []
+      if (!adjust.some((each) => 'Stroke' in each)) {
+        const region = owner.get().region ?? newShape(next, surface())
+        owner.set({ ...owner.get(), region: { ...region, adjust: [...adjust, newStroke(surface())] } })
+      }
+    }
     const current = lens().get()
     if (!current) return lens().set(newShape(next, surface()))
     // one shape turned into another takes up the same room
     const size = shapeSize(base().get(), scene.get())
     if (!isTemplate(next)) return base().set(sizedShape(next, size))
+    const form = WAVE_TEMPLATES[next]
+    if (form) return base().set(waveShape(size, form))
     // a template's copies are made before the shape is placed, in place of any it had
     const template = templateShape(next, Math.max(...size))
     const placing = (current.transform ?? []).filter((transform) => !COPY_KINDS.some((copy) => copy in transform))
@@ -1887,10 +1960,10 @@ export function newShape(kind: Exclude<ShapeKind, 'None'> | TemplateKind, surfac
 
 /**
  * The width over the height of a shape that's drawn at only one, which is `null` for one that can be drawn at any. A
- * circle, a star, and the templates that revolve can't be stretched.
+ * circle, a spiral, a star, and the templates that revolve can't be stretched.
  */
 export function drawnAspect(kind: Exclude<ShapeKind, 'None'> | TemplateKind): number | null {
-  if (kind === 'Circle' || kind === 'Pinwheel' || kind === 'Propeller') return 1
+  if (kind === 'Circle' || kind === 'Spiral' || kind === 'Pinwheel' || kind === 'Propeller') return 1
   if (kind !== 'Star') return null
   const [[left, top], [right, bottom]] = starBounds(LEGS.rest!, LEG_WIDTH.rest!)
   return (right - left) / (bottom - top)
@@ -1914,6 +1987,8 @@ export function drawnShape(kind: Exclude<ShapeKind, 'None'> | TemplateKind, cent
     const radius = Math.min(width / (right - left), height / (bottom - top))
     base = sizedShape('Star', [radius * 2, radius * 2])
     middle = [((left + right) / 2) * radius, ((top + bottom) / 2) * radius]
+  } else if (kind === 'Zigzag' || kind === 'Serpentine') {
+    base = waveShape([width, height], WAVE_TEMPLATES[kind]!)
   } else if (kind === 'Pinwheel' || kind === 'Propeller') {
     ;({ base, transform } = templateShape(kind, across))
     // a pinwheel's blades turn around their tips, which are half of it up from the origin
@@ -1924,14 +1999,28 @@ export function drawnShape(kind: Exclude<ShapeKind, 'None'> | TemplateKind, cent
   return { base, transform: [...transform, { Translate: { Fixed: [center[0] - middle[0], center[1] - middle[1]] } }] }
 }
 
-/** A polygon through `points`, which are on what it's drawn on, placed at the middle of their box so that it moves from there */
-export function drawnPolygon(points: Vec2[]): Shape {
+/**
+ * A polygon, line, or curve through `points`, which are on what it's drawn on, placed at the middle of their box so that
+ * it moves from there. A curve leaves each point heading from the one before toward the one after.
+ */
+export function drawnPoints(shape: PointsShape, points: Vec2[]): Shape {
   const [xs, ys] = [points.map(([x]) => x), points.map(([, y]) => y)]
   const middle: Vec2 = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2]
-  return {
-    base: { Polygon: { points: points.map(([x, y]) => ({ Fixed: [x - middle[0], y - middle[1]] as Vec2 })) } },
-    transform: [{ Translate: { Fixed: middle } }],
-  }
+  const local = points.map(([x, y]): Vec2 => [x - middle[0], y - middle[1]])
+  const base: ShapeNode =
+    shape === 'Polygon'
+      ? { Polygon: { points: local.map((point) => ({ Fixed: point })) } }
+      : shape === 'Polyline'
+        ? { Polyline: { points: local.map((point) => ({ Fixed: point })) } }
+        : {
+            Bezier: {
+              points: local.map((point, index) => {
+                const [before, after] = [local[index - 1] ?? point, local[index + 1] ?? point]
+                return { point: { Fixed: point }, handle: { Fixed: [(after[0] - before[0]) / 6, (after[1] - before[1]) / 6] as Vec2 } }
+              }),
+            },
+          }
+  return { base, transform: [{ Translate: { Fixed: middle } }] }
 }
 
 /**
@@ -1962,6 +2051,8 @@ function templateShape(kind: TemplateKind, across: number): { base: ShapeNode; t
   const length = across / 2
   // a star of one leg, pointing up from its base on the origin
   const triangle = (width: number): ShapeNode => ({ Star: { radius: { Fixed: length }, legs: { Fixed: 1 }, leg_width: { Fixed: width } } })
+  const form = WAVE_TEMPLATES[kind]
+  if (form) return { base: waveShape([across, across], form), transform: [] }
   if (kind === 'Triangle') return { base: triangle(TRIANGLE_WIDTH), transform: [] }
   if (kind === 'Pinwheel') {
     // its blades are triangles with their tips together
@@ -1990,6 +2081,8 @@ function sizedShape(kind: Exclude<ShapeKind, 'None'>, [width, height]: Vec2): Sh
     return { Star: { radius: { Fixed: reach }, legs: { Fixed: LEGS.rest! }, leg_width: { Fixed: LEG_WIDTH.rest! } } }
   }
   if (kind === 'Chevron') return { Chevron: { width: { Fixed: width }, height: { Fixed: height }, notch: { Fixed: NOTCH.rest! } } }
+  if (kind === 'Spiral') return { Spiral: { radius: { Fixed: reach }, turns: { Fixed: TURNS.rest! }, flare: { Fixed: FLARE.rest! } } }
+  if (kind === 'Wave') return waveShape([width, height], 'Smooth')
   if (kind === 'Text') {
     const font = contentFonts()[0] ?? ''
     const size = { Fixed: crispTextSize(font, Math.max(Math.round(height / 2), 1)) }
@@ -2014,6 +2107,11 @@ function sizedShape(kind: Exclude<ShapeKind, 'None'>, [width, height]: Vec2): Sh
   return { Polygon: { points: corners.map((corner) => ({ Fixed: corner })) } }
 }
 
+/** A wave this wide and tall, in `form` */
+function waveShape([width, height]: Vec2, form: WaveForm): ShapeNode {
+  return { Wave: { width: { Fixed: width }, height: { Fixed: height }, runs: { Fixed: RUNS.rest! }, form } }
+}
+
 /** How wide and tall a shape is in its own space */
 function shapeSize(base: ShapeNode, scene: Scene): Vec2 {
   const value = (prop: Prop<number>) => startingValue(prop, scene, 0)
@@ -2024,6 +2122,8 @@ function shapeSize(base: ShapeNode, scene: Scene): Vec2 {
   if ('Diamond' in base) return [value(base.Diamond.width), value(base.Diamond.height)]
   if ('Chevron' in base) return [value(base.Chevron.width), value(base.Chevron.height)]
   if ('Star' in base) return [value(base.Star.radius) * 2, value(base.Star.radius) * 2]
+  if ('Spiral' in base) return [value(base.Spiral.radius) * 2, value(base.Spiral.radius) * 2]
+  if ('Wave' in base) return [value(base.Wave.width), value(base.Wave.height)]
   const points = shapePoints(base).map((point) => startingValue(point, scene, [0, 0] as Vec2))
   const reach = (axis: 0 | 1) => Math.max(...points.map((p) => p[axis])) - Math.min(...points.map((p) => p[axis]))
   return [reach(0), reach(1)]
@@ -2107,7 +2207,8 @@ export function modifierOptions(
     // a fill is the node with adjusts
     fillTransforms: node.adjusts ? FILL_TRANSFORM_OPTIONS : [],
     adjusts: node.adjusts ? ADJUST_OPTIONS : [],
-    strokes: node.shape ? SHAPE_ADJUST_OPTIONS : [],
+    // a line comes with the one stroke it's drawn in, and is cased or made to glow by a shadow rather than another
+    strokes: !node.shape ? [] : isOpen(node.shape.get().base) ? SHAPE_ADJUST_OPTIONS.filter((option) => option.value !== 'Stroke') : SHAPE_ADJUST_OPTIONS,
   }
 }
 

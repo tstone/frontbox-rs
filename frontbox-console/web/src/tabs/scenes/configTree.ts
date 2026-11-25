@@ -57,6 +57,8 @@ const OWN_ROWS: NodeKind[] = ['layer', 'sound', 'traversal', 'path', 'copy', 'fi
  * traversal, and a sweep's path.
  */
 export function shownInTree(node: ConfigNode) {
+  // shown with its layer, as a fill is
+  if (node.kind === 'stroke' && node.ofLine) return false
   if (node.kind === 'prop') return (node.modifier !== undefined && !node.placement) || hasTrack(node.lens.get())
   return OWN_ROWS.includes(node.kind)
 }

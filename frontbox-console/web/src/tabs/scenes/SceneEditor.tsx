@@ -35,12 +35,12 @@ import { createPlayback } from './playback'
 import { Dropdown, NumberBox, LayerSurfacesContext, NodePickingContext, RegionVisibilityContext, SceneContext, ShapePosesContext, type NodePicking, type RegionVisibility, type ShapePoses } from './SceneFields'
 import { configNodes, is, openTransform, selectionNode } from './configNodes'
 import { ConfigTreeContext, createConfigTree } from './configTree'
-import { changesEachCycle, cycleCount, editedScene, layerPlace, layerPlane, placeDisplay, sceneSource, selectedShape, snap as snapTime, withKey, withPick, withoutDroppedVariables, withoutDroppedTiming, type Lens, type LayerPlace, type Scene, type SceneLayer, type Selection, type Vec2 } from './sceneModel'
+import { changesEachCycle, cycleCount, editedScene, isOpen, layerPlace, layerPlane, placeDisplay, sceneSource, selectedShape, snap as snapTime, withKey, withPick, withoutDroppedVariables, withoutDroppedTiming, type Lens, type LayerPlace, type Scene, type SceneLayer, type Selection, type Vec2 } from './sceneModel'
 import LayerTools, { drawnLayer, type DrawnTool } from './LayerTools'
 import { LayerColorContext, layerColor, layerColorClass, type LayerColor } from './ScenePortal'
 import { createLayerMenu, LayerMenuContext } from './LayerMenu'
 import TextEditor, { editableText, withText } from './TextEditing'
-import ShapeDrawing, { PolygonDrawing, type DrawnBox, type DrawnPoints } from './ShapeDrawing'
+import ShapeDrawing, { PointsDrawing, type DrawnBox, type DrawnPoints } from './ShapeDrawing'
 import { SceneNameButton } from './SceneNameDialog'
 import GraphOverlay from './GraphOverlay'
 import ShapeHandles, { fullOutline, HoverOutline, layerUnder } from './ShapeHandles'
@@ -677,6 +677,12 @@ export default function SceneEditor(props: {
     // one loop for each copy of its shape
     return rendered.outlines[open.layer] ?? []
   }
+  /** Whether what's open is a line, whose outline doesn't close */
+  const outlineOpen = () => {
+    const open = openOnView()
+    const region = open && scene()?.layers[open.layer]?.region
+    return !!region && isOpen(region.base)
+  }
 
   /**
    * What's open is what's selected in the preview, if it's on what's on show. Its handles are left out while playing,
@@ -747,7 +753,7 @@ export default function SceneEditor(props: {
     const layer = scene()?.layers[index]
     if (!layer) return null
     const full = fullOutline(layer, layerSurface(layer))
-    return { outlines: full ? [full] : (drawn()?.outlines[index] ?? []), color: layerColor(layer) }
+    return { outlines: full ? [full] : (drawn()?.outlines[index] ?? []), color: layerColor(layer), open: !!layer.region && isOpen(layer.region.base) }
   }
   const hoveredLayer = () => {
     const index = hovered()
@@ -789,7 +795,7 @@ export default function SceneEditor(props: {
         highlighted={nodePicking.highlighted[0]()}
         choosing={nodePicking.choosing[0]() !== null}
       />
-      <Show when={shown() && hoveredLayer()}>{(layer) => <HoverOutline space={space} outlines={layer().outlines} color={layer().color} />}</Show>
+      <Show when={shown() && hoveredLayer()}>{(layer) => <HoverOutline space={space} outlines={layer().outlines} color={layer().color} open={layer().open} />}</Show>
       <Show when={shown() && selectedFull()}>{(layer) => <HoverOutline selected space={space} outlines={layer().outlines} color={layer().color} />}</Show>
       {/* up once the text's box has been drawn, and kept up as it's redrawn with each word typed */}
       <Show when={shown() ? editingText() : null} keyed>
@@ -810,10 +816,10 @@ export default function SceneEditor(props: {
       <Show when={shown() && drawing()}>
         {(tool) => (
           <Show
-            when={tool() === 'Polygon'}
+            when={tool() === 'Polygon' || tool() === 'Polyline' || tool() === 'Bezier'}
             fallback={<ShapeDrawing space={space} aspect={drawnAspect(tool())} color={viewColor(view())} onDrawn={finishDrawing} onCancel={() => setDrawing(null)} />}
           >
-            <PolygonDrawing space={space} color={viewColor(view())} onDrawn={finishDrawing} onCancel={() => setDrawing(null)} />
+            <PointsDrawing space={space} open={tool() !== 'Polygon'} color={viewColor(view())} onDrawn={finishDrawing} onCancel={() => setDrawing(null)} />
           </Show>
         )}
       </Show>
@@ -1017,7 +1023,7 @@ export default function SceneEditor(props: {
                       <Show when={shownCanvas()?.area}>
                         {(area) => (
                           <svg viewBox={`${area().x} ${area().y} ${area().width} ${area().height}`} preserveAspectRatio="none" aria-hidden="true">
-                            <For each={outline()}>{(loop) => <polygon points={loop.join(' ')} />}</For>
+                            <For each={outline()}>{(loop) => (outlineOpen() ? <polyline class="scene-outline" points={loop.join(' ')} /> : <polygon points={loop.join(' ')} />)}</For>
                           </svg>
                         )}
                       </Show>

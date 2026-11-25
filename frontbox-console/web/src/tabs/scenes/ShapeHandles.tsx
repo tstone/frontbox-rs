@@ -6,7 +6,7 @@ import type { Transform } from '../../types/generated/Transform'
 import type { PreviewSpace } from '../machine/PlayfieldView'
 import { layerColorClass, type LayerColor } from './ScenePortal'
 import { SceneContext } from './SceneFields'
-import { field, isHidden, isOpen, item, orEmpty, variableReads, selectedShape, selectedShapeLens, shapePoints, startingValue, variant, withKey, withVariable, type Lens, type Scene, type SceneValue, type Selection, type Surface, type Vec2 } from './sceneModel'
+import { field, isHidden, isOpen, item, newShapeSize, orEmpty, variableReads, selectedShape, selectedShapeLens, shapePoints, startingValue, variant, withKey, withVariable, type Lens, type Scene, type SceneValue, type Selection, type Surface, type Vec2 } from './sceneModel'
 
 type Shape = NonNullable<Layer['region']>
 
@@ -213,26 +213,31 @@ export function Grip(props: { handle: Handle; space: PreviewSpace }) {
 
 /**
  * The outline of a layer the pointer is over, which says a click there selects it, in the color of what it's on. A
- * `selected` one is dashed, for a selected layer that has no handles to show it is.
+ * `selected` one is dashed, for a selected layer that has no handles to show it is. A line's is `open`, as it doesn't
+ * close.
  */
-export function HoverOutline(props: { space: PreviewSpace; outlines: Vec2[][]; color: LayerColor; selected?: boolean }) {
+export function HoverOutline(props: { space: PreviewSpace; outlines: Vec2[][]; color: LayerColor; selected?: boolean; open?: boolean }) {
   const onScreen = (loop: Vec2[]) => loop.flatMap((point) => props.space.project(point)?.join(',') ?? []).join(' ')
   return (
     <svg class={`scene-hover-outline ${layerColorClass(props.color) ?? ''}`} classList={{ 'scene-selected-outline': props.selected }} aria-hidden="true">
-      <Index each={props.outlines}>{(loop) => <polygon points={onScreen(loop())} />}</Index>
+      <Index each={props.outlines}>{(loop) => (props.open ? <polyline points={onScreen(loop())} /> : <polygon points={onScreen(loop())} />)}</Index>
     </svg>
   )
 }
 
 /**
  * The topmost layer with a region at a point on what's on show, which only some of a scene's layers may be on. Each
- * layer's outline is a loop for each copy of its shape. Where there's none, it's the topmost layer that covers all of
+ * layer's outline is a loop for each copy of its shape, and a line is at a point near enough it (see `lineReach`).
+ * Where there's none, it's the topmost layer that covers all of
  * what it's on, such as a background image, if the point is on that.
  */
 export function layerUnder(scene: Scene, outlines: Vec2[][][], point: Vec2, shown: (layer: Scene['layers'][number]) => boolean, surface: (layer: Scene['layers'][number]) => Surface) {
   const visible = (index: number) => !scene.layers[index].hidden && shown(scene.layers[index])
   for (let index = scene.layers.length - 1; index >= 0; index--) {
-    if (scene.layers[index].region && visible(index) && (outlines[index] ?? []).some((loop) => encloses(loop, point))) return index
+    const region = scene.layers[index].region
+    if (!region || !visible(index)) continue
+    const reach = isOpen(region.base) ? lineReach(scene, region, surface(scene.layers[index])) : null
+    if ((outlines[index] ?? []).some((loop) => (reach === null ? encloses(loop, point) : nearLine(loop, point, reach)))) return index
   }
   for (let index = scene.layers.length - 1; index >= 0; index--) {
     const outline = fullOutline(scene.layers[index], surface(scene.layers[index]))
@@ -254,6 +259,26 @@ export function fullOutline(layer: Scene['layers'][number], surface: Surface): V
     [width, height],
     [0, height],
   ]
+}
+
+/**
+ * How near a line a point is on it: within half its widest stroke, or a twentieth of the size of a new shape, so a thin
+ * one can still be clicked. A stroke whose width changes counts at its first.
+ */
+function lineReach(scene: Scene, region: NonNullable<Scene['layers'][number]['region']>, surface: Surface) {
+  const widths = (region.adjust ?? []).flatMap((adjust) => ('Stroke' in adjust ? [startingValue(adjust.Stroke.width, scene, 0)] : []))
+  return Math.max(...widths.map((width) => width / 2), newShapeSize(surface) / 20)
+}
+
+/** Whether a point is within `reach` of an open line through `points` */
+function nearLine(points: Vec2[], [x, y]: Vec2, reach: number) {
+  return points.some(([ax, ay], i) => {
+    const [bx, by] = points[i + 1] ?? [ax, ay]
+    const [dx, dy] = [bx - ax, by - ay]
+    const length = dx * dx + dy * dy
+    const along = length > 0 ? Math.min(Math.max(((x - ax) * dx + (y - ay) * dy) / length, 0), 1) : 0
+    return Math.hypot(x - ax - dx * along, y - ay - dy * along) <= reach
+  })
 }
 
 function encloses(loop: Vec2[], [x, y]: Vec2) {
@@ -415,6 +440,11 @@ function shapeHandles(shape: Lens<Shape>, pose: RenderedShape, write: Write, gri
   } else if ('Star' in current) {
     // the first leg points up
     handles.push(size('Radius', field(variant(base, 'Star'), 'radius'), [0, top], down))
+  } else if ('Spiral' in current) {
+    // it ends pointing up
+    handles.push(size('Radius', field(variant(base, 'Spiral'), 'radius'), [0, top], down))
+  } else if ('Wave' in current) {
+    handles.push(...boxed(variant(base, 'Wave'), 0))
   } else if ('Polygon' in current || 'Polyline' in current) {
     const points = 'Polygon' in current ? field(variant(base, 'Polygon'), 'points') : field(variant(base, 'Polyline'), 'points')
     pose.points.forEach((_, index) => handles.push(pointHandle(index, item(points, index))))

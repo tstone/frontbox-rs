@@ -7,10 +7,10 @@ import { ancestry } from './configNodes'
 import { ConfigTreeContext, type ConfigTree } from './configTree'
 import { ImageDialog } from './ImagePicker'
 import { contentImageSize } from '../../state/contentImages'
-import { addModifier, drawnPolygon, drawnShape, modifierIcon, modifierOptions, newShape, newTraversal, type ModifierKind, type ModifiersNode, type ShapeKind, type TemplateKind } from './PropertiesPanel'
+import { addModifier, drawnPoints, drawnShape, modifierIcon, modifierOptions, newShape, newTraversal, type ModifierKind, type ModifiersNode, type ShapeKind, type TemplateKind } from './PropertiesPanel'
 import ScenePortal, { LayerColorContext, layerColor, layerColorClass, type LayerColor } from './ScenePortal'
 import { LayerSurfacesContext, SceneContext } from './SceneFields'
-import { freshTraversalName, newLayerPlace, newShapeSize, traversalNames, withTiming, type LayerPlace, type LayerSurfaces, type Scene, type SceneLayer } from './sceneModel'
+import { freshTraversalName, isOpen, newLayerPlace, newShapeSize, newStroke, traversalNames, withTiming, type LayerPlace, type LayerSurfaces, type Scene, type SceneLayer } from './sceneModel'
 import type { DrawnBox, DrawnPoints } from './ShapeDrawing'
 import { SoundDialog } from './SoundPicker'
 
@@ -96,14 +96,21 @@ export default function LayerTools(props: { place: LayerPlace | null; reason: st
       <span class="scene-tools-divider" />
       {button('Image', drawnColor())}
       {button('Full', drawnColor())}
-      {button('Circle', drawnColor())}
-      {button('Rect', drawnColor())}
       <MenuTool
-        label="More shapes"
-        icon={icons.Shapes}
-        groups={MORE_SHAPES.map((group) => group.map((tool) => ({ value: tool, label: TOOL_LABELS[tool], icon: TOOL_ICONS[tool] })))}
+        label="Shapes"
+        icon={icons.CircleSquare}
+        groups={SHAPES.map((group) => group.map((tool) => ({ value: tool, label: TOOL_LABELS[tool], icon: TOOL_ICONS[tool] })))}
         color={drawnColor()}
-        active={props.drawing !== null && MORE_SHAPES.flat().includes(props.drawing)}
+        active={props.drawing !== null && SHAPES.flat().includes(props.drawing)}
+        reason={props.reason}
+        onPick={add}
+      />
+      <MenuTool
+        label="Lines"
+        icon={icons.Curve}
+        groups={LINES.map((group) => group.map((tool) => ({ value: tool, label: TOOL_LABELS[tool], icon: TOOL_ICONS[tool] })))}
+        color={drawnColor()}
+        active={props.drawing !== null && LINES.flat().includes(props.drawing)}
         reason={props.reason}
         onPick={add}
       />
@@ -120,28 +127,42 @@ export default function LayerTools(props: { place: LayerPlace | null; reason: st
  * What a tool adds: a shape, an image, a layer over all of what it's on (with no region), a graph of lights, a sequence
  * of lights, or a sound
  */
-type Tool = Exclude<ShapeKind, 'None' | 'Polyline' | 'Bezier'> | TemplateKind | 'Image' | 'Full' | 'Graph' | 'Sequence' | 'Sound'
+type Tool = Exclude<ShapeKind, 'None'> | TemplateKind | 'Image' | 'Full' | 'Graph' | 'Sequence' | 'Sound'
 
-/** A tool whose layer is drawn on the preview: text or a shape, which a polygon is drawn a corner at a time and the rest as a box */
+/** A tool whose layer is drawn on the preview: text or a shape, which a polygon or line is drawn a point at a time and the rest as a box */
 export type DrawnTool = Exclude<Tool, 'Image' | 'Full' | 'Graph' | 'Sequence' | 'Sound'>
 
 const isDrawn = (tool: Tool): tool is DrawnTool => !['Image', 'Full', 'Graph', 'Sequence', 'Sound'].includes(tool)
 
 /**
- * A layer of a drawn tool's kind on `place`, filling the box that was drawn, or through the corners of a polygon. A
- * click rather than a drag places one of the size a new shape has, around where it was.
+ * A layer of a drawn tool's kind on `place`, filling the box that was drawn, or through the points of a polygon or line.
+ * A click rather than a drag places one of the size a new shape has, around where it was.
  */
 export function drawnLayer(tool: DrawnTool, scene: Scene, place: LayerPlace, surfaces: LayerSurfaces, drawn: DrawnBox | DrawnPoints): SceneLayer {
   const layer = newLayer(tool, scene, place, surfaces)
-  if ('points' in drawn) return { ...layer, region: drawnPolygon(drawn.points) }
   const across = newShapeSize(surfaces(layer))
-  return { ...layer, region: drawnShape(tool, drawn.center, drawn.size ?? [across, across]) }
+  const region =
+    'points' in drawn
+      ? drawnPoints(tool === 'Polyline' || tool === 'Bezier' ? tool : 'Polygon', drawn.points)
+      : drawnShape(tool, drawn.center, drawn.size ?? [across, across])
+  // with the stroke a new line comes with
+  return { ...layer, region: { ...region, adjust: layer.region?.adjust } }
 }
 
-/** The shapes behind the menu, as circles and rectangles have buttons of their own */
-const MORE_SHAPES: Tool[][] = [
-  ['Ellipse', 'Triangle', 'Diamond', 'Polygon'],
-  ['Chevron', 'Star', 'Pinwheel', 'Propeller'],
+/** The shapes behind the shapes menu */
+const SHAPES: Tool[][] = [
+  ['Circle', 'Rect', 'Ellipse', 'Triangle'],
+  ['Diamond', 'Polygon', 'Chevron', 'Star'],
+  ['Pinwheel', 'Propeller'],
+]
+
+/**
+ * The lines behind the lines menu: those drawn a point at a time, straight between them or curved through them, then
+ * those drawn as a box: a spiral, and a wave in each of its forms
+ */
+const LINES: Tool[][] = [
+  ['Polyline', 'Bezier'],
+  ['Spiral', 'Wave', 'Zigzag', 'Serpentine'],
 ]
 
 const TOOL_LABELS: Record<Tool, string> = {
@@ -151,6 +172,12 @@ const TOOL_LABELS: Record<Tool, string> = {
   Triangle: 'Triangle',
   Diamond: 'Diamond',
   Polygon: 'Polygon',
+  Polyline: 'Line',
+  Bezier: 'Curve',
+  Spiral: 'Spiral',
+  Wave: 'Wave',
+  Zigzag: 'Zigzag',
+  Serpentine: 'Serpentine',
   Chevron: 'Chevron',
   Star: 'Star',
   Pinwheel: 'Pinwheel',
@@ -170,6 +197,12 @@ const TOOL_ICONS: Record<Tool, typeof icons.Circle> = {
   Triangle: icons.Triangle,
   Diamond: icons.Diamond,
   Polygon: icons.Pentagon,
+  Polyline: icons.Activity,
+  Bezier: icons.Curve,
+  Spiral: icons.Spiral,
+  Wave: icons.Wave,
+  Zigzag: icons.Zigzag,
+  Serpentine: icons.Serpentine,
   Chevron: icons.ChevronUp,
   Star: icons.Star,
   Pinwheel: icons.Fan,
@@ -183,6 +216,7 @@ const TOOL_ICONS: Record<Tool, typeof icons.Circle> = {
 }
 
 const WHITE: Color = [255, 255, 255, 255]
+const CLEAR: Color = [0, 0, 0, 0]
 
 type MenuItem<T> = { value: T; label: string; icon: typeof icons.Circle }
 
@@ -339,7 +373,7 @@ function modifierTargets(tree: ConfigTree, id: string | null) {
 
 /**
  * A layer of a tool's kind on `place`, filled white and named for what it is. A shape is placed in the middle of what
- * it's on at a size that fits, an image covers all of it, and a graph starts with a traversal out from its middle.
+ * it's on at a size that fits, and a line is stroked white over a clear fill, an image covers all of it, and a graph starts with a traversal out from its middle.
  */
 function newLayer(tool: Exclude<Tool, 'Sound'>, scene: Scene, place: LayerPlace, surfaces: LayerSurfaces): SceneLayer {
   const layer: SceneLayer = { ...newLayerPlace(scene, place), name: freshLayerName(scene, TOOL_LABELS[tool]), fill: { base: { Solid: { Fixed: WHITE } } } }
@@ -347,7 +381,10 @@ function newLayer(tool: Exclude<Tool, 'Sound'>, scene: Scene, place: LayerPlace,
   if (tool === 'Image' || tool === 'Full') return layer
   if (tool === 'Graph') return { ...layer, graph: { traversals: [newTraversal(freshTraversalName(layer, 'walk'), [], surface)] } }
   if (tool === 'Sequence') return layer
-  return { ...layer, region: newShape(tool, surface) }
+  const region = newShape(tool, surface)
+  // a line has no inside to fill, so it's drawn by a stroke, over a fill left clear
+  if (isOpen(region.base)) return { ...layer, fill: { base: { Solid: { Fixed: CLEAR } } }, region: { ...region, adjust: [newStroke(surface)] } }
+  return { ...layer, region }
 }
 
 /** `base`, or `base 2` and so on if a layer already has that name */
