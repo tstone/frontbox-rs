@@ -131,7 +131,10 @@ impl Layer {
 
   /// Names of the images the layer uses
   pub fn image_names(&self) -> impl Iterator<Item = &str> {
-    self.fill.base.image_name().into_iter()
+    let strokes = self.region.iter().flat_map(Shape::stroke_fills);
+    std::iter::once(&self.fill)
+      .chain(strokes)
+      .filter_map(|fill| fill.base.image_name())
   }
 
   /// Names of the fonts the layer's region uses
@@ -346,10 +349,12 @@ impl<'a> Drawn<'a> {
 pub(crate) struct PreparedArea<'a> {
   clip: Clip,
   fill: PreparedFill<'a>,
+  /// Each of the region's strokes' fills, in order. `None` where a transform collapses one, so it draws nothing.
+  strokes: Vec<Option<PreparedFill<'a>>>,
 }
 
 impl PreparedArea<'_> {
-  /// The fill's color at a sample, with edge coverage in alpha, a shape's shadows under it, and its colored strokes over it
+  /// The fill's color at a sample, with edge coverage in alpha, a shape's shadows under it, and its strokes over it
   pub(crate) fn color(&self, at: &Sample) -> Rgba<u8> {
     match &self.clip {
       Clip::Viewport(viewport) if !viewport.contains(at.pos) => Rgba([0, 0, 0, 0]),
@@ -361,7 +366,7 @@ impl PreparedArea<'_> {
     }
   }
 
-  /// The fill where a shape covers it, over the shape's shadows and under its colored strokes
+  /// The fill where a shape covers it, over the shape's shadows and under its strokes
   fn covered(&self, shape: &PreparedShape, cover: Cover) -> Rgba<u8> {
     let shadows = cover
       .shadows
@@ -369,18 +374,18 @@ impl PreparedArea<'_> {
       .fold(Rgba([0, 0, 0, 0]), |color, (amount, shadow)| {
         Rgba::over(covering(shadow, amount), color)
       });
+    let at = shape.bounds.to_unit(cover.local);
     let color = if cover.amount > 0.0 {
-      let fill = self.fill.color(shape.bounds.to_unit(cover.local));
-      Rgba::over(covering(fill, cover.amount), shadows)
+      Rgba::over(covering(self.fill.color(at), cover.amount), shadows)
     } else {
       shadows
     };
-    cover
-      .strokes
-      .into_iter()
-      .fold(color, |color, (amount, stroke)| {
-        Rgba::over(covering(stroke, amount), color)
-      })
+    cover.strokes.into_iter().fold(color, |color, (amount, i)| {
+      match self.strokes.get(i).and_then(Option::as_ref) {
+        Some(stroke) => Rgba::over(covering(stroke.color(at), amount), color),
+        None => color,
+      }
+    })
   }
 }
 
@@ -439,7 +444,7 @@ fn lap(surface: Surface, radius: f32) -> Option<f32> {
 /// so it draws nothing.
 pub(crate) fn prepare_area<'a>(
   fill: &'a Fill,
-  region: Option<&Shape>,
+  region: Option<&'a Shape>,
   viewport: Bounds,
   radius: f32,
   env: &Env<'a>,
@@ -458,12 +463,21 @@ pub(crate) fn prepare_area<'a>(
       (Clip::Shape(shape), footprint, size)
     }
   };
-  let env = &Env {
-    fill_frame: fill_frame(fill, &clip),
-    ..*env
+  let prepare = |fill: &'a Fill| {
+    let env = &Env {
+      fill_frame: fill_frame(fill, &clip),
+      ..*env
+    };
+    fill.prepare(footprint, size, env)
   };
+  let strokes = region
+    .into_iter()
+    .flat_map(Shape::stroke_fills)
+    .map(prepare)
+    .collect();
   Some(PreparedArea {
-    fill: fill.prepare(footprint, size, env)?,
+    fill: prepare(fill)?,
+    strokes,
     clip,
   })
 }

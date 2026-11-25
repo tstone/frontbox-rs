@@ -3,7 +3,7 @@ use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::scene::{
-  Bounds, Contour, Cut, Env, Inputs, Node, PreparedAdjust, PreparedShadow, PreparedStroke, Prop,
+  Bounds, Contour, Cut, Env, Fill, Inputs, Node, PreparedAdjust, PreparedShadow, PreparedStroke, Prop,
   Reshape, Sample, ShapeAdjust, ShiftLine, TextAlign, TextOutline, TextOverflow, TextSource,
   Transform, VerticalAlign, Wrap, layout_text,
 };
@@ -167,8 +167,10 @@ impl Shape {
         PreparedAdjust::Shadow(shadow) => shadows.push(shadow),
       }
     }
-    // each band can reach past the edge of the one before
-    let edge_reach = strokes.iter().map(PreparedStroke::reach).sum::<f32>();
+    let edge_reach = strokes
+      .iter()
+      .map(PreparedStroke::reach)
+      .fold(0.0, f32::max);
     let copies = self
       .placements(bounds.center(), env)
       .into_iter()
@@ -178,10 +180,6 @@ impl Shape {
         cuts: placed.cuts,
       })
       .collect();
-    let colored = strokes
-      .iter()
-      .filter(|stroke| stroke.color.is_some())
-      .count();
     Some(PreparedShape {
       edge,
       bounds,
@@ -189,7 +187,6 @@ impl Shape {
       wrap,
       copies,
       strokes,
-      colored,
       feather,
       edge_reach,
       shadows,
@@ -384,6 +381,14 @@ impl Shape {
       .adjust
       .iter()
       .for_each(|adjust| adjust.read_inputs(inputs));
+  }
+
+  /// Each stroke's fill, in order
+  pub(crate) fn stroke_fills(&self) -> impl Iterator<Item = &Fill> {
+    self.adjust.iter().filter_map(|adjust| match adjust {
+      ShapeAdjust::Stroke { fill, .. } => Some(fill),
+      _ => None,
+    })
   }
 }
 
@@ -693,9 +698,7 @@ pub(crate) struct PreparedShape {
   copies: Vec<PreparedCopy>,
   /// In order
   strokes: Vec<PreparedStroke>,
-  /// How many of the strokes have a color
-  colored: usize,
-  /// How wide the edge and the colored strokes' bands are softened, in scene units
+  /// How wide the edge and the strokes' bands are softened, in scene units
   feather: f32,
   /// How far the strokes can reach past the shape's own edge
   edge_reach: f32,
@@ -704,20 +707,19 @@ pub(crate) struct PreparedShape {
 }
 
 impl PreparedShape {
-  /// How much of the sample the shape, its colored strokes, and its shadows cover. `None` if none of them reach it.
+  /// How much of the sample the shape, its strokes, and its shadows cover. `None` if none of them reach it.
   pub(crate) fn cover(&self, at: &Sample) -> Option<Cover> {
-    // the nearest copy's distance to each colored stroke's band
-    let mut bands = vec![f32::INFINITY; self.colored];
+    // the nearest copy's distance to each stroke's band
+    let mut bands = vec![f32::INFINITY; self.strokes.len()];
     let nearest = self.nearest(
       at.pos,
       at.radius + self.edge_reach + self.feather / 2.0,
       &mut bands,
     );
-    let colors = self.strokes.iter().filter_map(|stroke| stroke.color);
-    let strokes: Vec<(f32, Rgba<u8>)> = bands
+    let strokes: Vec<(f32, usize)> = bands
       .into_iter()
-      .zip(colors)
-      .map(|(band, color)| (coverage(band, at.radius, self.feather), color))
+      .enumerate()
+      .map(|(i, band)| (coverage(band, at.radius, self.feather), i))
       .filter(|(amount, _)| *amount > 0.0)
       .collect();
     let shadows: Vec<(f32, Rgba<u8>)> = self
@@ -741,9 +743,8 @@ impl PreparedShape {
     })
   }
 
-  /// The signed distance at `pos` to the edge of the nearest copy, after the strokes with no color, and where `pos` is
-  /// in that copy's local space. Each colored stroke's distance to its band, from the nearest copy to it, goes in
-  /// `bands`, which can be left empty. Copies whose box, grown by `reach`, is away from `pos` are skipped, and `None`
+  /// The signed distance at `pos` to the edge of the nearest copy, and where `pos` is in that copy's local space. Each
+  /// stroke's distance to its band, from the nearest copy to it, goes in `bands`, which can be left empty. Copies whose box, grown by `reach`, is away from `pos` are skipped, and `None`
   /// if every one is.
   fn nearest(&self, pos: Vec2, reach: f32, bands: &mut [f32]) -> Option<(f32, Vec2)> {
     let wrapped = self.wrap.map_or(pos, |wrap| wrap.apply(pos));
@@ -758,17 +759,12 @@ impl PreparedShape {
       let local = copy.to_local.transform_point2(wrapped);
       let (distance, gradient) = self.edge.distance(local);
       // inside the edge and on the kept side of every cut, so the farthest of them
-      let mut distance = copy.cuts.iter().fold(
+      let distance = copy.cuts.iter().fold(
         scene_distance(distance, gradient, &copy.to_local),
         |distance, cut| distance.max(cut.distance(wrapped)),
       );
-      let mut colored = bands.iter_mut();
-      for stroke in &self.strokes {
-        if stroke.color.is_none() {
-          distance = stroke.band(distance);
-        } else if let Some(band) = colored.next() {
-          *band = band.min(stroke.band(distance));
-        }
+      for (band, stroke) in bands.iter_mut().zip(&self.strokes) {
+        *band = band.min(stroke.band(distance));
       }
       if nearest.is_none_or(|(nearest, _)| distance < nearest) {
         nearest = Some((distance, local));
@@ -784,8 +780,8 @@ pub(crate) struct Cover {
   pub amount: f32,
   /// The sample's position in the local space of the copy nearest it
   pub local: Vec2,
-  /// Each colored stroke that covers some of the sample, in order: how much, and its color
-  pub strokes: Vec<(f32, Rgba<u8>)>,
+  /// Each stroke that covers some of the sample, in order: how much, and which stroke it is, counting only strokes
+  pub strokes: Vec<(f32, usize)>,
   /// Each shadow that covers some of the sample, in order, to be drawn under the shape: how much, and its color
   pub shadows: Vec<(f32, Rgba<u8>)>,
 }
@@ -1083,7 +1079,9 @@ mod tests {
   use super::*;
   use crate::animation::{Curve, Cycle};
   use crate::scene::value::tests::env;
-  use crate::scene::{Color, Key, Keyframes, StrokeAlign, Transform, Variables};
+  use crate::scene::{
+    Color, ColorAdjust, Fill, FillNode, Key, Keyframes, StrokeAlign, Transform, Variables,
+  };
 
   fn square() -> ShapeNode {
     rect_polygon(1.0, 1.0)
@@ -1190,12 +1188,27 @@ mod tests {
     assert_eq!(covered(&ellipse, 0.0, 0.0, 0.5), 0.0);
   }
 
-  fn stroked(shape: ShapeNode, width: f32, align: StrokeAlign) -> Shape {
-    Shape::new(shape).adjust(ShapeAdjust::Stroke {
+  fn stroke(width: f32, align: StrokeAlign) -> ShapeAdjust {
+    ShapeAdjust::Stroke {
       width: width.into(),
       align,
-      color: None,
-    })
+      fill: Fill::new(FillNode::Solid(Color(Rgba([255, 0, 0, 255])).into())),
+    }
+  }
+
+  fn stroked(shape: ShapeNode, width: f32, align: StrokeAlign) -> Shape {
+    Shape::new(shape).adjust(stroke(width, align))
+  }
+
+  /// How much of the sample the shape's first stroke covers
+  fn banded(shape: &Shape, x: f32, y: f32, radius: f32) -> f32 {
+    let variables = Variables::new();
+    let at = Sample::new(Vec2::new(x, y), radius);
+    shape
+      .prepare(&env(0.0, &variables))
+      .and_then(|shape| shape.cover(&at))
+      .and_then(|cover| cover.strokes.first().map(|(amount, _)| *amount))
+      .unwrap_or(0.0)
   }
 
   fn ring(radius: f32, thickness: f32) -> Shape {
@@ -1213,14 +1226,16 @@ mod tests {
   }
 
   #[test]
-  fn a_stroke_with_no_color_covers_its_band_and_not_the_inside() {
+  fn a_stroke_covers_its_band_and_leaves_the_shape_whole() {
     let band = ring(4.0, 2.0);
-    assert_eq!(covered(&band, 0.0, 0.0, 0.1), 0.0);
-    assert_eq!(covered(&band, 3.0, 0.0, 0.1), 0.0);
-    assert_eq!(covered(&band, 0.0, 5.0, 0.1), 1.0);
-    assert_eq!(covered(&band, 7.0, 0.0, 0.1), 0.0);
-    assert!((covered(&band, 4.0, 0.0, 0.5) - 0.5).abs() < 1e-5);
-    assert!((covered(&band, 6.0, 0.0, 0.5) - 0.5).abs() < 1e-5);
+    assert_eq!(banded(&band, 0.0, 0.0, 0.1), 0.0);
+    assert_eq!(banded(&band, 3.0, 0.0, 0.1), 0.0);
+    assert_eq!(banded(&band, 0.0, 5.0, 0.1), 1.0);
+    assert_eq!(banded(&band, 7.0, 0.0, 0.1), 0.0);
+    assert!((banded(&band, 4.0, 0.0, 0.5) - 0.5).abs() < 1e-5);
+    assert!((banded(&band, 6.0, 0.0, 0.5) - 0.5).abs() < 1e-5);
+    assert_eq!(covered(&band, 0.0, 0.0, 0.1), 1.0);
+    assert_eq!(covered(&band, 5.0, 0.0, 0.1), 0.0);
   }
 
   #[test]
@@ -1236,12 +1251,12 @@ mod tests {
     ] {
       let band = stroked(rect(), 2.0, align);
       assert_eq!(
-        covered(&band, (from + to) / 2.0, 0.0, 0.1),
+        banded(&band, (from + to) / 2.0, 0.0, 0.1),
         1.0,
         "{align:?}"
       );
-      assert_eq!(covered(&band, from - 0.5, 0.0, 0.1), 0.0, "{align:?}");
-      assert_eq!(covered(&band, to + 0.5, 0.0, 0.1), 0.0, "{align:?}");
+      assert_eq!(banded(&band, from - 0.5, 0.0, 0.1), 0.0, "{align:?}");
+      assert_eq!(banded(&band, to + 0.5, 0.0, 0.1), 0.0, "{align:?}");
     }
   }
 
@@ -1249,44 +1264,32 @@ mod tests {
   fn a_stroke_is_in_scene_units_however_the_shape_is_scaled() {
     let band = stroked(ShapeNode::circle(0.4), 2.0, StrokeAlign::Outside)
       .transform(Transform::Scale(10.0.into()));
-    assert!((covered(&band, 4.0, 0.0, 0.5) - 0.5).abs() < 1e-5);
-    assert!((covered(&band, 6.25, 0.0, 0.5) - 0.25).abs() < 1e-5);
+    assert!((banded(&band, 4.0, 0.0, 0.5) - 0.5).abs() < 1e-5);
+    assert!((banded(&band, 6.25, 0.0, 0.5) - 0.25).abs() < 1e-5);
   }
 
   #[test]
   fn a_stroke_with_no_width_draws_nothing() {
-    assert_eq!(covered(&ring(4.0, 0.0), 4.0, 0.0, 0.5), 0.0);
+    assert_eq!(banded(&ring(4.0, 0.0), 4.0, 0.0, 0.5), 0.0);
   }
 
   #[test]
   fn a_stroke_outlines_each_copy() {
     // two circles that overlap, so the edge of one is inside the other
-    let shape = dot((1.5, 0.0), mirror((0.0, 0.0), 0.0)).adjust(ShapeAdjust::Stroke {
-      width: 0.5.into(),
-      align: StrokeAlign::Centered,
-      color: None,
-    });
-    assert_eq!(covered(&shape, -0.5, 0.0, 0.1), 1.0);
-    assert_eq!(covered(&shape, 0.5, 0.0, 0.1), 1.0);
-    assert_eq!(covered(&shape, 0.0, 0.0, 0.1), 0.0);
+    let shape = dot((1.5, 0.0), mirror((0.0, 0.0), 0.0)).adjust(stroke(0.5, StrokeAlign::Centered));
+    assert_eq!(banded(&shape, -0.5, 0.0, 0.1), 1.0);
+    assert_eq!(banded(&shape, 0.5, 0.0, 0.1), 1.0);
+    assert_eq!(banded(&shape, 0.0, 0.0, 0.1), 0.0);
   }
 
   #[test]
-  fn a_stroke_with_a_color_is_drawn_apart_from_the_shape() {
+  fn a_stroke_is_covered_apart_from_the_shape() {
     let variables = Variables::new();
-    let red = Rgba([255, 0, 0, 255]);
-    let shape = Shape::new(ShapeNode::circle(4.0))
-      .adjust(ShapeAdjust::Stroke {
-        width: 2.0.into(),
-        align: StrokeAlign::Outside,
-        color: Some(Color(red).into()),
-      })
-      .prepare(&env(0.0, &variables))
-      .unwrap();
+    let shape = ring(4.0, 2.0).prepare(&env(0.0, &variables)).unwrap();
     let inside = shape.cover(&Sample::new(Vec2::ZERO, 0.1)).unwrap();
     assert_eq!((inside.amount, inside.strokes), (1.0, vec![]));
     let band = shape.cover(&Sample::new(Vec2::new(5.0, 0.0), 0.1)).unwrap();
-    assert_eq!((band.amount, band.strokes), (0.0, vec![(1.0, red)]));
+    assert_eq!((band.amount, band.strokes), (0.0, vec![(1.0, 0)]));
     assert!(
       shape
         .cover(&Sample::new(Vec2::new(7.0, 0.0), 0.1))
@@ -1295,25 +1298,16 @@ mod tests {
   }
 
   #[test]
-  fn a_colored_stroke_after_one_with_no_color_outlines_its_band() {
+  fn each_stroke_runs_along_the_shapes_edge() {
     let variables = Variables::new();
-    let red = Rgba([255, 0, 0, 255]);
     let shape = ring(4.0, 2.0)
-      .adjust(ShapeAdjust::Stroke {
-        width: 0.5.into(),
-        align: StrokeAlign::Outside,
-        color: Some(Color(red).into()),
-      })
+      .adjust(stroke(0.5, StrokeAlign::Outside))
       .prepare(&env(0.0, &variables))
       .unwrap();
-    for x in [3.75, 6.25] {
-      let edge = shape.cover(&Sample::new(Vec2::new(x, 0.0), 0.1)).unwrap();
-      assert_eq!(
-        (edge.amount, edge.strokes),
-        (0.0, vec![(1.0, red)]),
-        "at {x}"
-      );
-    }
+    let both = shape.cover(&Sample::new(Vec2::new(4.25, 0.0), 0.1)).unwrap();
+    assert_eq!(both.strokes, vec![(1.0, 0), (1.0, 1)]);
+    let wide = shape.cover(&Sample::new(Vec2::new(5.5, 0.0), 0.1)).unwrap();
+    assert_eq!(wide.strokes, vec![(1.0, 0)]);
   }
 
   #[test]
@@ -1327,7 +1321,21 @@ mod tests {
         .adjust(ShapeAdjust::Stroke {
           width: grows,
           align: StrokeAlign::Centered,
-          color: None
+          fill: Fill::new(FillNode::Solid(Color(Rgba([255, 0, 0, 255])).into())),
+        })
+        .is_animated()
+    );
+    let fades = Prop::Keyframes(Keyframes {
+      keys: vec![Key::new(0.0, 1.0, Curve::Linear)],
+      cycle: Cycle::Once,
+    });
+    assert!(
+      Shape::new(ShapeNode::circle(1.0))
+        .adjust(ShapeAdjust::Stroke {
+          width: 1.0.into(),
+          align: StrokeAlign::Centered,
+          fill: Fill::new(FillNode::Solid(Color(Rgba([255, 0, 0, 255])).into()))
+            .adjust(ColorAdjust::Opacity(fades)),
         })
         .is_animated()
     );
@@ -1383,29 +1391,11 @@ mod tests {
   }
 
   #[test]
-  fn a_feather_after_an_outside_stroke_softens_the_band_into_a_glow() {
-    let glow = feathered(ring(10.0, 2.0), 2.0);
-    assert!((covered(&glow, 12.0, 0.0, 0.0) - 0.5).abs() < 1e-5);
-    assert!(covered(&glow, 12.9, 0.0, 0.0) > 0.0);
-    assert_eq!(covered(&glow, 13.1, 0.0, 0.0), 0.0);
-  }
-
-  #[test]
-  fn a_feather_softens_colored_strokes() {
-    let variables = Variables::new();
-    let red = Rgba([255, 0, 0, 255]);
-    let shape = feathered(
-      Shape::new(ShapeNode::circle(4.0)).adjust(ShapeAdjust::Stroke {
-        width: 2.0.into(),
-        align: StrokeAlign::Outside,
-        color: Some(Color(red).into()),
-      }),
-      1.0,
-    )
-    .prepare(&env(0.0, &variables))
-    .unwrap();
-    let edge = shape.cover(&Sample::new(Vec2::new(6.0, 0.0), 0.0)).unwrap();
-    assert!((edge.strokes[0].0 - 0.5).abs() < 1e-5, "{:?}", edge.strokes);
+  fn a_feather_softens_strokes() {
+    let soft = feathered(ring(4.0, 2.0), 1.0);
+    assert!((banded(&soft, 6.0, 0.0, 0.0) - 0.5).abs() < 1e-5);
+    assert!(banded(&soft, 6.4, 0.0, 0.0) > 0.0);
+    assert_eq!(banded(&soft, 6.6, 0.0, 0.0), 0.0);
   }
 
   fn shadowed(shape: Shape, offset: (f32, f32), blur: f32, spread: f32) -> PreparedShape {
@@ -1463,13 +1453,11 @@ mod tests {
   }
 
   #[test]
-  fn a_shadow_follows_the_band_a_stroke_with_no_color_leaves() {
+  fn a_shadow_follows_the_shapes_edge_not_its_strokes() {
     let ring = shadowed(ring(10.0, 2.0), (0.0, 0.0), 0.0, 1.0);
-    assert_eq!(covers(&ring, 0.0, 0.0), (0.0, 0.0));
-    assert_eq!(covers(&ring, 9.5, 0.0), (0.0, 1.0));
-    assert_eq!(covers(&ring, 11.0, 0.0), (1.0, 1.0));
-    assert_eq!(covers(&ring, 12.5, 0.0), (0.0, 1.0));
-    assert_eq!(covers(&ring, 8.5, 0.0), (0.0, 0.0));
+    assert_eq!(covers(&ring, 0.0, 0.0), (1.0, 1.0));
+    assert_eq!(covers(&ring, 10.5, 0.0), (0.0, 1.0));
+    assert_eq!(covers(&ring, 11.5, 0.0).1, 0.0);
   }
 
   #[test]

@@ -40,6 +40,7 @@ import {
   shapeProps,
   soundLabel,
   strokeProps,
+  isNoFill,
   featherRange,
   shadowProps,
   traversalTarget,
@@ -397,7 +398,7 @@ function pointsNode(id: string, shape: PointsShape, lens: Lens<Prop<Vec2>[]> | L
  * Transforms then adjusts, as rows beside the props of what they change, and a row for adding either. Translates,
  * rotates, bulges, rounds, and adjusts are props of their own, a fit picks its traversal in its row, and a scale,
  * mirror, revolve, bisect, shift, or warp has its props under it. With `shape`, the row for adding offers those too, and its
- * strokes are listed after its transforms, each with its props under it.
+ * strokes are listed after its transforms, each with its props and its fill under it.
  */
 function modifierNodes(id: string, transforms: Lens<Transform[]>, space: TransformSpace, surface: Surface, adjusts?: Lens<ColorAdjust[]>, shape?: Lens<Shape>): ConfigNode[] {
   const transformList = `${id}/transform`
@@ -453,6 +454,7 @@ function modifierNodes(id: string, transforms: Lens<Transform[]>, space: Transfo
     const children = strokeProps(lens, surface).map(({ key, label, fallback, lens: propLens, ranges }) =>
       propNode(`${strokeId}/${key}`, label, { lens: propLens, variableName: `stroke_${key}`, fallback, ranges }, surface),
     )
+    children.push(fillNode(`${strokeId}/fill`, field(variant(lens, 'Stroke'), 'fill'), surface))
     return branch({ id: strokeId, label: 'Stroke', kind: 'stroke', lens, value: stroke, place, fields: true, children })
   })
   const add: ConfigNode = { id: `${id}/modifiers`, label: 'Modifier', kind: 'modifiers', transforms, adjusts, shape, value: undefined }
@@ -467,7 +469,7 @@ function fillNode(id: string, lens: Lens<Fill>, surface: Surface): ConfigNode {
   const base = field(lens, 'base')
   const current = base.get()
   const own: ConfigNode[] = []
-  if ('Solid' in current) {
+  if ('Solid' in current && !isNoFill(lens.get())) {
     own.push(propNode(`${id}/color`, 'Color', { lens: variant(base, 'Solid') as Lens<Prop<SceneValue>>, variableName: 'color', fallback: [255, 255, 255, 255], ranges: both(UNIT) }, surface))
   }
   if ('Gradient' in current) own.push(stopsNode(`${id}/stops`, field(variant(base, 'Gradient'), 'stops'), surface))

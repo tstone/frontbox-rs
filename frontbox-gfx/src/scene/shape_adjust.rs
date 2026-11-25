@@ -2,33 +2,31 @@ use glam::Vec2;
 use image::Rgba;
 use serde::{Deserialize, Serialize};
 
-use crate::scene::{Color, Env, Inputs, Prop};
+use crate::scene::{Color, Env, Fill, Inputs, Prop};
 
 /// Changes to a shape's edge, applied in order after its transforms
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ShapeAdjust {
-  /// A band `width` across along the edge, in scene units, so a `Scale` before it doesn't thicken it. With no `color`,
-  /// the shape becomes the band, drawn with the layer's fill, and the inside is left out. With one, the band is drawn
-  /// in that color over the shape. Each copy a `Mirror` or `Revolve` makes gets its own band.
+  /// A band `width` across along the edge, in scene units, so a `Scale` before it doesn't thicken it, drawn with its own
+  /// `fill` over the layer's. The fill is stretched over the shape's bounds, as the layer's is. Each stroke runs along
+  /// the shape's edge, and each copy a `Mirror` or `Revolve` makes gets its own band. For a band alone, make the layer's
+  /// fill transparent.
   Stroke {
     width: Prop<f32>,
     #[serde(default, skip_serializing_if = "StrokeAlign::is_centered")]
     #[cfg_attr(feature = "ts", ts(as = "Option<StrokeAlign>", optional))]
     align: StrokeAlign,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    color: Option<Prop<Color>>,
+    fill: Fill,
   },
   /// Softens the edge across a band `width` wide, in scene units, centered on it, as a blur of the shape would: a
   /// sample on the edge is half covered, and coverage eases to nothing `width / 2` outside it. It softens each colored
-  /// stroke's band too. Feathers add up, wherever they are in the list. With a solid fill and an outside stroke before
-  /// it, it's a glow; moved with a `Translate`, a drop shadow.
+  /// stroke's band too. Feathers add up, wherever they are in the list. For a glow or a drop shadow, use a
+  /// [`Shadow`](Self::Shadow).
   Feather { width: Prop<f32> },
   /// The shape again, under it, in `color`: moved by `offset` and grown by `spread`, both in scene units, then softened
   /// across `blur` as a [`Feather`](Self::Feather) softens. With no offset it's a glow around the shape. It follows the
-  /// edge strokes with no color leave, wherever they are in the list, and isn't feathered with the shape. Each shadow
-  /// is drawn over the ones before it.
+  /// shape's edge, not its strokes, and isn't feathered with the shape. Each shadow is drawn over the ones before it.
   Shadow {
     #[cfg_attr(feature = "ts", ts(as = "Prop<[f32; 2]>"))]
     offset: Prop<Vec2>,
@@ -51,14 +49,9 @@ pub enum StrokeAlign {
 impl ShapeAdjust {
   pub(crate) fn prepare(&self, env: &Env) -> PreparedAdjust {
     match self {
-      Self::Stroke {
-        width,
-        align,
-        color,
-      } => PreparedAdjust::Stroke(PreparedStroke {
+      Self::Stroke { width, align, .. } => PreparedAdjust::Stroke(PreparedStroke {
         width: width.resolve(env),
         align: *align,
-        color: color.as_ref().map(|color| color.resolve(env).0),
       }),
       Self::Feather { width } => PreparedAdjust::Feather(width.resolve(env).max(0.0)),
       Self::Shadow {
@@ -77,9 +70,7 @@ impl ShapeAdjust {
 
   pub(crate) fn is_animated(&self) -> bool {
     match self {
-      Self::Stroke { width, color, .. } => {
-        width.is_animated() || color.as_ref().is_some_and(Prop::is_animated)
-      }
+      Self::Stroke { width, fill, .. } => width.is_animated() || fill.is_animated(),
       Self::Feather { width } => width.is_animated(),
       Self::Shadow {
         offset,
@@ -92,9 +83,9 @@ impl ShapeAdjust {
 
   pub(crate) fn read_inputs(&self, inputs: &mut Inputs) {
     match self {
-      Self::Stroke { width, color, .. } => {
+      Self::Stroke { width, fill, .. } => {
         width.read_inputs(inputs);
-        color.iter().for_each(|color| color.read_inputs(inputs));
+        fill.read_inputs(inputs);
       }
       Self::Feather { width } => width.read_inputs(inputs),
       Self::Shadow {
@@ -143,13 +134,11 @@ impl PreparedShadow {
   }
 }
 
-/// A [`ShapeAdjust::Stroke`] with its props resolved
+/// A [`ShapeAdjust::Stroke`]'s band with its props resolved. Its fill is prepared with the layer's.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct PreparedStroke {
   width: f32,
   align: StrokeAlign,
-  /// `None` when the shape becomes the band
-  pub color: Option<Rgba<u8>>,
 }
 
 impl PreparedStroke {
@@ -182,11 +171,7 @@ mod tests {
   use super::*;
 
   fn stroke(width: f32, align: StrokeAlign) -> PreparedStroke {
-    PreparedStroke {
-      width,
-      align,
-      color: None,
-    }
+    PreparedStroke { width, align }
   }
 
   #[test]

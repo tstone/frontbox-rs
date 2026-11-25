@@ -34,7 +34,6 @@
 - Plug in custom shapes or graphics with their own settings (e.g. a kinematics/skeleton extension)
 - Line-based fills (polyline, spiral, logarithmic spiral, etc. snake patterns) 
 - Line based fill patterns usable for Sweep
-- Outline/stroke shouldn't take over fill
 - Change sweep to, instead of having a nested line/shape, you choose to use an existing one.
 - Graph algorithms have a "Reverse" option to perform the algo in reverse (ie. calculate then play backwards)
 - Graph region: a "cellular" mode that highlights all segments of a cell

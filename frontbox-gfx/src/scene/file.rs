@@ -220,12 +220,19 @@ mod tests {
             .adjust(ShapeAdjust::Stroke {
               width: 1.0.into(),
               align: StrokeAlign::Outside,
-              color: None,
+              fill: Fill::new(FillNode::Gradient {
+                style: GradientStyle::Conical,
+                stops: vec![
+                  Stop::new(0.0, Color(Rgba([0, 255, 255, 255]))),
+                  Stop::new(1.0, Color(Rgba([255, 212, 0, 255]))),
+                ],
+              })
+              .adjust(ColorAdjust::Opacity(0.5.into())),
             })
             .adjust(ShapeAdjust::Stroke {
               width: 0.25.into(),
               align: StrokeAlign::Centered,
-              color: Some(Color(Rgba([255, 255, 255, 255])).into()),
+              fill: Fill::new(FillNode::Solid(Color(Rgba([255, 255, 255, 255])).into())),
             })
             .adjust(ShapeAdjust::Feather {
               width: Prop::Variable("softness".into()),

@@ -597,6 +597,7 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
       if ('Feather' in adjust) return use(field(variant(item(strokes, i), 'Feather'), 'width'), `${label} · Feather`, both(featherRange(surface)))
       if ('Shadow' in adjust) return shadowProps(item(strokes, i), surface).forEach((prop) => use(prop.lens, `${label} · Shadow · ${prop.label}`, prop.ranges))
       strokeProps(item(strokes, i), surface).forEach((prop) => use(prop.lens, `${label} · Stroke · ${prop.label}`, prop.ranges))
+      fill(field(variant(item(strokes, i), 'Stroke'), 'fill'), `${label} · Stroke`)
     })
   }
 
@@ -1236,12 +1237,10 @@ export function transformProps(transform: Lens<Transform>, surface: Surface, spa
   return [center(field(line, 'center')), propField('rotation', 'Rotation', 0, both(ROTATION), field(line, 'rotation'))]
 }
 
-/** A stroke's width, then its color if it has one rather than taking the layer's fill */
+/** A stroke's width. Its fill's props are listed with the fill. */
 export function strokeProps(adjust: Lens<ShapeAdjust>, surface: Surface): PropField[] {
   const stroke = variant(adjust, 'Stroke')
-  const width = propField('width', 'Width', 0, both(strokeRange(surface)), field(stroke, 'width'))
-  if (!stroke.get().color) return [width]
-  return [width, propField('color', 'Color', [255, 255, 255, 255], both(UNIT), field(stroke, 'color'))]
+  return [propField('width', 'Width', 0, both(strokeRange(surface)), field(stroke, 'width'))]
 }
 
 /** A shadow's offset, how soft it is, how far it grows past the shape, and its color */
@@ -1269,9 +1268,15 @@ export function newFeather(surface: Surface): ShapeAdjust {
   return { Feather: { width: { Fixed: featherRange(surface).rest! } } }
 }
 
-/** A stroke a tenth the size of a new shape, along its edge, that takes the layer's fill */
+/** Whether a fill draws nothing: a solid that's fully transparent, which the editor shows as no fill */
+export function isNoFill(fill: SceneLayer['fill']): boolean {
+  const base = fill.base
+  return 'Solid' in base && 'Fixed' in base.Solid && base.Solid.Fixed[3] === 0
+}
+
+/** A white stroke a tenth the size of a new shape, along its edge */
 export function newStroke(surface: Surface): ShapeAdjust {
-  return { Stroke: { width: { Fixed: strokeRange(surface).rest! } } }
+  return { Stroke: { width: { Fixed: strokeRange(surface).rest! }, fill: { base: { Solid: { Fixed: [255, 255, 255, 255] } } } } }
 }
 
 /**

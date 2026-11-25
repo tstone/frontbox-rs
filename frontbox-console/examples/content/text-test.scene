@@ -40,7 +40,7 @@ Scene(
             Translate(Fixed(64.0, 18.0)),
           ],
           adjust: [
-            Stroke(width: Fixed(1.0), align: Outside, color: Fixed(120, 0, 0, 255)),
+            Stroke(width: Fixed(1.0), align: Outside, fill: (base: Solid(Fixed(120, 0, 0, 255)))),
           ],
         ),
       ),

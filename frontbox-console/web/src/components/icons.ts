@@ -3,6 +3,7 @@
 export { default as Activity } from 'lucide-solid/icons/activity'
 export { default as AudioLines } from 'lucide-solid/icons/audio-lines'
 export { default as AudioWaveform } from 'lucide-solid/icons/audio-waveform'
+export { default as Ban } from 'lucide-solid/icons/ban'
 export { default as Blend } from 'lucide-solid/icons/blend'
 export { default as Braces } from 'lucide-solid/icons/braces'
 export { default as ChartSpline } from 'lucide-solid/icons/chart-spline'

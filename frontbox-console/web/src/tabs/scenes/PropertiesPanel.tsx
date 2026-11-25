@@ -99,6 +99,7 @@ import {
   newAdjust,
   newShapeSize,
   newStroke,
+  isNoFill,
   newFeather,
   newShadow,
   NOTCH,
@@ -139,7 +140,7 @@ import {
   type Vec2,
 } from './sceneModel'
 
-type FillKind = 'Solid' | GradientStyle | 'Noise' | 'Cells' | 'Image' | 'Spritesheet'
+type FillKind = 'None' | 'Solid' | GradientStyle | 'Noise' | 'Cells' | 'Image' | 'Spritesheet'
 type NoiseFill = Extract<FillNode, { Noise: unknown }>['Noise']
 type CellsFill = Extract<FillNode, { Cells: unknown }>['Cells']
 type WarpTransform = Extract<Transform, { Warp: unknown }>
@@ -165,6 +166,7 @@ const WHITE: Color = [255, 255, 255, 255]
 const BLACK: Color = [0, 0, 0, 255]
 
 const FILL_OPTIONS: { value: FillKind; label: string }[] = [
+  { value: 'None', label: 'None' },
   { value: 'Solid', label: 'Solid' },
   { value: 'Linear', label: 'Linear gradient' },
   { value: 'Radial', label: 'Radial gradient' },
@@ -301,10 +303,6 @@ const STROKE_ALIGN_OPTIONS: { value: StrokeAlign; label: string }[] = [
   { value: 'Centered', label: 'Centered on the edge' },
   { value: 'Outside', label: 'Outside the edge' },
 ]
-const STROKE_DRAWS_OPTIONS: { value: 'Fill' | 'Color'; label: string }[] = [
-  { value: 'Fill', label: "The layer's fill, without the inside" },
-  { value: 'Color', label: 'A color, over the inside' },
-]
 const SPEED_OPTIONS: { value: SpeedKind; label: string }[] = [
   { value: 'Duration', label: 'Finish in a time' },
   { value: 'Rate', label: 'Rate' },
@@ -324,7 +322,7 @@ const SHAPE_ICONS: Record<RegionKind, Icon> = {
   Bezier: icons.Spline,
   Graph: icons.Network,
 }
-const FILL_ICONS: Record<FillKind, Icon> = { Solid: icons.PaintBucket, Linear: icons.Blend, Radial: icons.Blend, Conical: icons.Blend, Noise: icons.Cloud, Cells: icons.Hexagon, Image: icons.ImageIcon, Spritesheet: icons.ImageIcon }
+const FILL_ICONS: Record<FillKind, Icon> = { None: icons.Ban, Solid: icons.PaintBucket, Linear: icons.Blend, Radial: icons.Blend, Conical: icons.Blend, Noise: icons.Cloud, Cells: icons.Hexagon, Image: icons.ImageIcon, Spritesheet: icons.ImageIcon }
 /** A transform's or an adjust's icon says which kind it is, in place of where its value comes from */
 const MODIFIER_ICONS: Record<TransformKind | AdjustKind | 'Feather' | 'Shadow', Icon> = {
   Translate: icons.Move,
@@ -689,6 +687,8 @@ function OwnProperties(props: { node: ConfigNode }) {
   const settings = () => children().filter((child) => SETTING_KINDS.includes(child.kind))
   const values = () => children().filter((child) => child.kind === 'prop' || child.kind === 'node-ref')
   const modifiers = () => children().find((child) => child.kind === 'modifiers') as Extract<ConfigNode, { kind: 'modifiers' }> | undefined
+  // a stroke's fill, set as a layer's is
+  const fill = () => children().find((child) => child.kind === 'fill')
   const hasFields = () => props.node.kind === 'prop' || props.node.fields === true
 
   return (
@@ -710,6 +710,7 @@ function OwnProperties(props: { node: ConfigNode }) {
           </Show>
         )}
       </Index>
+      <Show when={fill()}>{(node) => <PartSection node={node()} title="Fill" />}</Show>
       <Show when={modifiers()}>{(node) => <AddModifier node={node()} />}</Show>
     </>
   )
@@ -1126,7 +1127,7 @@ function MaskPicker(props: { lens: Lens<SceneLayer> }) {
   )
 }
 
-/** Which side of a shape's edge a stroke is on, and what it's drawn with */
+/** Which side of a shape's edge a stroke is on */
 function StrokeFields(props: { node: Extract<ConfigNode, { kind: 'stroke' }> }) {
   const stroke = () => variant(props.node.lens, 'Stroke')
   return (
@@ -1137,14 +1138,6 @@ function StrokeFields(props: { node: Extract<ConfigNode, { kind: 'stroke' }> }) 
           options={STROKE_ALIGN_OPTIONS}
           value={stroke().get().align ?? 'Centered'}
           onChange={(align) => field(stroke(), 'align').set(align === 'Centered' ? undefined : align)}
-        />
-      </FieldRow>
-      <FieldRow label="Draw with">
-        <Dropdown
-          label="Draw with"
-          options={STROKE_DRAWS_OPTIONS}
-          value={stroke().get().color ? 'Color' : 'Fill'}
-          onChange={(draws) => field(stroke(), 'color').set(draws === 'Color' ? { Fixed: WHITE } : undefined)}
         />
       </FieldRow>
     </>
@@ -1548,6 +1541,7 @@ function NodeRefFields(props: { label: string; lens: Lens<NodeRef> }) {
 
 const fillKind = (lens: Lens<Fill>): FillKind => {
   const current = lens.get().base
+  if (isNoFill(lens.get())) return 'None'
   if ('Solid' in current) return 'Solid'
   if ('Gradient' in current) return current.Gradient.style
   if ('Noise' in current) return 'Noise'
@@ -1566,10 +1560,13 @@ function FillKindPicker(props: { node: Extract<ConfigNode, { kind: 'fill' }> }) 
 
   const setKind = (next: FillKind) => {
     const current = base().get()
-    const color = 'Solid' in current ? current.Solid : stopsOf(current)?.[0]?.color
+    // no fill is a clear solid, whose color isn't worth carrying over
+    const color = kind() === 'None' ? undefined : 'Solid' in current ? current.Solid : stopsOf(current)?.[0]?.color
     if (next === kind()) return
     batch(() => {
-      if (next === 'Solid') {
+      if (next === 'None') {
+        base().set({ Solid: { Fixed: [0, 0, 0, 0] } })
+      } else if (next === 'Solid') {
         base().set({ Solid: color ?? { Fixed: WHITE } })
       } else if (next === 'Image') {
         const sheet = 'Spritesheet' in current ? current.Spritesheet : undefined

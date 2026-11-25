@@ -1843,30 +1843,54 @@ fn a_prepared_layer_draws_samples_of_another_radius_as_they_are_drawn_alone() {
   }
 }
 
+fn stroked_circle(width: f32, align: StrokeAlign, fill: Fill) -> Shape {
+  Shape::new(ShapeNode::circle(10.0))
+    .transform(Transform::Translate(Vec2::new(50.0, 25.0).into()))
+    .adjust(ShapeAdjust::Stroke {
+      width: width.into(),
+      align,
+      fill,
+    })
+}
+
 #[test]
-fn a_colored_stroke_is_drawn_over_the_fill_and_one_without_a_color_takes_it() {
-  let circle = || {
-    Shape::new(ShapeNode::circle(10.0))
-      .transform(Transform::Translate(Vec2::new(50.0, 25.0).into()))
-  };
-  let outlined = circle().adjust(ShapeAdjust::Stroke {
-    width: 2.0.into(),
-    align: StrokeAlign::Inside,
-    color: Some(Color(BLUE).into()),
-  });
+fn a_stroke_is_drawn_over_the_fill() {
+  let outlined = stroked_circle(2.0, StrokeAlign::Inside, solid(BLUE));
   let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).region(outlined)]);
   assert_eq!(sample(&scene, 50.0, 25.0, 0.1), RED);
   assert_eq!(sample(&scene, 59.0, 25.0, 0.1), BLUE);
   assert_eq!(sample(&scene, 61.0, 25.0, 0.1), Rgba([0, 0, 0, 0]));
+}
 
-  let ring = circle().adjust(ShapeAdjust::Stroke {
-    width: 2.0.into(),
-    align: StrokeAlign::Inside,
-    color: None,
-  });
-  let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).region(ring)]);
+#[test]
+fn a_stroke_over_a_transparent_fill_is_a_ring() {
+  let ring = stroked_circle(2.0, StrokeAlign::Inside, solid(RED));
+  let clear = solid(Rgba([0, 0, 0, 0]));
+  let scene = Scene::new(Surface::Area, vec![Layer::new(clear).region(ring)]);
   assert_eq!(sample(&scene, 50.0, 25.0, 0.1), Rgba([0, 0, 0, 0]));
   assert_eq!(sample(&scene, 59.0, 25.0, 0.1), RED);
+}
+
+#[test]
+fn a_strokes_fill_is_stretched_over_the_shape_as_the_layers_is() {
+  let ring = stroked_circle(2.0, StrokeAlign::Inside, red_to_blue());
+  let scene = Scene::new(Surface::Area, vec![Layer::new(solid(DARK)).region(ring)]);
+  let (left, right) = (
+    sample(&scene, 41.0, 25.0, 0.1),
+    sample(&scene, 59.0, 25.0, 0.1),
+  );
+  assert!(left[0] > left[2], "{left:?}");
+  assert!(right[2] > right[0], "{right:?}");
+  assert_eq!(sample(&scene, 50.0, 25.0, 0.1), DARK);
+}
+
+#[test]
+fn a_strokes_fill_takes_its_own_adjusts() {
+  let half = solid(BLUE).adjust(ColorAdjust::Opacity(0.5.into()));
+  let ring = stroked_circle(2.0, StrokeAlign::Outside, half);
+  let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).region(ring)]);
+  assert_eq!(sample(&scene, 50.0, 25.0, 0.1), RED);
+  assert_eq!(sample(&scene, 11.0 + 50.0, 25.0, 0.1)[3], 128);
 }
 
 #[test]
@@ -2015,9 +2039,10 @@ fn text_takes_a_stroke_like_any_shape() {
   .adjust(ShapeAdjust::Stroke {
     width: 1.0.into(),
     align: StrokeAlign::Outside,
-    color: None,
+    fill: solid(RED),
   });
-  let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).region(outlined)]);
+  let clear = solid(Rgba([0, 0, 0, 0]));
+  let scene = Scene::new(Surface::Area, vec![Layer::new(clear).region(outlined)]);
   // the stroke goes around the "I" and in under its bars, leaving the inside out
   let expected = [
     ".......", ".#####.", ".#...#.", ".##.##.", "..#.#..", "..#.#..", "..#.#..", ".##.##.",

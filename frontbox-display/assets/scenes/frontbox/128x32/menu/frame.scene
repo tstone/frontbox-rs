@@ -15,7 +15,7 @@ Scene(
       layer: (
         name: "Border",
         fill: (
-          base: Solid(Fixed(0, 0, 217, 255)),
+          base: Solid(Fixed(0, 0, 0, 0)),
         ),
         region: (
           transform: [
@@ -29,6 +29,9 @@ Scene(
             Stroke(
               width: Fixed(1.0),
               align: Inside,
+              fill: (
+                base: Solid(Fixed(0, 0, 217, 255)),
+              ),
             ),
           ],
         ),
