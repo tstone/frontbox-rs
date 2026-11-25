@@ -19,6 +19,11 @@ pub enum ShapeAdjust {
     #[cfg_attr(feature = "ts", ts(optional))]
     color: Option<Prop<Color>>,
   },
+  /// Softens the edge across a band `width` wide, in scene units, centered on it, as a blur of the shape would: a
+  /// sample on the edge is half covered, and coverage eases to nothing `width / 2` outside it. It softens each colored
+  /// stroke's band too. Feathers add up, wherever they are in the list. With a solid fill and an outside stroke before
+  /// it, it's a glow; moved with a `Translate`, a drop shadow.
+  Feather { width: Prop<f32> },
 }
 
 /// Which side of the edge a stroke's band is on
@@ -32,17 +37,18 @@ pub enum StrokeAlign {
 }
 
 impl ShapeAdjust {
-  pub(crate) fn prepare(&self, env: &Env) -> PreparedStroke {
+  pub(crate) fn prepare(&self, env: &Env) -> PreparedAdjust {
     match self {
       Self::Stroke {
         width,
         align,
         color,
-      } => PreparedStroke {
+      } => PreparedAdjust::Stroke(PreparedStroke {
         width: width.resolve(env),
         align: *align,
         color: color.as_ref().map(|color| color.resolve(env).0),
-      },
+      }),
+      Self::Feather { width } => PreparedAdjust::Feather(width.resolve(env).max(0.0)),
     }
   }
 
@@ -51,6 +57,7 @@ impl ShapeAdjust {
       Self::Stroke { width, color, .. } => {
         width.is_animated() || color.as_ref().is_some_and(Prop::is_animated)
       }
+      Self::Feather { width } => width.is_animated(),
     }
   }
 
@@ -60,6 +67,7 @@ impl ShapeAdjust {
         width.read_inputs(inputs);
         color.iter().for_each(|color| color.read_inputs(inputs));
       }
+      Self::Feather { width } => width.read_inputs(inputs),
     }
   }
 }
@@ -68,6 +76,13 @@ impl StrokeAlign {
   fn is_centered(&self) -> bool {
     *self == Self::Centered
   }
+}
+
+/// A [`ShapeAdjust`] with its props resolved
+pub(crate) enum PreparedAdjust {
+  Stroke(PreparedStroke),
+  /// How wide, never below 0
+  Feather(f32),
 }
 
 /// A [`ShapeAdjust::Stroke`] with its props resolved

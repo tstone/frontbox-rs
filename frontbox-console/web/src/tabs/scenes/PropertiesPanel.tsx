@@ -99,6 +99,7 @@ import {
   newAdjust,
   newShapeSize,
   newStroke,
+  newFeather,
   NOTCH,
   orEmpty,
   RATE,
@@ -233,7 +234,10 @@ const MASK_OPTIONS: { value: 'Off' | 'Outside' | 'Inside'; label: string }[] = [
 ]
 const ADJUST_OPTIONS = (Object.keys(ADJUSTS) as AdjustKind[]).map((value) => ({ value, label: ADJUSTS[value].label }))
 /** Only for a shape that's drawn, rather than a sweep's path */
-const STROKE_OPTION: { value: 'Stroke'; label: string } = { value: 'Stroke', label: 'Stroke' }
+const SHAPE_ADJUST_OPTIONS: { value: 'Stroke' | 'Feather'; label: string }[] = [
+  { value: 'Stroke', label: 'Stroke' },
+  { value: 'Feather', label: 'Feather' },
+]
 type TextSourceKind = 'Fixed' | 'Variable' | 'Number'
 const TEXT_SOURCE_OPTIONS: { value: TextSourceKind; label: string }[] = [
   { value: 'Fixed', label: 'Fixed' },
@@ -320,7 +324,7 @@ const SHAPE_ICONS: Record<RegionKind, Icon> = {
 }
 const FILL_ICONS: Record<FillKind, Icon> = { Solid: icons.PaintBucket, Linear: icons.Blend, Radial: icons.Blend, Conical: icons.Blend, Noise: icons.Cloud, Cells: icons.Hexagon, Image: icons.ImageIcon, Spritesheet: icons.ImageIcon }
 /** A transform's or an adjust's icon says which kind it is, in place of where its value comes from */
-const MODIFIER_ICONS: Record<TransformKind | AdjustKind, Icon> = {
+const MODIFIER_ICONS: Record<TransformKind | AdjustKind | 'Feather', Icon> = {
   Translate: icons.Move,
   Rotate: icons.RotateCw,
   Scale: icons.Scaling,
@@ -336,6 +340,7 @@ const MODIFIER_ICONS: Record<TransformKind | AdjustKind, Icon> = {
   Opacity: icons.Droplet,
   Brightness: icons.Sun,
   Contrast: icons.Contrast,
+  Feather: icons.Feather,
 }
 const KIND_ICONS: Partial<Record<NodeKind, Icon>> = {
   place: icons.MapIcon,
@@ -605,8 +610,9 @@ function PartsProperties(props: { node: ConfigNode }) {
 }
 
 /**
- * A layer's shape or fill, as a part of its properties: its fields and values, a gradient's colors and a polygon's
- * points in place, and no modifiers, which have rows and properties of their own
+ * A layer's shape or fill, as a part of its properties: a button in its heading for adding a modifier to it, then its
+ * fields and values, and a gradient's colors and a polygon's points in place. Its modifiers aren't listed, as they have
+ * rows and properties of their own.
  */
 function PartSection(props: { node: ConfigNode; title: string }) {
   const children = () => props.node.children ?? []
@@ -614,13 +620,19 @@ function PartSection(props: { node: ConfigNode; title: string }) {
   const stops = () => children().find((child) => child.kind === 'stops')
   const points = () => children().find((child) => child.kind === 'points')
   const traversals = () => children().find((child) => child.kind === 'traversals')
-  // a fill's modifiers can be added here as well as from the tools, as they're all a layer with no shape can have
-  const modifiers = () => (props.node.kind === 'fill' ? (children().find((child) => child.kind === 'modifiers') as ModifiersNode | undefined) : undefined)
+  const modifiers = () => children().find((child) => child.kind === 'modifiers') as ModifiersNode | undefined
   const hasFields = () => props.node.fields === true
   return (
     <section class="scene-part" aria-label={props.title}>
       <header class="scene-part-heading">
         <h4>{props.title}</h4>
+        <Show when={modifiers()}>
+          {(node) => (
+            <AddModifier node={node()} class="scene-part-add" label={`Add a modifier to the ${props.title.toLowerCase()}`}>
+              <icons.Plus aria-hidden="true" />
+            </AddModifier>
+          )}
+        </Show>
       </header>
       <Show when={is(props.node, 'fill')}>
         <FieldRow inline label="Type">
@@ -644,7 +656,6 @@ function PartSection(props: { node: ConfigNode; title: string }) {
       </Show>
       <Show when={points()}>{(list) => <PartList node={list()} label="Points" />}</Show>
       <Show when={traversals()}>{(list) => <NodeSetting node={list()} />}</Show>
-      <Show when={modifiers()}>{(node) => <AddModifier node={node()} />}</Show>
     </section>
   )
 }
@@ -2079,14 +2090,14 @@ function newTransform(kind: TransformKind, traversals: string[], size: Vec2): Tr
 /** The row for adding modifiers to a shape or a fill */
 export type ModifiersNode = Extract<ConfigNode, { kind: 'modifiers' }>
 
-/** A modifier that can be added: a transform, an adjust, or a stroke */
-export type ModifierKind = TransformKind | AdjustKind | 'Stroke'
+/** A modifier that can be added: a transform, an adjust, or a stroke or feather on a shape's edge */
+export type ModifierKind = TransformKind | AdjustKind | 'Stroke' | 'Feather'
 
 type ModifierOption = { value: ModifierKind; label: string }
 
 /**
  * The modifiers a row offers, with `traversals` the layer's: transforms, with those only for a drawn shape and a fit
- * only for a layer with traversals to fit to, then transforms only for a fill and adjusts on a fill, then a stroke on
+ * only for a layer with traversals to fit to, then transforms only for a fill and adjusts on a fill, then a stroke or feather on
  * a drawn shape.
  */
 export function modifierOptions(
@@ -2098,14 +2109,14 @@ export function modifierOptions(
     // a fill is the node with adjusts
     fillTransforms: node.adjusts ? FILL_TRANSFORM_OPTIONS : [],
     adjusts: node.adjusts ? ADJUST_OPTIONS : [],
-    strokes: node.shape ? [STROKE_OPTION] : [],
+    strokes: node.shape ? SHAPE_ADJUST_OPTIONS : [],
   }
 }
 
 export const modifierIcon = (kind: ModifierKind): Icon => (kind === 'Stroke' ? KIND_ICONS.stroke! : MODIFIER_ICONS[kind])
 
 /**
- * Adds a transform, an adjust, or a stroke to a row's, after those already there, and selects it. A transform only for
+ * Adds a transform, an adjust, or a stroke or feather to a row's, after those already there, and selects it. A transform only for
  * shapes goes before a shape's first translate instead, so that it works in the shape's own space and moves with the
  * shape. `surface` and `traversals` are the layer's.
  */
@@ -2117,10 +2128,10 @@ export function addModifier(tree: ConfigTree, scene: Scene, node: ModifiersNode,
     tree.expand(id)
   }
   batch(() => {
-    if (kind === 'Stroke') {
+    if (kind === 'Stroke' || kind === 'Feather') {
       const strokes = orEmpty(field(node.shape!, 'adjust'))
       const list = strokes.get()
-      strokes.set([...list, newStroke(surface)])
+      strokes.set([...list, kind === 'Stroke' ? newStroke(surface) : newFeather(surface)])
       show(`${owner}/adjust/${list.length}`)
     } else if (kind in ADJUSTS) {
       const list = node.adjusts!.get()
@@ -2141,8 +2152,11 @@ export function addModifier(tree: ConfigTree, scene: Scene, node: ModifiersNode,
   })
 }
 
-/** Adds a transform, an adjust, or a stroke, listed together */
-function AddModifier(props: { node: ModifiersNode }) {
+/**
+ * Adds a transform, an adjust, or a stroke or feather, listed together. It says "Modifier" unless given what to show,
+ * such as just an icon, and then `label` says what it's for.
+ */
+function AddModifier(props: { node: ModifiersNode; class?: string; label?: string; children?: JSX.Element }) {
   const tree = useContext(ConfigTreeContext)!
   const scene = useContext(SceneContext)!
   const surface = useContext(SurfaceContext)!
@@ -2154,9 +2168,13 @@ function AddModifier(props: { node: ModifiersNode }) {
   const add = (kind: ModifierKind) => addModifier(tree, scene.get(), props.node, kind, surface(), traversals())
   return (
     <Controls>
-      <AddMenu label="Add a transform or an adjust" class="scene-add-modifier" groups={groups()} onPick={add}>
-        <icons.Plus aria-hidden="true" />
-        Modifier
+      <AddMenu label={props.label ?? 'Add a modifier'} class={props.class ? `scene-add-modifier ${props.class}` : 'scene-add-modifier'} groups={groups()} onPick={add}>
+        {props.children ?? (
+          <>
+            <icons.Plus aria-hidden="true" />
+            Modifier
+          </>
+        )}
       </AddMenu>
     </Controls>
   )
@@ -2192,7 +2210,7 @@ export function AddMenu<T extends string>(props: { label: string; class: string;
       </Menu.Trigger>
       <ScenePortal>
         <Menu.Positioner>
-          <Menu.Content class="scene-dropdown-list">
+          <Menu.Content class="scene-dropdown-list scene-add-list">
             <For each={props.groups}>
               {(group, index) => (
                 <>

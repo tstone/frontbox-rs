@@ -226,6 +226,9 @@ mod tests {
               width: 0.25.into(),
               align: StrokeAlign::Centered,
               color: Some(Color(Rgba([255, 255, 255, 255])).into()),
+            })
+            .adjust(ShapeAdjust::Feather {
+              width: Prop::Variable("softness".into()),
             }),
         ),
         Layer::new(Fill::new(FillNode::Solid(

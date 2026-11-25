@@ -303,7 +303,7 @@ function ModifierTools() {
 
 /** The modifiers that have buttons, which are those used most, and the menu the rest of them are in, in groups */
 const MODIFIER_SECTIONS: { label: string; icon: typeof icons.Circle; buttons: ModifierKind[]; menu: ModifierKind[][] }[] = [
-  { label: 'More transforms', icon: icons.WandSparkles, buttons: ['Translate', 'Rotate', 'Scale', 'Round'], menu: [['Mirror', 'Revolve', 'Bisect'], ['Shift', 'Bulge'], ['Warp'], ['Fit'], ['Stroke']] },
+  { label: 'More transforms', icon: icons.WandSparkles, buttons: ['Translate', 'Rotate', 'Scale', 'Round'], menu: [['Mirror', 'Revolve', 'Bisect'], ['Shift', 'Bulge'], ['Warp'], ['Fit'], ['Stroke', 'Feather']] },
   { label: 'More adjustments', icon: icons.SlidersHorizontal, buttons: ['Opacity', 'Brightness'], menu: [['HueShift', 'Contrast']] },
 ]
 

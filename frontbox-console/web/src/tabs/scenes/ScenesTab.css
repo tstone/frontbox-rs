@@ -2113,6 +2113,17 @@ label.scene-button:hover {
   color: var(--text);
 }
 
+/* only an icon, at the end of a layer's shape or fill heading */
+.scene-part-heading .scene-tree-controls {
+  margin-left: auto;
+}
+
+.scene-add-modifier.scene-part-add {
+  width: 1.5rem;
+  padding: 0;
+  justify-content: center;
+}
+
 .scene-add-modifier svg {
   width: 0.875rem;
   height: 0.875rem;
@@ -2351,6 +2362,11 @@ label.scene-button:hover {
     opacity: 0;
     transform: translateY(-4px);
   }
+}
+
+/* a short list of things to add, all shown rather than scrolled past the usual cap, which hid a shape's last modifiers */
+.scene-dropdown-list.scene-add-list {
+  max-height: var(--available-height, none);
 }
 
 .scene-dropdown-list [data-part='item'] {

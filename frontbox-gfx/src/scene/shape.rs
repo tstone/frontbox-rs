@@ -3,7 +3,7 @@ use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::scene::{
-  Bounds, Contour, Cut, Env, Inputs, Node, PreparedStroke, Prop, Reshape, Sample, ShapeAdjust,
+  Bounds, Contour, Cut, Env, Inputs, Node, PreparedAdjust, PreparedStroke, Prop, Reshape, Sample, ShapeAdjust,
   ShiftLine, TextAlign, TextOutline, TextOverflow, TextSource, Transform, VerticalAlign, Wrap,
   layout_text,
 };
@@ -159,13 +159,15 @@ impl Shape {
     };
     let wrap = self.wrap(bounds.center(), to_scene, env);
     let extent = edge.extent();
-    let strokes: Vec<PreparedStroke> = self
-      .adjust
-      .iter()
-      .map(|adjust| adjust.prepare(env))
-      .collect();
-    // each band can reach past the edge of the one before
-    let stroke_reach = strokes.iter().map(PreparedStroke::reach).sum();
+    let (mut strokes, mut feather) = (Vec::new(), 0.0);
+    for adjust in &self.adjust {
+      match adjust.prepare(env) {
+        PreparedAdjust::Stroke(stroke) => strokes.push(stroke),
+        PreparedAdjust::Feather(width) => feather += width,
+      }
+    }
+    // each band can reach past the edge of the one before, and a feather past the last
+    let stroke_reach = strokes.iter().map(PreparedStroke::reach).sum::<f32>() + feather / 2.0;
     let copies = self
       .placements(bounds.center(), env)
       .into_iter()
@@ -189,6 +191,7 @@ impl Shape {
       copies,
       strokes,
       colored,
+      feather,
     })
   }
 
@@ -691,6 +694,8 @@ pub(crate) struct PreparedShape {
   strokes: Vec<PreparedStroke>,
   /// How many of the strokes have a color
   colored: usize,
+  /// How wide the edge and the colored strokes' bands are softened, in scene units
+  feather: f32,
 }
 
 impl PreparedShape {
@@ -731,10 +736,10 @@ impl PreparedShape {
     let strokes: Vec<(f32, Rgba<u8>)> = bands
       .into_iter()
       .zip(colors)
-      .map(|(band, color)| (coverage(band, at.radius), color))
+      .map(|(band, color)| (coverage(band, at.radius, self.feather), color))
       .filter(|(amount, _)| *amount > 0.0)
       .collect();
-    let amount = coverage(distance, at.radius);
+    let amount = coverage(distance, at.radius, self.feather);
     (amount > 0.0 || !strokes.is_empty()).then_some(Cover {
       amount,
       local,
@@ -894,12 +899,19 @@ fn scene_distance(distance: f32, gradient: Vec2, to_local: &Affine2) -> f32 {
   }
 }
 
-/// Anti-aliased coverage: a linear ramp across the sample's radius, so a sample centered on the edge is half covered
-fn coverage(distance: f32, radius: f32) -> f32 {
-  if radius <= 0.0 {
+/// Anti-aliased coverage: a linear ramp across the sample's radius, so a sample centered on the edge is half covered.
+/// A `feather` widens the ramp by its width and eases both ends of it, as a blur does.
+fn coverage(distance: f32, radius: f32, feather: f32) -> f32 {
+  let across = 2.0 * radius + feather;
+  if across <= 0.0 {
     return if distance <= 0.0 { 1.0 } else { 0.0 };
   }
-  (0.5 - distance / (2.0 * radius)).clamp(0.0, 1.0)
+  let amount = (0.5 - distance / across).clamp(0.0, 1.0);
+  if feather > 0.0 {
+    amount * amount * (3.0 - 2.0 * amount)
+  } else {
+    amount
+  }
 }
 
 /// Approximate signed distance to an ellipse's edge, as a fraction of its radius, with its gradient. Accurate near the
@@ -1287,6 +1299,90 @@ mod tests {
         .is_animated()
     );
     assert!(!ring(4.0, 2.0).is_animated());
+  }
+
+  fn feathered(shape: Shape, width: f32) -> Shape {
+    shape.adjust(ShapeAdjust::Feather {
+      width: width.into(),
+    })
+  }
+
+  #[test]
+  fn a_feather_softens_the_edge_across_its_width() {
+    let soft = feathered(Shape::new(ShapeNode::circle(10.0)), 4.0);
+    assert_eq!(covered(&soft, 0.0, 0.0, 0.0), 1.0);
+    assert_eq!(covered(&soft, 8.0, 0.0, 0.0), 1.0);
+    assert!((covered(&soft, 10.0, 0.0, 0.0) - 0.5).abs() < 1e-5);
+    let (inner, outer) = (covered(&soft, 9.0, 0.0, 0.0), covered(&soft, 11.0, 0.0, 0.0));
+    assert!(inner > 0.5 && inner < 1.0, "{inner}");
+    assert!((inner + outer - 1.0).abs() < 1e-5, "{inner} and {outer}");
+    assert_eq!(covered(&soft, 12.0, 0.0, 0.0), 0.0);
+  }
+
+  #[test]
+  fn a_feather_eases_out_rather_than_stopping_short() {
+    let soft = feathered(Shape::new(ShapeNode::circle(10.0)), 4.0);
+    let near_end = covered(&soft, 11.8, 0.0, 0.0);
+    // linear would be 0.05; eased is far less
+    assert!(near_end > 0.0 && near_end < 0.01, "{near_end}");
+  }
+
+  #[test]
+  fn a_feather_is_in_scene_units_however_the_shape_is_scaled() {
+    let soft = feathered(
+      Shape::new(ShapeNode::circle(1.0)).transform(Transform::Scale(10.0.into())),
+      4.0,
+    );
+    assert!(covered(&soft, 11.9, 0.0, 0.0) > 0.0);
+    assert_eq!(covered(&soft, 12.1, 0.0, 0.0), 0.0);
+  }
+
+  #[test]
+  fn feathers_add_up() {
+    let twice = feathered(feathered(Shape::new(ShapeNode::circle(10.0)), 2.0), 2.0);
+    let once = feathered(Shape::new(ShapeNode::circle(10.0)), 4.0);
+    for x in [8.5, 9.5, 10.5, 11.5] {
+      assert_eq!(covered(&twice, x, 0.0, 0.1), covered(&once, x, 0.0, 0.1));
+    }
+  }
+
+  #[test]
+  fn a_feather_after_an_outside_stroke_softens_the_band_into_a_glow() {
+    let glow = feathered(ring(10.0, 2.0), 2.0);
+    assert!((covered(&glow, 12.0, 0.0, 0.0) - 0.5).abs() < 1e-5);
+    assert!(covered(&glow, 12.9, 0.0, 0.0) > 0.0);
+    assert_eq!(covered(&glow, 13.1, 0.0, 0.0), 0.0);
+  }
+
+  #[test]
+  fn a_feather_softens_colored_strokes() {
+    let variables = Variables::new();
+    let red = Rgba([255, 0, 0, 255]);
+    let shape = feathered(
+      Shape::new(ShapeNode::circle(4.0)).adjust(ShapeAdjust::Stroke {
+        width: 2.0.into(),
+        align: StrokeAlign::Outside,
+        color: Some(Color(red).into()),
+      }),
+      1.0,
+    )
+    .prepare(&env(0.0, &variables))
+    .unwrap();
+    let edge = shape.cover(&Sample::new(Vec2::new(6.0, 0.0), 0.0)).unwrap();
+    assert!((edge.strokes[0].0 - 0.5).abs() < 1e-5, "{:?}", edge.strokes);
+  }
+
+  #[test]
+  fn a_feather_can_be_animated() {
+    let grows = Prop::Keyframes(Keyframes {
+      keys: vec![Key::new(0.0, 1.0, Curve::Linear)],
+      cycle: Cycle::Once,
+    });
+    assert!(
+      Shape::new(ShapeNode::circle(1.0))
+        .adjust(ShapeAdjust::Feather { width: grows })
+        .is_animated()
+    );
   }
 
   fn diamond() -> Shape {

@@ -32,7 +32,7 @@
 
 - `Transform::Warp` on shapes: bend the outline by noise too, as fills already are. A shape's edges need cutting into short pieces first, or a rect barely bends.
 - Plug in custom shapes or graphics with their own settings (e.g. a kinematics/skeleton extension)
-- Outer glow/drop shadow on regions (Maybe a blur adjust instead?)
+- Outer glow/drop shadow: a layer that reuses another's shape (as Sweep should), so a glow can't drift from what it's around. Until then it's a copy of the shape with an outside Stroke and a Feather, plus a Translate for a shadow.
 - Rotate transform gets an adjustable center point (X/Y prop)
 - Line-based fills (polyline, spiral, logarithmic spiral, etc. snake patterns) 
 - Line based fill patterns usable for Sweep
@@ -61,13 +61,12 @@
 - Per-layer `blend` (additive, `Max`, `Multiply`).
 - Float color: sample in `f32` premultiplied, convert once at the device edge (where LED gamma and per-strip calibration go). Fixes dark fringes fading to transparent and precision loss in `ColorAdjust` chains.
 - Strokes on `Polyline`/`Bezier`: give their edge an unsigned distance to the line.
-- `ShapeAdjust::Feather(width)` for soft edges.
 - `Stop::at` as a `Prop<f32>`.
 - Per-point phase for `Modulated`: a prop source that reads the point's position or `Sequence` index.
 - One internal walker over every `Prop`, replacing the hand-written `is_animated`, `read_inputs`, `image_names`,  `font_names`, and `check` walks.
 - Gaps in `check`: `Visit`/`Fit` naming a missing traversal; `Modulated` naming a missing modulator; unsorted `Keyframes::keys`, `Random::picks`, gradient `stops` (sort on load); `Prop::Sweep` on a non-position type built in code.
 - Replace `DefaultHasher` in `scene/random.rs` with a fixed integer hash (stable across Rust releases, cheaper).
-- Images on hard-edged displays are point-sampled and alias when shrunk: give images their own footprint.
+- Images on hard-edged displays are point-sampled and alias when shrunk: give images their own footprint. A wider one is a blur, for an image's own soft edges, which a Feather can't reach.
 - Plane stitching for playback (or should this just be real 3d rendering?)
 
 ### Lighting

@@ -594,7 +594,10 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
       points.get().forEach((_, i) => use(item(points, i), `${label} · Point ${i + 1}`, pointRanges(surface)))
     }
     const strokes = orEmpty(field(lens, 'adjust'))
-    strokes.get().forEach((_, i) => strokeProps(item(strokes, i), surface).forEach((prop) => use(prop.lens, `${label} · Stroke · ${prop.label}`, prop.ranges)))
+    strokes.get().forEach((adjust, i) => {
+      if ('Feather' in adjust) return use(field(variant(item(strokes, i), 'Feather'), 'width'), `${label} · Feather`, both(featherRange(surface)))
+      strokeProps(item(strokes, i), surface).forEach((prop) => use(prop.lens, `${label} · Stroke · ${prop.label}`, prop.ranges))
+    })
   }
 
   const stops = (lens: Lens<Stop[]>, label: string) =>
@@ -1236,6 +1239,11 @@ export function strokeProps(adjust: Lens<ShapeAdjust>, surface: Surface): PropFi
   return [width, propField('color', 'Color', [255, 255, 255, 255], both(UNIT), field(stroke, 'color'))]
 }
 
+/** A feather a fifth the size of a new shape */
+export function newFeather(surface: Surface): ShapeAdjust {
+  return { Feather: { width: { Fixed: featherRange(surface).rest! } } }
+}
+
 /** A stroke a tenth the size of a new shape, along its edge, that takes the layer's fill */
 export function newStroke(surface: Surface): ShapeAdjust {
   return { Stroke: { width: { Fixed: strokeRange(surface).rest! } } }
@@ -1370,6 +1378,12 @@ export function cornerRange(surface: Surface): Range {
 export function strokeRange(surface: Surface): Range {
   const range = roundRange(surface)
   return { ...range, rest: Math.max(Math.round(newShapeSize(surface) / 10 / range.step), 1) * range.step }
+}
+
+/** How wide a feather softens a shape's edge, as far as `roundRange` goes */
+export function featherRange(surface: Surface): Range {
+  const range = roundRange(surface)
+  return { ...range, rest: Math.max(Math.round(newShapeSize(surface) / 5 / range.step), 1) * range.step }
 }
 
 /** A polygon's points, in the shape's own space around its center */
