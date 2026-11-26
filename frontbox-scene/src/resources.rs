@@ -6,7 +6,8 @@ use std::sync::Arc;
 use frontbox_core::prelude::*;
 use frontbox_gfx::scene::{
   Analysis, Assets, EnvelopeContent, FONT_EXTENSIONS, Font, GeneratorError, IMAGE_EXTENSIONS,
-  Layer, LayerGeneratorError, LoadedGenerator, Picture, SOUND_EXTENSIONS, ShapeGenerator, file,
+  ImageGenerator, Layer, LayerGeneratorError, LoadedGenerator, LoadedImageGenerator, Picture,
+  SOUND_EXTENSIONS, ShapeGenerator, file,
 };
 
 /// Scenes, as each one's source: its `.scene` file's text, not parsed, so a broken file can still be read and fixed.
@@ -108,7 +109,39 @@ impl Resource for ShapeGenerators {
   const NAME: &'static str = "shape generator";
 }
 
-/// The images, fonts, and shape generators `layers` draw, from `resources`. Each layer comes with its index among the
+/// Image generators, each by the name a scene's `External` fill gives it. They're the app's code, so they're only ever
+/// added:
+///
+/// ```rust
+/// # use std::sync::Arc;
+/// # use frontbox_core::prelude::*;
+/// # use frontbox_gfx::prelude::*;
+/// # use frontbox_gfx::scene::*;
+/// # use frontbox_scene::*;
+/// #[derive(Debug)]
+/// struct Static;
+///
+/// impl ImageGenerator for Static {
+///   fn settings(&self) -> &[GeneratorSetting] {
+///     &[]
+///   }
+///
+///   fn generate(&self, _frame: &GeneratorFrame) -> RgbaImage {
+///     RgbaImage::new(128, 32)
+///   }
+/// }
+///
+/// # let mut app = App::new(BootConfig { config_path: None, ..Default::default() });
+/// app.resources().add::<ImageGenerators>("static", Arc::new(Static));
+/// ```
+pub struct ImageGenerators;
+
+impl Resource for ImageGenerators {
+  type Item = Arc<dyn ImageGenerator>;
+  const NAME: &'static str = "image generator";
+}
+
+/// The images, fonts, and shape and image generators `layers` draw, from `resources`. Each layer comes with its index among the
 /// scene's layers, to name it by in errors. A missing one is an error here, rather than a layer silently drawing
 /// nothing, as is a setting its generator doesn't have.
 pub(crate) fn assets_for<'a>(
@@ -137,6 +170,17 @@ pub(crate) fn assets_for<'a>(
         .map_err(|error| failed(error.into()))?;
       if let Some(loaded) = LoadedGenerator::for_shape(generator, &shape.base) {
         assets.insert_shape_generator(name, loaded.map_err(|error| failed(error.into()))?);
+      }
+    }
+    for fill in layer.fills() {
+      let Some(name) = fill.base.generator_name() else {
+        continue;
+      };
+      let generator = resources
+        .get::<ImageGenerators>(name)
+        .map_err(|error| failed(error.into()))?;
+      if let Some(loaded) = LoadedImageGenerator::for_fill(generator, &fill.base) {
+        assets.insert_image_generator(name, loaded.map_err(|error| failed(error.into()))?);
       }
     }
   }
@@ -173,7 +217,7 @@ impl Resource for RmsEnvelopes {
 pub enum AssetError {
   /// It couldn't be had from the app's resources
   Resources(ResourceError),
-  /// Its shape generator can't be used as the scene does
+  /// Its shape or image generator can't be used as the scene does
   Generator(GeneratorError),
 }
 
@@ -414,6 +458,63 @@ mod tests {
         .unwrap_err()
         .to_string(),
       "layer 1: shape generator \"square\" has no setting \"curl\""
+    );
+  }
+
+  /// One clear pixel
+  #[derive(Debug)]
+  struct Pixel;
+
+  impl ImageGenerator for Pixel {
+    fn settings(&self) -> &[GeneratorSetting] {
+      const SETTINGS: &[GeneratorSetting] = &[GeneratorSetting::new("glow", 0.0)];
+      SETTINGS
+    }
+
+    fn generate(&self, _: &GeneratorFrame) -> frontbox_gfx::prelude::RgbaImage {
+      frontbox_gfx::prelude::RgbaImage::new(1, 1)
+    }
+  }
+
+  #[test]
+  fn a_layer_gets_the_image_generators_its_fills_name_and_only_the_settings_they_have() {
+    let mut resources = Resources::without_folder();
+    resources.add::<ImageGenerators>("pixel", Arc::new(Pixel));
+    let external = |generator: &str, setting: &str| {
+      Fill::new(FillNode::External {
+        generator: generator.into(),
+        settings: BTreeMap::from([(setting.to_owned(), 1.0.into())]),
+        size: Default::default(),
+      })
+    };
+
+    let assets = load(&resources, &Layer::new(external("pixel", "glow"))).unwrap();
+    assert!(assets.image_generator("pixel").is_some());
+    // a stroke's fill is one of the layer's too
+    let stroked = drawing("").region(Shape::new(ShapeNode::circle(1.0)).adjust(
+      frontbox_gfx::scene::ShapeAdjust::Stroke {
+        width: 1.0.into(),
+        align: Default::default(),
+        fill: external("pixel", "glow"),
+      },
+    ));
+    assert!(
+      load(&resources, &stroked)
+        .unwrap()
+        .image_generator("pixel")
+        .is_some()
+    );
+    assert_eq!(
+      load(&resources, &Layer::new(external("steward", "glow")))
+        .unwrap_err()
+        .to_string(),
+      "layer 1: the app has no image generator \"steward\""
+    );
+    assert_eq!(
+      load(&resources, &Layer::new(external("pixel", "blink")))
+        .unwrap_err()
+        .to_string(),
+      "layer 1: image generator \"pixel\" has no setting \"blink\""
     );
   }
 

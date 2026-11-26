@@ -77,4 +77,4 @@ name: string, rows: number, columns: number,
  * Which sprite, counting across each row from the top left, 0 if not set. Truncated to a whole number like an
  * `Image`'s frame, and clamped to the last sprite.
  */
-sprite?: Prop<number>, size?: ImageSize, } };
+sprite?: Prop<number>, size?: ImageSize, } } | { "External": { generator: string, settings?: { [key in string]: Prop<number> }, size?: ImageSize, } };

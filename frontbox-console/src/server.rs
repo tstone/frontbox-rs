@@ -6,7 +6,8 @@ use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::get;
 use frontbox_core::prelude::{Resource, ResourceError, Resources};
-use frontbox_scene::{Fonts, Images, Scenes, ShapeGenerators, Sounds};
+use frontbox_gfx::scene::GeneratorSetting;
+use frontbox_scene::{Fonts, ImageGenerators, Images, Scenes, ShapeGenerators, Sounds};
 use rust_embed::RustEmbed;
 use std::collections::HashSet;
 use std::net::SocketAddr;
@@ -14,8 +15,8 @@ use tokio::sync::broadcast::error::RecvError;
 
 use crate::console_hub::{ConsoleHub, Subscription};
 use crate::protocol::{
-  ClientMessage, FontInfo, GeneratorHandleInfo, GeneratorSettingInfo, ImageInfo, SceneSource,
-  ShapeGeneratorInfo,
+  ClientMessage, FontInfo, GeneratorHandleInfo, GeneratorSettingInfo, ImageGeneratorInfo,
+  ImageInfo, SceneSource, ShapeGeneratorInfo,
 };
 use crate::scene_render::scene_file;
 
@@ -44,6 +45,7 @@ pub(crate) async fn serve(hub: ConsoleHub, addr: SocketAddr) {
     .route("/content/sounds", get(content_sounds))
     .route("/content/fonts", get(content_fonts))
     .route("/content/shape-generators", get(content_shape_generators))
+    .route("/content/image-generators", get(content_image_generators))
     .route("/content/sounds/{*name}", get(content_sound))
     .route("/content/scenes", get(content_scenes))
     .route(
@@ -357,15 +359,7 @@ async fn content_shape_generators(State(hub): State<ConsoleHub>) -> Response {
       name: name.into(),
       has_path: generator.has_path(),
       is_animated: generator.is_animated(),
-      settings: generator
-        .settings()
-        .iter()
-        .map(|setting| GeneratorSettingInfo {
-          name: setting.name.into(),
-          default: setting.default,
-          range: setting.range,
-        })
-        .collect(),
+      settings: setting_infos(generator.settings()),
       handles: generator
         .handles()
         .iter()
@@ -378,6 +372,32 @@ async fn content_shape_generators(State(hub): State<ConsoleHub>) -> Response {
     })
     .collect();
   Json(generators).into_response()
+}
+
+/// The image generators the app has added, by name. They're the app's code, so there are none in the content folder.
+async fn content_image_generators(State(hub): State<ConsoleHub>) -> Response {
+  let resources = hub.resources();
+  let generators: Vec<ImageGeneratorInfo> = resources
+    .added::<ImageGenerators>()
+    .map(|(name, generator)| ImageGeneratorInfo {
+      name: name.into(),
+      is_animated: generator.is_animated(),
+      settings: setting_infos(generator.settings()),
+    })
+    .collect();
+  Json(generators).into_response()
+}
+
+/// A generator's settings, as an editor is told of them
+fn setting_infos(settings: &[GeneratorSetting]) -> Vec<GeneratorSettingInfo> {
+  settings
+    .iter()
+    .map(|setting| GeneratorSettingInfo {
+      name: setting.name.into(),
+      default: setting.default,
+      range: setting.range,
+    })
+    .collect()
 }
 
 /// The name of every scene in the content folder. An app without one has none.

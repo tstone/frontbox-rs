@@ -1,9 +1,12 @@
 use std::fmt;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use glam::Vec2;
 
-use crate::scene::ShapeNode;
+use crate::scene::generator::{Kept, Moment, unknown_setting};
+use crate::scene::{
+  GeneratorError, GeneratorFrame, GeneratorHandle, GeneratorKind, GeneratorSetting, ShapeNode,
+};
 
 /// Outlines made by code outside gfx, for [`ShapeNode::External`](crate::scene::ShapeNode::External)
 ///
@@ -36,78 +39,6 @@ pub trait ShapeGenerator: Send + Sync + fmt::Debug {
 
   /// The outline at `frame`, in local space, before transforms
   fn generate(&self, frame: &GeneratorFrame) -> Generated;
-}
-
-/// One setting of a [`ShapeGenerator`], which a scene sets as a `Prop<f32>`
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct GeneratorSetting {
-  pub name: &'static str,
-  /// What it is when a scene leaves it out
-  pub default: f32,
-  /// The lowest and highest it can be. A scene's value outside it is clamped.
-  pub range: Option<(f32, f32)>,
-}
-
-impl GeneratorSetting {
-  pub const fn new(name: &'static str, default: f32) -> Self {
-    Self {
-      name,
-      default,
-      range: None,
-    }
-  }
-
-  pub const fn range(mut self, min: f32, max: f32) -> Self {
-    self.range = Some((min, max));
-    self
-  }
-
-  fn clamped(&self, value: f32) -> f32 {
-    match self.range {
-      Some((min, max)) => value.clamp(min, max),
-      None => value,
-    }
-  }
-}
-
-/// A point in a [`ShapeGenerator`]'s local space that two of its settings make, such as where it reaches to, which an
-/// editor shows a handle on: dragging it sets both
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct GeneratorHandle {
-  /// What an editor calls it
-  pub name: &'static str,
-  /// The name of the setting that's the point's x
-  pub x: &'static str,
-  /// The name of the setting that's the point's y
-  pub y: &'static str,
-}
-
-impl GeneratorHandle {
-  pub const fn new(name: &'static str, x: &'static str, y: &'static str) -> Self {
-    Self { name, x, y }
-  }
-}
-
-/// The moment a [`ShapeGenerator`] makes its outline for, and its settings there
-#[derive(Debug, Clone, Copy)]
-pub struct GeneratorFrame<'a> {
-  /// Seconds into the current scene cycle. 0 for a generator that isn't animated.
-  pub time: f32,
-  /// Index of the current scene cycle, from 0. 0 for a generator that isn't animated.
-  pub cycle: u32,
-  /// Changes each time a scene restarts, for a generator that picks at random
-  pub seed: u32,
-  specs: &'a [GeneratorSetting],
-  values: &'a [f32],
-}
-
-impl GeneratorFrame<'_> {
-  /// The setting named `name`, within its range. 0 for a name the generator doesn't list.
-  pub fn setting(&self, name: &str) -> f32 {
-    let at = self.specs.iter().position(|spec| spec.name == name);
-    debug_assert!(at.is_some(), "no generator setting \"{name}\"");
-    at.map_or(0.0, |at| self.values[at])
-  }
 }
 
 /// What a [`ShapeGenerator`] makes: areas or lines, covered as one, and maybe a path to follow
@@ -177,17 +108,14 @@ pub struct GeneratedPath {
 #[derive(Debug, Clone)]
 pub struct LoadedGenerator {
   generator: Arc<dyn ShapeGenerator>,
-  kept: Arc<Mutex<Vec<Kept>>>,
+  kept: Kept<Generated>,
 }
 
 impl LoadedGenerator {
-  /// Outputs kept: enough for the layers of a scene sharing one generator with different settings
-  const KEPT: usize = 16;
-
   pub fn new(generator: Arc<dyn ShapeGenerator>) -> Self {
     Self {
       generator,
-      kept: Arc::default(),
+      kept: Kept::default(),
     }
   }
 
@@ -198,12 +126,10 @@ impl LoadedGenerator {
     shape: &ShapeNode,
   ) -> Option<Result<Self, GeneratorError>> {
     let name = shape.generator_name()?;
-    let specs = generator.settings();
-    let unknown = shape
-      .generator_settings()
-      .find(|setting| !specs.iter().any(|spec| spec.name == *setting));
+    let unknown = unknown_setting(generator.settings(), shape.generator_settings());
     Some(match unknown {
       Some(setting) => Err(GeneratorError::NoSuchSetting {
+        kind: GeneratorKind::Shape,
         generator: name.into(),
         setting: setting.into(),
       }),
@@ -243,99 +169,18 @@ impl LoadedGenerator {
     seed: u32,
     setting: impl Fn(&str) -> Option<f32>,
   ) -> Arc<Generated> {
-    let specs = self.generator.settings();
-    let values: Vec<f32> = specs
-      .iter()
-      .map(|spec| spec.clamped(setting(spec.name).unwrap_or(spec.default)))
-      .collect();
-    let (time, cycle) = if self.generator.is_animated() {
-      (time, cycle)
-    } else {
-      (0.0, 0)
-    };
-    let key = GeneratedKey {
-      time: time.to_bits(),
-      cycle,
-      seed,
-      values: values.iter().map(|value| value.to_bits()).collect(),
-    };
-    if let Some((_, generated)) = self
-      .kept
-      .lock()
-      .unwrap()
-      .iter()
-      .find(|(kept, _)| *kept == key)
-    {
-      return generated.clone();
-    }
-    let generated = Arc::new(self.generator.generate(&GeneratorFrame {
+    let moment = Moment {
       time,
       cycle,
       seed,
-      specs,
-      values: &values,
-    }));
-    let mut kept = self.kept.lock().unwrap();
-    if kept.len() >= Self::KEPT {
-      kept.remove(0);
-    }
-    kept.push((key, generated.clone()));
-    generated
+      animated: self.generator.is_animated(),
+    };
+    self
+      .kept
+      .output(self.generator.settings(), moment, setting, |frame| {
+        self.generator.generate(frame)
+      })
   }
-}
-
-/// Why a scene can't use a [`ShapeGenerator`] as it does
-#[derive(Debug, Clone, PartialEq)]
-pub enum GeneratorError {
-  /// A scene sets a setting its shape generator doesn't have
-  NoSuchSetting { generator: String, setting: String },
-  /// A sweep follows the region of the layer named `path`, made by a shape generator with no path to follow
-  NoPath { path: String, generator: String },
-}
-
-impl fmt::Display for GeneratorError {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    match self {
-      Self::NoSuchSetting { generator, setting } => write!(
-        f,
-        "shape generator \"{generator}\" has no setting \"{setting}\""
-      ),
-      Self::NoPath { path, generator } => write!(
-        f,
-        "layer \"{path}\" is made by shape generator \"{generator}\", which has no path to follow"
-      ),
-    }
-  }
-}
-
-impl std::error::Error for GeneratorError {}
-
-/// A layer uses a [`ShapeGenerator`] in a way it can't be
-#[derive(Debug, Clone, PartialEq)]
-pub struct LayerGeneratorError {
-  pub layer: String,
-  pub error: GeneratorError,
-}
-
-impl fmt::Display for LayerGeneratorError {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(f, "{}: {}", self.layer, self.error)
-  }
-}
-
-impl std::error::Error for LayerGeneratorError {}
-
-/// An output a [`LoadedGenerator`] keeps, by what it was made for
-type Kept = (GeneratedKey, Arc<Generated>);
-
-/// What a [`LoadedGenerator`]'s output is kept by: the moment and resolved settings it was made for, as bits so they
-/// compare exactly
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct GeneratedKey {
-  time: u32,
-  cycle: u32,
-  seed: u32,
-  values: Vec<u32>,
 }
 
 #[cfg(test)]
@@ -409,8 +254,9 @@ mod tests {
     use super::*;
     use crate::scene::value::tests::env;
     use crate::scene::{
-      Assets, Color, Env, Fill, FillNode, Inputs, Layer, Prop, Regions, Sample, Shape, ShapeAdjust,
-      ShapeNode, StrokeAlign, Sweep, Transform, Variables, check_generated_paths, file,
+      Assets, Color, Env, Fill, FillNode, GeneratorError, Inputs, Layer, Prop, Regions, Sample,
+      Shape, ShapeAdjust, ShapeNode, StrokeAlign, Sweep, Transform, Variables,
+      check_generated_paths, file,
     };
 
     /// Unit squares in a row, `spacing` apart, centered on y = 0 from x = 0, with a path through their middles
@@ -649,7 +495,7 @@ mod tests {
       );
       assert!(matches!(
         loaded(external("squares", &[("size", 1.0.into())])),
-        Some(Err(GeneratorError::NoSuchSetting { generator, setting })) if generator == "squares" && setting == "size"
+        Some(Err(GeneratorError::NoSuchSetting { generator, setting, .. })) if generator == "squares" && setting == "size"
       ));
       assert!(loaded(Shape::new(ShapeNode::circle(1.0))).is_none());
     }

@@ -8,8 +8,9 @@
 //!
 //! - [`Scene`], [`SceneLayer`] -- The definition, as written to a file
 //! - [`Behind`] -- Part of a layer drawn behind another layer or at a lower z, and [`Scene::draw_order`], which whatever draws layers goes by
-//! - [`Scenes`], [`Images`], [`Fonts`], [`Sounds`], [`ShapeGenerators`] -- What scenes are made from, each a
-//!   [`Resource`](frontbox_core::prelude::Resource) of the app: files in its content folder, and what code adds
+//! - [`Scenes`], [`Images`], [`Fonts`], [`Sounds`], [`ShapeGenerators`], [`ImageGenerators`] -- What scenes are made
+//!   from, each a [`Resource`](frontbox_core::prelude::Resource) of the app: files in its content folder, and what code
+//!   adds
 //! - [`PlayableScene`] -- A scene with values from the game bound to it: its variables, and how long it takes
 //! - [`SceneSystem`] -- Plays scenes. Systems that draw a kind of layer, like `LightManager`, read each [`Playback`] from
 //!   it each frame.
@@ -74,8 +75,8 @@ pub mod prelude {
   pub use frontbox_gfx::scene::{EndBehavior, Timing, Value, VariableType};
 
   pub use crate::{
-    Behind, Completes, DisplayLayer, Fonts, Images, LightLayer, LightSurface, PlayableScene,
-    PlaybackId, Scene, SceneLayer, ScenePlaybackCompleted, ScenePlayer, SceneSystem,
+    Behind, Completes, DisplayLayer, Fonts, ImageGenerators, Images, LightLayer, LightSurface,
+    PlayableScene, PlaybackId, Scene, SceneLayer, ScenePlaybackCompleted, ScenePlayer, SceneSystem,
     SceneSystemExt, Scenes, Sends, SentVariable, ShapeGenerators, SoundLayer, Sounds,
   };
 }

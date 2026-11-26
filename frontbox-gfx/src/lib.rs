@@ -18,5 +18,5 @@ pub mod prelude {
   pub use crate::color::*;
 
   // re-exports
-  pub use image::Rgba;
+  pub use image::{Rgba, RgbaImage};
 }

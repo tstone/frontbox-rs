@@ -10,6 +10,7 @@ import { NAMED_VALUE_LABELS, namedValueKind, ValueFields } from './ValueFields'
 import { VariableFields, VariableSource } from './VariableFields'
 import { contentImageInfo } from '../../state/contentImages'
 import { contentFonts, fontLabel, refreshContentFonts } from '../../state/contentFonts'
+import { imageGenerator, imageGenerators, refreshImageGenerators } from '../../state/imageGenerators'
 import { refreshShapeGenerators, shapeGenerator, shapeGenerators } from '../../state/shapeGenerators'
 import { contentSoundLength, contentSounds, refreshContentSounds } from '../../state/contentSounds'
 
@@ -148,12 +149,13 @@ import {
   layersUnder,
 } from './sceneModel'
 
-type FillKind = 'None' | 'Solid' | GradientStyle | 'Noise' | 'Cells' | 'Image' | 'Spritesheet'
+type FillKind = 'None' | 'Solid' | GradientStyle | 'Noise' | 'Cells' | 'Image' | 'Spritesheet' | 'External'
 type NoiseFill = Extract<FillNode, { Noise: unknown }>['Noise']
 type CellsFill = Extract<FillNode, { Cells: unknown }>['Cells']
 type WarpTransform = Extract<Transform, { Warp: unknown }>
 type ImageFill = Extract<FillNode, { Image: unknown }>['Image']
 type SpritesheetFill = Extract<FillNode, { Spritesheet: unknown }>['Spritesheet']
+type ExternalFill = Extract<FillNode, { External: unknown }>['External']
 export type ShapeKind = 'None' | 'Circle' | 'Ellipse' | 'Rect' | 'Diamond' | 'Star' | 'Chevron' | 'Text' | 'Polygon' | 'Polyline' | 'Bezier' | 'Spiral' | 'Wave' | 'External'
 /** A shape set up from the others, which is a shape of their kind once it's picked */
 export type TemplateKind = 'Pinwheel' | 'Propeller' | 'Triangle' | 'Zigzag' | 'Serpentine'
@@ -184,6 +186,8 @@ const FILL_OPTIONS: { value: FillKind; label: string }[] = [
   { value: 'Image', label: 'Image' },
   { value: 'Spritesheet', label: 'Sprite sheet' },
 ]
+/** An image made by one of the app's image generators, which is only offered when the app has any */
+const GENERATED_FILL = { value: 'External', label: 'Generator' } as const
 type ShapeOption = { value: RegionKind | TemplateKind; label: string; group?: string }
 const SHAPES: ShapeOption[] = ([
   { value: 'Chevron', label: 'Chevron' },
@@ -342,7 +346,7 @@ const SHAPE_ICONS: Record<RegionKind, Icon> = {
   External: icons.Code,
   Graph: icons.Network,
 }
-const FILL_ICONS: Record<FillKind, Icon> = { None: icons.Ban, Solid: icons.PaintBucket, Linear: icons.Blend, Radial: icons.Blend, Conical: icons.Blend, Noise: icons.Cloud, Cells: icons.Hexagon, Image: icons.ImageIcon, Spritesheet: icons.ImageIcon }
+const FILL_ICONS: Record<FillKind, Icon> = { None: icons.Ban, Solid: icons.PaintBucket, Linear: icons.Blend, Radial: icons.Blend, Conical: icons.Blend, Noise: icons.Cloud, Cells: icons.Hexagon, Image: icons.ImageIcon, Spritesheet: icons.ImageIcon, External: icons.Code }
 /** A transform's or an adjust's icon says which kind it is, in place of where its value comes from */
 const MODIFIER_ICONS: Record<TransformKind | AdjustKind | 'Feather' | 'Shadow', Icon> = {
   Translate: icons.Move,
@@ -422,6 +426,7 @@ export default function PropertiesPanel() {
   onMount(refreshContentSounds)
   onMount(refreshContentFonts)
   onMount(refreshShapeGenerators)
+  onMount(refreshImageGenerators)
   const [tab, setTab] = createSignal<SidebarSection>('properties')
   createEffect(
     on(
@@ -1655,8 +1660,12 @@ const fillKind = (lens: Lens<Fill>): FillKind => {
   if ('Gradient' in current) return current.Gradient.style
   if ('Noise' in current) return 'Noise'
   if ('Cells' in current) return 'Cells'
+  if ('External' in current) return 'External'
   return 'Image' in current ? 'Image' : 'Spritesheet'
 }
+
+/** How big an image, a sprite, or a generator's image is drawn, which carries over when switching between them */
+const imageSizeOf = (node: FillNode) => ('Image' in node ? node.Image.size : 'Spritesheet' in node ? node.Spritesheet.size : 'External' in node ? node.External.size : undefined)
 
 /** A gradient's, a noise's, or cells' stops, which carry over when switching between them */
 const stopsOf = (node: FillNode) => ('Gradient' in node ? node.Gradient.stops : 'Noise' in node ? node.Noise.stops : 'Cells' in node ? node.Cells.stops : undefined)
@@ -1679,10 +1688,12 @@ function FillKindPicker(props: { node: Extract<ConfigNode, { kind: 'fill' }> }) 
         base().set({ Solid: color ?? { Fixed: WHITE } })
       } else if (next === 'Image') {
         const sheet = 'Spritesheet' in current ? current.Spritesheet : undefined
-        base().set({ Image: { name: sheet?.name ?? '', size: sheet?.size } })
+        base().set({ Image: { name: sheet?.name ?? '', size: imageSizeOf(current) } })
       } else if (next === 'Spritesheet') {
         const image = 'Image' in current ? current.Image : undefined
-        base().set({ Spritesheet: { name: image?.name ?? '', rows: 1, columns: 1, size: image?.size } })
+        base().set({ Spritesheet: { name: image?.name ?? '', rows: 1, columns: 1, size: imageSizeOf(current) } })
+      } else if (next === 'External') {
+        base().set({ External: { generator: imageGenerators()[0]?.name ?? '', size: imageSizeOf(current) } })
       } else if (next === 'Noise') {
         // dark to the color, so a solid turned into noise keeps its color on the bright parts
         const stops = stopsOf(current) ?? [
@@ -1710,9 +1721,12 @@ function FillKindPicker(props: { node: Extract<ConfigNode, { kind: 'fill' }> }) 
     })
   }
 
+  // one that's already a generator's stays so, even if the app has none
+  const options = () => (imageGenerators().length > 0 || kind() === 'External' ? [...FILL_OPTIONS, GENERATED_FILL] : FILL_OPTIONS)
+
   return (
     <Controls>
-      <Dropdown label="Fill" options={FILL_OPTIONS} value={kind()} onChange={setKind} />
+      <Dropdown label="Fill" options={options()} value={kind()} onChange={setKind} />
     </Controls>
   )
 }
@@ -1734,7 +1748,32 @@ function FillFields(props: { lens: Lens<Fill> }) {
       <Match when={'Spritesheet' in base.get()}>
         <SpritesheetEditor lens={variant(base, 'Spritesheet')} />
       </Match>
+      <Match when={'External' in base.get()}>
+        <ImageGeneratorEditor lens={variant(base, 'External')} />
+      </Match>
     </Switch>
+  )
+}
+
+/** Which of the app's image generators makes a fill's image, and how big it's drawn. Its settings are the values under it. */
+function ImageGeneratorEditor(props: { lens: Lens<ExternalFill> }) {
+  const name = () => props.lens.get()?.generator ?? ''
+  // one the app doesn't have stays chosen, so it can be seen and changed
+  const options = () => [...new Set([...imageGenerators().map((generator) => generator.name), name()])].filter((each) => each !== '').map((each) => ({ value: each, label: each }))
+  // another generator has other settings
+  const change = (generator: string) => props.lens.set({ generator, size: props.lens.get().size })
+  return (
+    <>
+      <FieldRow label="Generator">
+        <Show when={options().length > 0} fallback={<span class="scene-note">The app has no image generators</span>}>
+          <Dropdown label="Generator" options={options()} value={name()} onChange={change} />
+        </Show>
+      </FieldRow>
+      <ImageSizeField lens={field(props.lens, 'size')} />
+      <Show when={name() !== '' && imageGenerators().length > 0 && !imageGenerator(name())}>
+        <p class="scene-note scene-note-warn">The app has no image generator by this name, so this scene can't be drawn.</p>
+      </Show>
+    </>
   )
 }
 

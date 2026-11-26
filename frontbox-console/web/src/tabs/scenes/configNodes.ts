@@ -30,6 +30,7 @@ import {
   field,
   frameRanges,
   GROWTH_DENSITY,
+  imageGeneratorProps,
   isOpen,
   item,
   layerLabel,
@@ -481,8 +482,8 @@ function modifierNodes(id: string, transforms: Lens<Transform[]>, space: Transfo
 }
 
 /**
- * A solid's color, a gradient's stops, a noise's scale, evolution, and stops, cells' scale, jitter, evolution, and stops, an animated image's frame, or a sprite
- * sheet's sprite, then its transforms and adjusts
+ * A solid's color, a gradient's stops, a noise's scale, evolution, and stops, cells' scale, jitter, evolution, and stops, an animated image's frame, a sprite
+ * sheet's sprite, or an image generator's settings, then its transforms and adjusts
  */
 function fillNode(id: string, lens: Lens<Fill>, surface: Surface): ConfigNode {
   const base = field(lens, 'base')
@@ -523,13 +524,18 @@ function fillNode(id: string, lens: Lens<Fill>, surface: Surface): ConfigNode {
     const spriteLens = orElse(field(variant(base, 'Spritesheet'), 'sprite'), { Fixed: 0 })
     own.push(propNode(`${id}/sprite`, 'Sprite', { lens: spriteLens as Lens<Prop<SceneValue>>, variableName: 'sprite', fallback: 0, ranges: frameRanges(rows * columns) }, surface))
   }
+  own.push(
+    ...imageGeneratorProps(base, surface).map(({ key, label, fallback, lens: propLens, ranges }) =>
+      propNode(`${id}/${key}`, label, { lens: propLens, variableName: key, fallback, ranges }, surface),
+    ),
+  )
   return branch({
     id,
     label: 'Fill',
     kind: 'fill',
     lens,
     value: lens.get(),
-    fields: 'Image' in current || 'Spritesheet' in current || 'Noise' in current || 'Cells' in current,
+    fields: 'Image' in current || 'Spritesheet' in current || 'Noise' in current || 'Cells' in current || 'External' in current,
     children: [...own, ...modifierNodes(id, orEmpty(field(lens, 'transform')), 'fill', surface, orEmpty(field(lens, 'adjust')))],
   })
 }

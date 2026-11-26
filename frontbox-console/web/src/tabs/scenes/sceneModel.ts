@@ -1,4 +1,5 @@
 import { fontPixelSize } from '../../state/contentFonts'
+import { imageGenerator } from '../../state/imageGenerators'
 import { shapeGenerator } from '../../state/shapeGenerators'
 import type { GeneratorSettingInfo } from '../../types/generated/GeneratorSettingInfo'
 import { contentImageInfo } from '../../state/contentImages'
@@ -6,6 +7,7 @@ import type { Behind } from '../../types/generated/Behind'
 import type { Color } from '../../types/generated/Color'
 import type { ColorAdjust } from '../../types/generated/ColorAdjust'
 import type { Curve } from '../../types/generated/Curve'
+import type { FillNode } from '../../types/generated/FillNode'
 import type { ImageInfo } from '../../types/generated/ImageInfo'
 import type { Key } from '../../types/generated/Key'
 import type { Layer } from '../../types/generated/Layer'
@@ -741,6 +743,8 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
     } else if ('Spritesheet' in current && current.Spritesheet.sprite) {
       const { rows, columns } = current.Spritesheet
       use(field(variant(base, 'Spritesheet'), 'sprite'), `${label} · Sprite`, frameRanges(rows * columns))
+    } else if ('External' in current) {
+      imageGeneratorProps(base, surface).forEach((prop) => use(prop.lens, `${label} · ${prop.label}`, prop.ranges))
     }
     const adjust = orEmpty(field(lens, 'adjust'))
     adjust.get().forEach((current, i) => {
@@ -1523,9 +1527,19 @@ export function shapeProps(base: Lens<ShapeNode>, surface: Surface): PropField[]
   return []
 }
 
-/** One of the settings of an external shape's generator, which is at its default while the scene leaves it out */
-export function generatorSetting(base: Lens<ShapeNode>, setting: GeneratorSettingInfo): Lens<Prop<number>> {
-  const settings = field(variant(base, 'External'), 'settings')
+/** One for each setting an external fill's image generator has, whether or not the scene sets it. None for any other fill, or a generator the app doesn't have. */
+export function imageGeneratorProps(base: Lens<FillNode>, surface: Surface): PropField[] {
+  const current = base.get()
+  if (!('External' in current)) return []
+  return (imageGenerator(current.External.generator)?.settings ?? []).map((setting) =>
+    propField(setting.name, settingLabel(setting.name), setting.default, both(settingRange(setting, surface)), generatorSetting(base, setting)),
+  )
+}
+
+/** One of the settings of an external shape's or fill's generator, which is at its default while the scene leaves it out */
+export function generatorSetting(base: Lens<ShapeNode> | Lens<FillNode>, setting: GeneratorSettingInfo): Lens<Prop<number>> {
+  // both name their generator and set its settings the same way
+  const settings = field(variant(base as Lens<ShapeNode>, 'External'), 'settings')
   const rest: Prop<number> = { Fixed: setting.default }
   return {
     get: () => settings.get()?.[setting.name] ?? rest,

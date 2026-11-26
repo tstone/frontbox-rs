@@ -1,5 +1,6 @@
 use frontbox_console::protocol::{
-  ClientMessage, FontInfo, ImageInfo, RenderedClip, ServerMessage, ShapeGeneratorInfo,
+  ClientMessage, FontInfo, ImageGeneratorInfo, ImageInfo, RenderedClip, ServerMessage,
+  ShapeGeneratorInfo,
 };
 use frontbox_core::prelude::Hardware;
 use frontbox_core::prelude::app_tracer::TraceEvent;
@@ -19,6 +20,7 @@ fn main() {
   ImageInfo::export_all(&cfg).unwrap();
   FontInfo::export_all(&cfg).unwrap();
   ShapeGeneratorInfo::export_all(&cfg).unwrap();
+  ImageGeneratorInfo::export_all(&cfg).unwrap();
   export_named_colors(&out);
 }
 

@@ -129,12 +129,15 @@ impl Layer {
       .for_each(|graph| graph.read_inputs(inputs));
   }
 
+  /// Every fill the layer draws with: its own, then each of its region's strokes'
+  pub fn fills(&self) -> impl Iterator<Item = &Fill> {
+    let strokes = self.region.iter().flat_map(Shape::stroke_fills);
+    std::iter::once(&self.fill).chain(strokes)
+  }
+
   /// Names of the images the layer uses
   pub fn image_names(&self) -> impl Iterator<Item = &str> {
-    let strokes = self.region.iter().flat_map(Shape::stroke_fills);
-    std::iter::once(&self.fill)
-      .chain(strokes)
-      .filter_map(|fill| fill.base.image_name())
+    self.fills().filter_map(|fill| fill.base.image_name())
   }
 
   /// Names of the fonts the layer's region uses

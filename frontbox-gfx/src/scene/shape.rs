@@ -2313,7 +2313,13 @@ mod tests {
     };
     let shape = chevron(0.5);
     // under the point, down each straight side, and in its bottom corners
-    for (x, y) in [(0.0, -5.0), (9.0, 2.0), (-9.0, 2.0), (9.5, 8.0), (-9.5, 8.0)] {
+    for (x, y) in [
+      (0.0, -5.0),
+      (9.0, 2.0),
+      (-9.0, 2.0),
+      (9.5, 8.0),
+      (-9.5, 8.0),
+    ] {
       assert_eq!(covered(&shape, x, y, 0.1), 1.0, "at ({x}, {y})");
     }
     // in the cut, and beside the point

@@ -1,3 +1,6 @@
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
 use glam::{Affine2, Vec2};
 use image::Rgba;
 use serde::{Deserialize, Serialize};
@@ -178,6 +181,22 @@ pub enum FillNode {
     #[cfg_attr(feature = "ts", ts(as = "Option<ImageSize>", optional))]
     size: ImageSize,
   },
+  /// The image an [`ImageGenerator`](crate::scene::ImageGenerator) makes, in code outside the scene, by the name it
+  /// has in the scene's [`Assets`](crate::scene::Assets), drawn like an `Image`. `settings` sets the generator's
+  /// settings by name, and one left out is at its default. Its `Native` size is the pixels of the image the generator
+  /// makes. With no generator by that name, it draws nothing.
+  External {
+    generator: String,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cfg_attr(
+      feature = "ts",
+      ts(as = "Option<BTreeMap<String, Prop<f32>>>", optional)
+    )]
+    settings: BTreeMap<String, Prop<f32>>,
+    #[serde(default, skip_serializing_if = "ImageSize::is_stretch")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<ImageSize>", optional))]
+    size: ImageSize,
+  },
 }
 
 /// A gradient color stop
@@ -297,6 +316,7 @@ impl FillNode {
       }
       Self::Image { frame, .. } => frame.as_ref().is_some_and(Prop::is_animated),
       Self::Spritesheet { sprite, .. } => sprite.as_ref().is_some_and(Prop::is_animated),
+      Self::External { settings, .. } => settings.values().any(Prop::is_animated),
     }
   }
 
@@ -330,6 +350,9 @@ impl FillNode {
       Self::Spritesheet { sprite, .. } => {
         sprite.iter().for_each(|sprite| sprite.read_inputs(inputs))
       }
+      Self::External { settings, .. } => settings
+        .values()
+        .for_each(|setting| setting.read_inputs(inputs)),
     }
   }
 
@@ -338,6 +361,23 @@ impl FillNode {
       Self::Image { name, .. } | Self::Spritesheet { name, .. } if !name.is_empty() => Some(name),
       _ => None,
     }
+  }
+
+  /// The name of the image generator that makes it, for an external fill
+  pub fn generator_name(&self) -> Option<&str> {
+    match self {
+      Self::External { generator, .. } => Some(generator),
+      _ => None,
+    }
+  }
+
+  /// The names of the generator settings an external fill sets
+  pub fn generator_settings(&self) -> impl Iterator<Item = &str> {
+    let settings = match self {
+      Self::External { settings, .. } => Some(settings.keys().map(String::as_str)),
+      _ => None,
+    };
+    settings.into_iter().flatten()
   }
 
   /// The node resolved in `env`, for a unit box `unit_box` across in scene units
@@ -412,6 +452,22 @@ impl FillNode {
           scale: image_size.scale(unit_box, sprite_pixels),
         }
       }
+      Self::External {
+        generator,
+        settings,
+        size,
+      } => {
+        let picture = env.assets.image_generator(generator).map(|loaded| {
+          loaded.generate(env.time, env.cycle, env.playback_seed, |name| {
+            settings.get(name).map(|setting| setting.resolve(env))
+          })
+        });
+        let pixels = picture.as_deref().map_or(Vec2::ONE, pixels);
+        ResolvedFillNode::Generated {
+          picture,
+          scale: size.scale(unit_box, pixels),
+        }
+      }
     }
   }
 }
@@ -477,6 +533,11 @@ enum ResolvedFillNode<'a> {
     frame: f32,
     scale: Vec2,
   },
+  /// As for `Image`, for the image a generator made for this frame. `None` for a generator the assets don't have.
+  Generated {
+    picture: Option<Arc<Picture>>,
+    scale: Vec2,
+  },
   /// The part of an image from `min`, `size` across, in units of the whole image. `scale` is as for `Image`, to the
   /// sprite's own unit box.
   Sprite {
@@ -521,6 +582,11 @@ impl ResolvedFillNode<'_> {
       } => picture.map_or(Rgba([0, 0, 0, 0]), |picture| {
         picture.color(*frame, p * *scale, footprint * *scale)
       }),
+      Self::Generated { picture, scale } => {
+        picture.as_ref().map_or(Rgba([0, 0, 0, 0]), |picture| {
+          picture.color(0.0, p * *scale, footprint * *scale)
+        })
+      }
       Self::Sprite {
         picture,
         min,

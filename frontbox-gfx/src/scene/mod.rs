@@ -55,6 +55,7 @@
 //! - [`Assets`], [`Picture`], [`Font`] -- The decoded images and fonts a scene draws from. Finding and loading them is
 //!   up to what uses this crate: frontbox-scene loads them from the app's resources.
 //! - [`ShapeGenerator`] -- Outlines made by the app's code, for shapes too involved to build from the base shapes
+//! - [`ImageGenerator`] -- Images made by the app's code, for pictures too involved to build from layers
 
 mod animatable;
 mod assets;
@@ -66,8 +67,10 @@ mod external_envelope;
 pub mod file;
 mod fill;
 mod font;
+mod generator;
 mod graph;
 mod graph_mask;
+mod image_generator;
 mod images;
 mod inputs;
 mod keyframes;
@@ -107,8 +110,13 @@ pub(crate) use contour::Contour;
 pub use external_envelope::*;
 pub use fill::*;
 pub use font::*;
+pub use generator::{
+  GeneratorError, GeneratorFrame, GeneratorHandle, GeneratorKind, GeneratorSetting,
+  LayerGeneratorError,
+};
 pub use graph::*;
 pub use graph_mask::*;
+pub use image_generator::*;
 pub use images::*;
 pub use inputs::*;
 pub use keyframes::*;

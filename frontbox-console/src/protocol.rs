@@ -328,6 +328,17 @@ pub struct ShapeGeneratorInfo {
   pub handles: Vec<GeneratorHandleInfo>,
 }
 
+/// An image generator the app has added, which a scene's `External` fill can name, so an editor can offer it and a
+/// field for each of its settings
+#[derive(Clone, serde::Serialize, TS)]
+pub struct ImageGeneratorInfo {
+  /// What a scene names it by
+  pub name: String,
+  /// Whether its image changes with time when its settings don't
+  pub is_animated: bool,
+  pub settings: Vec<GeneratorSettingInfo>,
+}
+
 /// A point two of a shape generator's settings make, which an editor shows a handle on
 #[derive(Clone, serde::Serialize, TS)]
 pub struct GeneratorHandleInfo {
@@ -337,7 +348,7 @@ pub struct GeneratorHandleInfo {
   pub y: String,
 }
 
-/// One setting of a shape generator, which a scene sets as a number
+/// One setting of a shape or image generator, which a scene sets as a number
 #[derive(Clone, serde::Serialize, TS)]
 pub struct GeneratorSettingInfo {
   pub name: String,
