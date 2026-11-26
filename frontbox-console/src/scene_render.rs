@@ -5,7 +5,7 @@ use frontbox_gfx::scene::{
   Bounds, Graph, LayerFrame, PreparedLayer, Sample, ShapePose, Surface, Timing, Variables,
 };
 use frontbox_lighting::{LightPlacement, PlacedLayer, led_color};
-use frontbox_scene::{Moment, Scene, SceneLayer, Scenes};
+use frontbox_scene::{DrawnPart, Moment, Scene, SceneLayer, Scenes};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -143,6 +143,13 @@ pub(crate) fn render_scene(
   let shapes = rendered_shapes(
     frames().map(|drawn| drawn.and_then(|(layer, frame)| layer.shape_pose(&frame))),
   );
+  let behind = (0..shown.layers.len())
+    .map(|index| {
+      let frame = views.frame(&shown, index, &moment);
+      let areas = shown.layers[index].behind().iter();
+      rendered_shapes(areas.map(|behind| behind.area.pose_in(&frame)))
+    })
+    .collect();
   let light_colors = light_colors(
     &shown,
     &views,
@@ -162,6 +169,7 @@ pub(crate) fn render_scene(
     canvases,
     outlines,
     shapes,
+    behind,
     light_colors,
     graphs,
     reference_error,
@@ -630,7 +638,11 @@ impl Canvas {
               .graph
               .and_then(|graph| graph.nearest(at.pos))
               .map_or(*at, |node| at.at_node(node));
-            row_layer.layer.composite(&at, below)
+            if row_layer.part.covers(&at) {
+              row_layer.layer.composite(&at, below)
+            } else {
+              below
+            }
           });
           drawn.composite_over(below)
         });
@@ -648,16 +660,21 @@ impl Canvas {
     radius: f32,
   ) -> Vec<Vec<RowLayer<'a>>> {
     let rows = self.rows.iter().map(|row| {
-      let layers = row.iter().filter_map(|&index| {
+      let mut steps = scene.draw_order();
+      steps.retain(|step| row.contains(&step.layer));
+      // stable, so on one z they stay in the order they're drawn
+      steps.sort_by_key(|step| scene.step_z(*step));
+      let layers = steps.into_iter().filter_map(|step| {
+        let index = step.layer;
         let layer = &scene.layers[index];
-        let prepared = layer
-          .layer()?
-          .prepare(&views.frame(scene, index, moment), radius);
+        let frame = views.frame(scene, index, moment);
+        let prepared = layer.layer()?.prepare(&frame, radius);
         let graph = views.placed(index).and_then(|placed| placed.graph.as_ref());
         Some(RowLayer {
-          z: layer.z().unwrap_or_default(),
+          z: scene.step_z(step).unwrap_or_default(),
           scene,
           layer: prepared,
+          part: scene.drawn_part(step, &frame, radius),
           graph,
         })
       });
@@ -673,6 +690,8 @@ struct RowLayer<'a> {
   /// The scene it's from
   scene: &'a Scene,
   layer: PreparedLayer<'a>,
+  /// Where this step of drawing it draws it, for a layer with parts behind another
+  part: DrawnPart,
   /// The graph its points go to
   graph: Option<&'a Arc<Graph>>,
 }
@@ -1224,6 +1243,36 @@ mod tests {
         (Some("Lcd"), 4, 2, &[0, 0, 255, 255])
       ]
     );
+  }
+
+  #[test]
+  fn a_part_of_a_layer_behind_another_is_drawn_under_it_and_has_its_area() {
+    let source = r#"Scene(version: 2, layers: [
+      Display(display: "Dmd", layer: (name: "Post", fill: (base: Solid(Fixed(255, 0, 0, 255))))),
+      Display(
+        display: "Dmd",
+        behind: [(under: Layer("Post"), area: (base: Rect(width: Fixed(2.0), height: Fixed(2.0)), transform: [Translate(Fixed(1.0, 1.0))]))],
+        layer: (fill: (base: Solid(Fixed(0, 0, 255, 255)))),
+      ),
+    ])"#;
+    let rendered = render_scene(
+      ron(source),
+      SIZE,
+      no_lights(),
+      Arc::default(),
+      0.0,
+      None,
+      None,
+      0,
+    )
+    .unwrap();
+    let [red, blue] = [[255, 0, 0, 255], [0, 0, 255, 255]];
+    let row = [red, red, blue, blue].concat();
+    assert_eq!(rendered.canvases[0].colors, [row.clone(), row].concat());
+    assert!(rendered.behind[0].is_empty());
+    let area = rendered.behind[1][0].as_ref().unwrap();
+    assert_eq!((area.min, area.max), ([-1.0, -1.0], [1.0, 1.0]));
+    assert!(rendered.ron.contains("behind"));
   }
 
   #[test]

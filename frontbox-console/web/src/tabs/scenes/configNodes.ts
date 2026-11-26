@@ -1,6 +1,7 @@
 import { contentImageInfo } from '../../state/contentImages'
 import type { BezierPoint } from '../../types/generated/BezierPoint'
 import type { ColorAdjust } from '../../types/generated/ColorAdjust'
+import type { Behind } from '../../types/generated/Behind'
 import type { GraphMask } from '../../types/generated/GraphMask'
 import type { Layer } from '../../types/generated/Layer'
 import type { LightQ } from '../../types/generated/LightQ'
@@ -109,6 +110,8 @@ export type NodeData =
   | { kind: 'stops'; lens: Lens<Stop[]> }
   /** Whether a layer is a mask over the layers below it, and which side of it they show on */
   | { kind: 'mask'; lens: Lens<SceneLayer> }
+  /** A part of the layer at `layer` that goes behind a layer under it, which is picked in its row */
+  | { kind: 'behind'; lens: Lens<Behind>; layer: number }
   /** A fit transform, which picks its traversal in its row. Other transforms are props. */
   | { kind: 'fit'; lens: Lens<Transform> }
   /** A scale, mirror, revolve, bisect, shift, or warp, which has its props under it */
@@ -225,7 +228,7 @@ function layerNodes(scene: Lens<Scene>, surfaces: LayerSurfaces): ConfigNode[] {
         lens,
         value: layer,
         place: { list: layers, listId: 'layers', index },
-        children: layerChildren(id, lens, surfaces(layer)),
+        children: layerChildren(id, lens, surfaces(layer), index),
       })
     }),
     ...sounds.get().map((sound, index) => {
@@ -306,7 +309,7 @@ function branch(node: ConfigNode): ConfigNode {
 }
 
 /** Where a layer is, then what it draws and where */
-function layerChildren(id: string, lens: Lens<SceneLayer>, surface: Surface): ConfigNode[] {
+function layerChildren(id: string, lens: Lens<SceneLayer>, surface: Surface, index: number): ConfigNode[] {
   const layer = lens.get()
   const light = layer.display === undefined
   const place: ConfigNode[] = [
@@ -322,7 +325,17 @@ function layerChildren(id: string, lens: Lens<SceneLayer>, surface: Surface): Co
   const fill = line ? [] : [fillNode(`${id}/fill`, field(lens, 'fill'), surface)]
   const mask: ConfigNode = { id: `${id}/mask`, label: 'Mask', kind: 'mask', lens, value: layer.mask }
   const visible = propNode(`${id}/visible`, 'Visible', { lens: layerVisible(lens) as Lens<Prop<SceneValue>>, variableName: 'visible', fallback: true, ranges: both(UNIT) }, surface)
-  return [visible, mask, ...place, ...regions, ...fill]
+  const parts = orEmpty(field(lens, 'behind'))
+  const behind = parts.get().map((part, at): ConfigNode => ({
+    id: `${id}/behind/${at}`,
+    label: 'Layer' in part.under ? `Behind ${part.under.Layer}` : `Behind z ${part.under.Z}`,
+    kind: 'behind',
+    lens: item(parts, at),
+    layer: index,
+    value: part,
+    place: { list: parts as Lens<unknown[]>, listId: `${id}/behind`, index: at },
+  }))
+  return [visible, mask, ...place, ...behind, ...regions, ...fill]
 }
 
 /** A layer's region, which can be its graph instead */

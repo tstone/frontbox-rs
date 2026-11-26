@@ -2,6 +2,7 @@ import { fontPixelSize } from '../../state/contentFonts'
 import { shapeGenerator } from '../../state/shapeGenerators'
 import type { GeneratorSettingInfo } from '../../types/generated/GeneratorSettingInfo'
 import { contentImageInfo } from '../../state/contentImages'
+import type { Behind } from '../../types/generated/Behind'
 import type { Color } from '../../types/generated/Color'
 import type { ColorAdjust } from '../../types/generated/ColorAdjust'
 import type { Curve } from '../../types/generated/Curve'
@@ -484,7 +485,33 @@ export function withLayerRenamed(scene: Scene, index: number, to: string | undef
     const prop = lens.get() as Extract<Prop<SceneValue>, { Sweep: unknown }>
     lens.set({ Sweep: { ...prop.Sweep, layer: to } })
   }
-  return renamed
+  // and the parts of the layers over it that go behind it
+  const layers = renamed.layers.map((layer, at) =>
+    at > index && layer.behind?.some(({ under }) => 'Layer' in under && under.Layer === from) ? { ...layer, behind: layer.behind.map((behind) => ('Layer' in behind.under && behind.under.Layer === from ? { ...behind, under: { Layer: to } } : behind)) } : layer,
+  )
+  return { ...renamed, layers }
+}
+
+/**
+ * The names of the layers a part of the layer at `index` can go behind, nearest first: those under it on the same
+ * thing at the same z, which have to have a name to be gone behind by
+ */
+export function layersUnder(scene: Scene, index: number): string[] {
+  const over = scene.layers[index]
+  if (!over) return []
+  const under = scene.layers.slice(0, index).filter((layer) => layerPlace(layer) === layerPlace(over) && (layer.z ?? 0) === (over.z ?? 0))
+  const names = under.flatMap(({ name }) => (name === undefined ? [] : [name])).reverse()
+  return [...new Set(names)]
+}
+
+/**
+ * A scene whose layer at `index` goes behind something wherever `area` covers: the nearest named layer under it, or
+ * with none, everything above the z under its own, which is where another scene's layers can be
+ */
+export function withBehind(scene: Scene, index: number, area: Behind['area']): Scene {
+  const [nearest] = layersUnder(scene, index)
+  const under = (layer: SceneLayer): Behind['under'] => (nearest === undefined ? { Z: (layer.z ?? 0) - 1 } : { Layer: nearest })
+  return { ...scene, layers: scene.layers.map((layer, at) => (at === index ? { ...layer, behind: [...(layer.behind ?? []), { under: under(layer), area }] } : layer)) }
 }
 
 /** From 0 to 1 over `duration` seconds, once */
@@ -918,8 +945,8 @@ export function editedScene({ layers, ...scene }: SceneFile): Scene {
 }
 
 function sceneFile({ layers, sounds, ...scene }: Scene): SceneFile {
-  const placed = layers.map(({ lights, z, surface, display, ...layer }): SceneFileLayer =>
-    display !== undefined ? { Display: { display, z, layer } } : { Lights: { lights, z, surface: surface ?? 'Sequence', layer } },
+  const placed = layers.map(({ lights, z, surface, display, behind, ...layer }): SceneFileLayer =>
+    display !== undefined ? { Display: { display, z, behind, layer } } : { Lights: { lights, z, surface: surface ?? 'Sequence', behind, layer } },
   )
   return { ...scene, layers: [...placed, ...sounds.map((sound): SceneFileLayer => ({ Sound: sound }))] }
 }

@@ -21,9 +21,11 @@ import { SoundDialog } from './SoundPicker'
  * to draw one. An image and a sound are chosen first, and a shape or text is drawn on the preview: picking one of those
  * hands it to `onDraw`, and `drawing` is the one being drawn. A sequence and a sound go where they always do, and a
  * sequence isn't offered on a display. A full layer has no region, so it covers all of what it's on. Each of the app's
- * shape generators is a tool too, when it has any. Each tool is in the color of the layers it adds. Below them are the modifiers that can be added to what's selected.
+ * shape generators is a tool too, when it has any. Each tool is in the color of the layers it adds. Below them, with
+ * `behind` for a selected layer, is the tool that sends part of it behind a layer under it, which is drawn as a polygon
+ * (`'Behind'` in `drawing`) and has a `reason` when it can't be. Then come the modifiers that can be added to what's selected.
  */
-export default function LayerTools(props: { place: LayerPlace | null; reason: string | null; drawing: DrawnTool | null; onDraw: (tool: DrawnTool | null) => void }) {
+export default function LayerTools(props: { place: LayerPlace | null; reason: string | null; drawing: DrawnTool | 'Behind' | null; onDraw: (tool: DrawnTool | 'Behind' | null) => void; behind?: { reason: string | null } }) {
   const scene = useContext(SceneContext)!
   const surfaces = useContext(LayerSurfacesContext)!
   const tree = useContext(ConfigTreeContext)!
@@ -31,6 +33,8 @@ export default function LayerTools(props: { place: LayerPlace | null; reason: st
   const onLights = () => props.place?.startsWith('Area:') === true
   const onDisplay = () => props.place?.startsWith('Display:') === true
   const drawnColor = (): LayerColor => (onDisplay() ? 'display' : 'lights')
+  /** The tool a layer is being drawn with, which isn't the one for sending part of a layer behind another */
+  const drawnTool = () => (props.drawing === 'Behind' ? null : props.drawing)
   const graphReason = () => props.reason ?? (onLights() ? null : "A graph is made of the machine's lights, so it's added on a plane")
 
   const add = (tool: Tool) => {
@@ -102,7 +106,7 @@ export default function LayerTools(props: { place: LayerPlace | null; reason: st
         icon={icons.CircleSquare}
         groups={SHAPES.map((group) => group.map((tool) => ({ value: tool, label: TOOL_LABELS[tool], icon: TOOL_ICONS[tool] })))}
         color={drawnColor()}
-        active={props.drawing !== null && SHAPES.flat().includes(props.drawing)}
+        active={SHAPES.flat().some((tool) => tool === drawnTool())}
         reason={props.reason}
         onPick={add}
       />
@@ -111,7 +115,7 @@ export default function LayerTools(props: { place: LayerPlace | null; reason: st
         icon={icons.Curve}
         groups={LINES.map((group) => group.map((tool) => ({ value: tool, label: TOOL_LABELS[tool], icon: TOOL_ICONS[tool] })))}
         color={drawnColor()}
-        active={props.drawing !== null && LINES.flat().includes(props.drawing)}
+        active={LINES.flat().some((tool) => tool === drawnTool())}
         reason={props.reason}
         onPick={add}
       />
@@ -121,7 +125,7 @@ export default function LayerTools(props: { place: LayerPlace | null; reason: st
           icon={icons.Code}
           groups={[shapeGenerators().map(({ name }) => ({ value: generatorTool(name), label: name, icon: icons.Code }))]}
           color={drawnColor()}
-          active={props.drawing !== null && isGenerator(props.drawing)}
+          active={drawnTool() !== null && isGenerator(drawnTool()!)}
           reason={props.reason}
           onPick={add}
         />
@@ -130,6 +134,25 @@ export default function LayerTools(props: { place: LayerPlace | null; reason: st
       {button('Text', drawnColor())}
       <ImageDialog open={choosing() === 'Image'} chosen="" onChoose={addImage} onClose={() => setChoosing(null)} />
       <SoundDialog open={choosing() === 'Sound'} chosen={scene.get().sounds.at(-1)?.sound ?? ''} volume={1} onChoose={addSound} onClose={() => setChoosing(null)} />
+      <Show when={props.behind}>
+        {(behind) => (
+          <>
+            <span class="scene-tools-divider" />
+            <button
+              type="button"
+              class={`scene-tool ${layerColorClass(drawnColor())}`}
+              classList={{ active: props.drawing === 'Behind' }}
+              aria-label="Send part of the layer behind another"
+              aria-pressed={props.drawing === 'Behind'}
+              title={behind().reason ?? 'Send part behind: draw around the part of the selected layer that goes behind the layer under it, or with none, behind a lower z-index'}
+              disabled={behind().reason !== null}
+              onClick={() => props.onDraw(props.drawing === 'Behind' ? null : 'Behind')}
+            >
+              <icons.SendToBack aria-hidden="true" />
+            </button>
+          </>
+        )}
+      </Show>
       <ModifierTools />
     </div>
   )

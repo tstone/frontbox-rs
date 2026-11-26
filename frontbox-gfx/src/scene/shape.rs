@@ -5,10 +5,11 @@ use glam::{Affine2, Mat2, Vec2};
 use image::Rgba;
 use serde::{Deserialize, Serialize};
 
+use crate::scene::layer::{env, lap};
 use crate::scene::{
-  Bounds, Contour, Cut, Env, Fill, Generated, Inputs, Node, PreparedAdjust, PreparedShadow,
-  PreparedStroke, Prop, Reshape, Sample, ShapeAdjust, ShiftLine, TextAlign, TextOutline,
-  TextOverflow, TextSource, Transform, VerticalAlign, layout_text,
+  Bounds, Contour, Cut, Env, Fill, Generated, Inputs, LayerFrame, Node, PreparedAdjust,
+  PreparedShadow, PreparedStroke, Prop, Reshape, Sample, ShapeAdjust, ShiftLine, TextAlign,
+  TextOutline, TextOverflow, TextSource, Transform, VerticalAlign, layout_text,
 };
 
 /// Points in the outline polygon of a round shape
@@ -214,6 +215,24 @@ pub struct ShapePose {
 
 impl Shape {
   /// The shape as it is in `env`, to cover any number of samples with. `None` if it's collapsed.
+  /// Where it covers in `frame`, for samples of `radius`, for something that's decided by whether a point is in a shape
+  /// rather than drawn in it
+  pub fn covering(&self, frame: &LayerFrame, radius: f32) -> Covering {
+    let env = Env {
+      lap: lap(frame.surface, radius),
+      ..env(frame)
+    };
+    Covering {
+      shape: self.prepare(&env),
+    }
+  }
+
+  /// Its [`ShapePose`] in `frame`, for editor handles on a shape that isn't a layer's region. `None` for a collapsed
+  /// one.
+  pub fn pose_in(&self, frame: &LayerFrame) -> Option<ShapePose> {
+    self.pose(&env(frame))
+  }
+
   pub(crate) fn prepare(&self, env: &Env) -> Option<PreparedShape> {
     let bounds = self.base.bounds(env);
     let to_scene = self.to_scene(bounds.center(), env)?;
@@ -493,13 +512,15 @@ impl Shape {
     }
   }
 
-  pub(crate) fn is_animated(&self) -> bool {
+  /// Whether it changes over a scene's time
+  pub fn is_animated(&self) -> bool {
     self.base.is_animated()
       || self.transform.iter().any(Transform::is_animated)
       || self.adjust.iter().any(ShapeAdjust::is_animated)
   }
 
-  pub(crate) fn read_inputs(&self, inputs: &mut Inputs) {
+  /// Adds the variables it reads to `inputs`
+  pub fn read_inputs(&self, inputs: &mut Inputs) {
     self.base.read_inputs(inputs);
     self
       .transform
@@ -1106,6 +1127,23 @@ impl PreparedShape {
         }
       }
     }
+  }
+}
+
+/// Where a [`Shape`] covers in one frame, from [`Shape::covering`]
+pub struct Covering {
+  /// `None` for a collapsed shape, which covers nothing
+  shape: Option<PreparedShape>,
+}
+
+impl Covering {
+  /// Whether the shape covers at least half of a sample. Its strokes and shadows aren't part of it.
+  pub fn covers(&self, at: &Sample) -> bool {
+    self
+      .shape
+      .as_ref()
+      .and_then(|shape| shape.cover(at))
+      .is_some_and(|cover| cover.amount >= 0.5)
   }
 }
 

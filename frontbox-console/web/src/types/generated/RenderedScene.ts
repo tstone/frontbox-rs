@@ -30,6 +30,11 @@ outlines: Array<Array<Array<[number, number]>>>,
  */
 shapes: Array<RenderedShape | null>, 
 /**
+ * For each layer, the area of each part of it that goes behind another, as it stands, in the layer's order. `None`
+ * for a collapsed one.
+ */
+behind: Array<Array<RenderedShape | null>>, 
+/**
  * What each light the scene lands on would show, by name. Unlike colors from the machine these are in red, green, blue
  * order, however the LED is wired.
  */

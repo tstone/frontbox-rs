@@ -145,6 +145,7 @@ import {
   withNewValue,
   type SceneValue,
   type Vec2,
+  layersUnder,
 } from './sceneModel'
 
 type FillKind = 'None' | 'Solid' | GradientStyle | 'Noise' | 'Cells' | 'Image' | 'Spritesheet'
@@ -369,6 +370,7 @@ const KIND_ICONS: Partial<Record<NodeKind, Icon>> = {
   lights: icons.Lightbulb,
   z: icons.Layers2,
   mask: icons.SquareDashed,
+  behind: icons.SendToBack,
   stroke: icons.PenLine,
   fit: icons.Maximize2,
   points: icons.Waypoints,
@@ -391,6 +393,7 @@ const CONTROL_LABELS: Partial<Record<NodeKind, string | null>> = {
   lights: 'Lights',
   z: 'Z-index',
   mask: 'Mask',
+  behind: 'Goes behind',
   region: 'Region',
   fill: 'Fill',
   fit: 'Fit to',
@@ -401,10 +404,10 @@ const CONTROL_LABELS: Partial<Record<NodeKind, string | null>> = {
 }
 
 /** The kinds of node whose control is small enough to go beside its label */
-const INLINE_KINDS: NodeKind[] = ['lights', 'z', 'mask', 'fit', 'fill', 'region']
+const INLINE_KINDS: NodeKind[] = ['lights', 'z', 'mask', 'behind', 'fit', 'fill', 'region']
 
 /** The kinds of node under a layer that are its settings, shown in its properties */
-const SETTING_KINDS: NodeKind[] = ['lights', 'z', 'mask']
+const SETTING_KINDS: NodeKind[] = ['lights', 'z', 'mask', 'behind']
 
 /** The sidebar's sections, which open and close on their own */
 type SidebarSection = 'properties' | 'variables' | 'modulators'
@@ -840,6 +843,7 @@ function NodeControl(props: { node: ConfigNode }) {
       <Match when={is(props.node, 'fill')}>{(fill) => <FillKindPicker node={fill()} />}</Match>
       <Match when={is(props.node, 'stops')}>{(stops) => <AddStop node={stops()} />}</Match>
       <Match when={is(props.node, 'mask')}>{(mask) => <MaskPicker lens={mask().lens} />}</Match>
+      <Match when={is(props.node, 'behind')}>{(behind) => <BehindPicker node={behind()} />}</Match>
       <Match when={is(props.node, 'fit')}>{(fit) => <FitPicker node={fit()} />}</Match>
       <Match when={is(props.node, 'points')}>{(points) => <AddPoint node={points()} />}</Match>
       <Match when={is(props.node, 'traversals')}>{(traversals) => <AddTraversal node={traversals()} />}</Match>
@@ -1178,6 +1182,47 @@ function MaskPicker(props: { lens: Lens<SceneLayer> }) {
         props.lens.set(value === 'Off' ? layer : { ...layer, mask: true, ...(value === 'Inside' ? { invert: true } : {}) })
       }}
     />
+  )
+}
+
+/**
+ * What a part of a layer goes behind: one of the named layers under it on the same thing at the same z, or everything
+ * above a z-index lower than its own, which is how it goes behind another scene's layers. With it is a button that takes
+ * the part out, so the layer is drawn whole there again. Where the part is, is drawn and dragged on the preview. A layer
+ * it names that's no longer under it is still listed, to be seen and changed.
+ */
+function BehindPicker(props: { node: Extract<ConfigNode, { kind: 'behind' }> }) {
+  const scene = useContext(SceneContext)!
+  const under = () => field(props.node.lens, 'under')
+  const named = () => {
+    const current = under().get()
+    return 'Layer' in current ? current.Layer : null
+  }
+  const options = () => {
+    const names = layersUnder(scene.get(), props.node.layer)
+    const current = named()
+    const missing = current === null || names.includes(current) ? [] : [{ value: `layer:${current}`, label: `${current} (not under it)` }]
+    return [...missing, ...names.map((name) => ({ value: `layer:${name}`, label: name })), { value: 'z', label: 'A z-index' }]
+  }
+  const ownZ = () => scene.get().layers[props.node.layer]?.z ?? 0
+  const z = () => {
+    const current = under().get()
+    return 'Z' in current ? current.Z : null
+  }
+  return (
+    <>
+      <Dropdown
+        label="Goes behind"
+        options={options()}
+        value={named() === null ? 'z' : `layer:${named()}`}
+        onChange={(value) => under().set(value === 'z' ? { Z: z() ?? ownZ() - 1 } : { Layer: value.slice('layer:'.length) })}
+      />
+      <Show when={z() !== null}>
+        {/* lower than the layer's own, as a part can only go down */}
+        <NumberBox class="scene-tree-number" aria-label="Z-index it goes behind at" step="1" value={z()!} onNumber={(value) => under().set({ Z: Math.min(Math.round(value) || 0, ownZ() - 1) })} />
+      </Show>
+      <Show when={props.node.place}>{(place) => <RemoveButton node={props.node} place={place()} />}</Show>
+    </>
   )
 }
 

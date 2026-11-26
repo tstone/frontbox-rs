@@ -11,7 +11,7 @@ use frontbox_gfx::scene::{
 use serde::{Deserialize, Serialize};
 
 use crate::resources::{assets_for, envelope};
-use crate::{LayerAssetError, Moment, Scenes, SoundLayer, SoundStart};
+use crate::{Behind, LayerAssetError, Moment, Scenes, SoundLayer, SoundStart, Under};
 
 /// Layers on one timeline, each saying what it's drawn on or that it's sound, as written to a `.scene` file. Each system
 /// plays the layers it knows: `LightManager` plays [`LightLayer`]s, a display plays the [`DisplayLayer`]s for it, and
@@ -147,6 +147,27 @@ impl Scene {
       .filter_map(|(index, layer)| Some((index, layer.layer()?, layer.drawn_on()?)))
       .collect();
     check_sweeps(&drawn)?;
+    for (index, layer) in self.layers.iter().enumerate() {
+      for behind in layer.behind() {
+        if self.timing.is_none() && behind.area.is_animated() {
+          return Err(SceneError::NoTiming {
+            layer: layer.label(index),
+          });
+        }
+        if self.place_under(index, &behind.under).is_none() {
+          return Err(match &behind.under {
+            Under::Layer(name) => SceneError::NoLayerBehind {
+              layer: layer.label(index),
+              behind: name.clone(),
+            },
+            Under::Z(z) => SceneError::NotBehindZ {
+              layer: layer.label(index),
+              z: *z,
+            },
+          });
+        }
+      }
+    }
     self.inputs().envelopes.iter().try_for_each(|key| {
       key.check()?;
       let EnvelopeSource::Sound { layer, .. } = &key.source;
@@ -185,6 +206,10 @@ impl Scene {
           .iter()
           .for_each(|layer| layer.read_inputs(&mut inputs)),
       }
+      layer
+        .behind()
+        .iter()
+        .for_each(|behind| behind.area.read_inputs(&mut inputs));
     }
     inputs
   }
@@ -407,6 +432,28 @@ impl SceneLayer {
     }
   }
 
+  /// The parts of it that are drawn behind something. None for a sound layer.
+  pub fn behind(&self) -> &[Behind] {
+    match self {
+      Self::Lights(layer) => &layer.behind,
+      Self::Display(layer) => &layer.behind,
+      Self::Sound(_) => &[],
+    }
+  }
+
+  pub fn behind_mut(&mut self) -> Option<&mut Vec<Behind>> {
+    match self {
+      Self::Lights(layer) => Some(&mut layer.behind),
+      Self::Display(layer) => Some(&mut layer.behind),
+      Self::Sound(_) => None,
+    }
+  }
+
+  /// Whether it's drawn on the same thing as `other` at the same z, so that one can be over the other
+  pub(crate) fn is_drawn_with(&self, other: &Self) -> bool {
+    self.z() == other.z() && self.drawn_on().is_some() && self.drawn_on() == other.drawn_on()
+  }
+
   /// How logs and errors refer to the layer at `index`
   pub fn label(&self, index: usize) -> String {
     match self {
@@ -485,6 +532,10 @@ pub struct LightLayer {
   #[cfg_attr(feature = "ts", ts(as = "Option<i8>", optional))]
   pub z: i8,
   pub surface: LightSurface,
+  /// Parts of it that are drawn behind something
+  #[serde(default, skip_serializing_if = "Vec::is_empty")]
+  #[cfg_attr(feature = "ts", ts(as = "Option<Vec<Behind>>", optional))]
+  pub behind: Vec<Behind>,
   pub layer: Layer,
 }
 
@@ -495,6 +546,7 @@ impl LightLayer {
       lights: Some(lights),
       z: 0,
       surface: LightSurface::Sequence,
+      behind: Vec::new(),
       layer,
     }
   }
@@ -505,12 +557,19 @@ impl LightLayer {
       lights: Some(lights),
       z: 0,
       surface: LightSurface::Area(plane.into()),
+      behind: Vec::new(),
       layer,
     }
   }
 
   pub fn at_z(mut self, z: i8) -> Self {
     self.z = z;
+    self
+  }
+
+  /// Draws part of it behind something
+  pub fn behind(mut self, behind: Behind) -> Self {
+    self.behind.push(behind);
     self
   }
 }
@@ -552,6 +611,10 @@ pub struct DisplayLayer {
   #[serde(default, skip_serializing_if = "is_zero")]
   #[cfg_attr(feature = "ts", ts(as = "Option<i8>", optional))]
   pub z: i8,
+  /// Parts of it that are drawn behind something
+  #[serde(default, skip_serializing_if = "Vec::is_empty")]
+  #[cfg_attr(feature = "ts", ts(as = "Option<Vec<Behind>>", optional))]
+  pub behind: Vec<Behind>,
   pub layer: Layer,
 }
 
@@ -560,12 +623,19 @@ impl DisplayLayer {
     Self {
       display: display.into(),
       z: 0,
+      behind: Vec::new(),
       layer,
     }
   }
 
   pub fn at_z(mut self, z: i8) -> Self {
     self.z = z;
+    self
+  }
+
+  /// Draws part of it behind something
+  pub fn behind(mut self, behind: Behind) -> Self {
+    self.behind.push(behind);
     self
   }
 }

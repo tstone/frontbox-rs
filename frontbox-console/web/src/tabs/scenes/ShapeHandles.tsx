@@ -82,18 +82,19 @@ const NOTHING: Overlay = { handles: [], paths: [], lines: [], boxes: [], grids: 
 
 /**
  * Grab handles over the selected shape and the paths it follows, placed by the machine's account of where they are.
+ * `behind` has the area of each part of the layer that goes behind another, which gets handles and its edge drawn too.
  * `outlines` has a loop for each copy of the shape, in the scene. With a `grid`, a shape's points and how far it's
  * moved snap to a grid of that size in its own space, which is drawn over a shape made of points. A scale's anchor only
  * has a handle while that scale is `openTransform`, the one being edited, as it's often over the shape's center. While
  * a transform is open, only its own handles show, and none for the shape's base, such as its size or points.
  */
-export default function ShapeHandles(props: { space: PreviewSpace; selection: Selection | null; pose: RenderedShape | null; outlines: Vec2[][]; time: number; grid: number | null; openTransform: number | null }) {
+export default function ShapeHandles(props: { space: PreviewSpace; selection: Selection | null; pose: RenderedShape | null; behind: (RenderedShape | null)[]; outlines: Vec2[][]; time: number; grid: number | null; openTransform: number | null }) {
   const scene = useContext(SceneContext)!
   // what the corner handle does, which a click on it moves on to the next of
   const [cornerMode, setCornerMode] = createSignal<CornerMode>('rotate')
   const nextMode = () => setCornerMode(CORNER_MODES[(CORNER_MODES.indexOf(cornerMode()) + 1) % CORNER_MODES.length])
 
-  const overlay = createMemo((): Overlay => {
+  const shape = createMemo((): Overlay => {
     const { selection, pose, grid } = props
     if (selection === null || !pose || !selectedShape(scene.get(), selection)) return NOTHING
     const shape = selectedShapeLens(scene, selection)
@@ -120,6 +121,15 @@ export default function ShapeHandles(props: { space: PreviewSpace; selection: Se
     }
   })
 
+  // with the parts of the layer that go behind another, which a layer with no shape of its own can have too
+  const overlay = createMemo((): Overlay => {
+    const own = shape()
+    const { selection } = props
+    if (selection === null || props.openTransform !== null) return own
+    const parts = behindOverlay(scene, selection, props.behind, writer(scene, props.time), props.grid)
+    return { ...own, handles: [...own.handles, ...parts.handles], lines: [...own.lines, ...parts.lines] }
+  })
+
   const onScreen = (line: Vec2[]) => line.flatMap((point) => props.space.project(point) ?? []).join(' ')
 
   // the grid itself isn't drawn for now, as only shapes made of points had one, which made it look broken elsewhere;
@@ -138,6 +148,23 @@ export default function ShapeHandles(props: { space: PreviewSpace; selection: Se
       <Index each={overlay().handles}>{(handle) => <Grip handle={handle()} space={props.space} />}</Index>
     </div>
   )
+}
+
+/**
+ * The parts of a layer that go behind another: the edge of each one's area, as a line, with a handle that moves it and
+ * one on each of its points. `poses` has each area as the machine has it, in the layer's order.
+ */
+function behindOverlay(scene: Lens<Scene>, { layer }: Selection, poses: (RenderedShape | null)[], write: Write, grid: number | null): { handles: Handle[]; lines: Vec2[][] } {
+  const parts = orEmpty(field(item(field(scene, 'layers'), layer), 'behind'))
+  const drawn = poses.flatMap((pose, index) => {
+    if (!pose || parts.get()[index] === undefined) return []
+    const area = field(item(parts, index), 'area') as Lens<Shape>
+    if (outOfStep(area, pose)) return []
+    const handles = [moveHandle(orEmpty(field(area, 'transform')), pose, write, grid), ...shapeHandles(area, pose, write, grid)]
+    // none of them is a transform of the layer's own shape
+    return [{ handles: handles.map((handle): Handle => ({ ...handle, transform: undefined })), line: [...pose.outline, ...pose.outline.slice(0, 1)] }]
+  })
+  return { handles: drawn.flatMap(({ handles }) => handles), lines: drawn.map(({ line }) => line) }
 }
 
 /** Whether an edit that's on its way to the machine has left a shape and its pose out of step */

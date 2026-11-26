@@ -164,6 +164,7 @@ fn graph_wave() -> Scene {
     lights: Some(LightQ::every()),
     z: 2,
     surface: LightSurface::Area("Playfield".into()),
+    behind: Vec::new(),
     layer: Layer::new(fill).graph(GraphMask::new(vec![wave])),
   };
   Scene::new(vec![layer.into()]).timing(Timing::new(5.0, Cycle::Forever))

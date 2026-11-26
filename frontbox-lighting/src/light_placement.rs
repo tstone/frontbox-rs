@@ -74,17 +74,27 @@ impl LightPlacement {
   }
 
   /// The color of each light a layer lands on, by z from the bottom. On one z the layers are drawn bottom to top in the
-  /// scene's order, and a mask masks the layers below it on the lights it lands on, leaving other lights as they are.
+  /// scene's draw order, and a mask masks the layers below it on the lights it lands on, leaving other lights as they
+  /// are.
   /// Layers with a graph use the visits from the last [`Self::update_visits`].
   pub fn colors(&self, scene: &Scene, moment: &Moment) -> Vec<(i8, &PlacedLight, Rgba<u8>)> {
     let mut by_z: BTreeMap<i8, HashMap<&LightAddress, (&PlacedLight, Rgba<u8>)>> = BTreeMap::new();
-    for placed in &self.layers {
+    for step in scene.draw_order() {
+      let Some(placed) = self.layers.iter().find(|placed| placed.index == step.layer) else {
+        continue;
+      };
       let (Some(layer), Some(first)) = (placed.layer(scene), placed.placed.first()) else {
         continue;
       };
-      let layer = layer.prepare(&placed.frame(scene, moment), first.at.radius);
-      let colors = by_z.entry(placed.z).or_default();
+      let frame = placed.frame(scene, moment);
+      let layer = layer.prepare(&frame, first.at.radius);
+      let part = scene.drawn_part(step, &frame, first.at.radius);
+      let z = scene.step_z(step).unwrap_or(placed.z);
+      let colors = by_z.entry(z).or_default();
       for light in &placed.placed {
+        if !part.covers(&light.at) {
+          continue;
+        }
         let entry = colors
           .entry(&light.address)
           .or_insert((light, Rgba([0, 0, 0, 0])));
@@ -352,6 +362,7 @@ mod tests {
       lights: None,
       z: 0,
       surface: LightSurface::Sequence,
+      behind: Vec::new(),
       layer: solid(),
     };
     let scene = Scene::new(vec![

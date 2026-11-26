@@ -759,6 +759,7 @@ fn wave(from: &str, surface: LightSurface) -> Scene {
     lights: Some(LightQ::every()),
     z: 0,
     surface,
+    behind: Vec::new(),
     layer: Layer::new(fill).graph(GraphMask::new(vec![wave])),
   };
   Scene::new(vec![layer.into()]).timing(Timing::new(10.0, Cycle::Once))

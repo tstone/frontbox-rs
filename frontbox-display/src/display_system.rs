@@ -5,7 +5,7 @@ use frontbox_core::prelude::*;
 use frontbox_gfx::layout::Grid;
 use frontbox_gfx::prelude::*;
 use frontbox_gfx::scene::{Sample, Surface};
-use frontbox_scene::{DisplayLayer, Playback, SceneLayer, SceneSystem};
+use frontbox_scene::{DisplayLayer, DrawStep, Playback, SceneSystem};
 use image::Rgb;
 
 use crate::display_manager::DisplayManager;
@@ -49,23 +49,28 @@ impl DisplaySystem {
   }
 
   /// Each display's layers among the playbacks the `SceneSystem` shows, in the order they're drawn
-  fn layers<'a>(&mut self, scenes: &'a SceneSystem) -> Vec<Vec<(&'a Playback, &'a DisplayLayer)>> {
+  fn layers<'a>(&mut self, scenes: &'a SceneSystem) -> Vec<Vec<Drawn<'a>>> {
     let mut layers: Vec<Vec<_>> = self.displays.iter().map(|_| Vec::new()).collect();
     let all = scenes.shown().flat_map(|(_, playback)| {
-      playback
-        .scene()
-        .layers
-        .iter()
-        .filter_map(SceneLayer::as_display)
-        .map(move |layer| (playback, layer))
+      let scene = playback.scene();
+      scene.draw_order().into_iter().filter_map(move |step| {
+        let layer = scene.layers.get(step.layer)?.as_display()?;
+        Some(Drawn {
+          playback,
+          layer,
+          z: scene.step_z(step).unwrap_or(layer.z),
+          step,
+        })
+      })
     });
-    for (playback, layer) in all {
+    for drawn in all {
+      let layer = drawn.layer;
       match self
         .displays
         .iter()
         .position(|display| display.name == layer.display)
       {
-        Some(index) => layers[index].push((playback, layer)),
+        Some(index) => layers[index].push(drawn),
         None => {
           if self.unknown.insert(layer.display.clone()) {
             log::warn!(target: "frontbox::display", "🖥️ A scene has a layer for {}, which isn't a display that was added", layer.display);
@@ -76,7 +81,7 @@ impl DisplaySystem {
     // stable, so on the same z, playbacks stay in the order they started and layers in the order their scene has them
     layers
       .iter_mut()
-      .for_each(|layers| layers.sort_by_key(|(_, layer)| layer.z));
+      .for_each(|layers| layers.sort_by_key(|drawn| drawn.z));
     layers
   }
 }
@@ -187,15 +192,13 @@ impl Display {
   }
 
   /// `layers` over black, bottom first
-  fn draw(&mut self, layers: &[(&Playback, &DisplayLayer)]) -> Vec<Rgb<u8>> {
+  fn draw(&mut self, layers: &[Drawn]) -> Vec<Rgb<u8>> {
     self.pixels.fill(Rgba([0, 0, 0, 0]));
     let size = Vec2::new(self.size.width as f32, self.size.height as f32);
-    let same_scene_and_z = |(a, x): &(&Playback, &DisplayLayer),
-                            (b, y): &(&Playback, &DisplayLayer)| {
-      std::ptr::eq(*a, *b) && x.z == y.z
-    };
+    let same_scene_and_z =
+      |a: &Drawn, b: &Drawn| std::ptr::eq(a.playback, b.playback) && a.z == b.z;
     for run in layers.chunk_by(same_scene_and_z) {
-      if run.iter().any(|(_, layer)| layer.layer.mask) {
+      if run.iter().any(|drawn| drawn.layer.layer.mask) {
         self.scene_pixels.fill(Rgba([0, 0, 0, 0]));
         draw_layers(run, &self.samples, size, &mut self.scene_pixels);
         for (pixel, color) in self.pixels.iter_mut().zip(&self.scene_pixels) {
@@ -229,20 +232,28 @@ impl Display {
   }
 }
 
+/// One step of drawing a display's layers: a layer of a playback's scene, or the part of one that goes behind another
+struct Drawn<'a> {
+  playback: &'a Playback,
+  layer: &'a DisplayLayer,
+  /// The z it's drawn at, which for a part that goes behind can be lower than its layer's
+  z: i8,
+  step: DrawStep,
+}
+
 /// Draws `layers` over `pixels`, each sampled at its place in `samples`
-fn draw_layers(
-  layers: &[(&Playback, &DisplayLayer)],
-  samples: &[Sample],
-  size: Vec2,
-  pixels: &mut [Rgba<u8>],
-) {
+fn draw_layers(layers: &[Drawn], samples: &[Sample], size: Vec2, pixels: &mut [Rgba<u8>]) {
   let radius = samples.first().map_or(0.0, |at| at.radius);
-  for (playback, layer) in layers {
-    let moment = playback.moment();
-    let frame = playback.scene().frame(&moment, Surface::Area, size, None);
-    let prepared = layer.layer.prepare(&frame, radius);
+  for drawn in layers {
+    let scene = drawn.playback.scene();
+    let moment = drawn.playback.moment();
+    let frame = scene.frame(&moment, Surface::Area, size, None);
+    let prepared = drawn.layer.layer.prepare(&frame, radius);
+    let part = scene.drawn_part(drawn.step, &frame, radius);
     for (pixel, at) in pixels.iter_mut().zip(samples) {
-      *pixel = prepared.composite(at, *pixel);
+      if part.covers(at) {
+        *pixel = prepared.composite(at, *pixel);
+      }
     }
   }
 }

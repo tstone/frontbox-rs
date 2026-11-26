@@ -445,7 +445,7 @@ pub(crate) fn env<'a>(frame: &LayerFrame<'a>) -> Env<'a> {
 
 /// Lap length of a `Sequence` for `Rotate`: the line plus one point's width to close the loop, so the last point doesn't
 /// land on the first when the ends wrap.
-fn lap(surface: Surface, radius: f32) -> Option<f32> {
+pub(crate) fn lap(surface: Surface, radius: f32) -> Option<f32> {
   (surface == Surface::Sequence).then_some(1.0 + 2.0 * radius)
 }
 

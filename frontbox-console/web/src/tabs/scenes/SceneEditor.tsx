@@ -29,13 +29,13 @@ import type { ReferenceScene } from '../../types/generated/ReferenceScene'
 import type { RenderedScene } from '../../types/generated/RenderedScene'
 import type { SceneSource } from '../../types/generated/SceneSource'
 import PlayfieldView, { countOnPlane, type PreviewSpace, type ViewAngle } from '../machine/PlayfieldView'
-import PropertiesPanel from './PropertiesPanel'
+import PropertiesPanel, { drawnPoints } from './PropertiesPanel'
 import ConfirmDialog from './ConfirmDialog'
 import { createPlayback } from './playback'
 import { Dropdown, NumberBox, LayerSurfacesContext, NodePickingContext, RegionPickingContext, RegionVisibilityContext, SceneContext, ShapePosesContext, type NodePicking, type RegionVisibility, type ShapePoses } from './SceneFields'
 import { configNodes, is, openTransform, selectionNode } from './configNodes'
 import { ConfigTreeContext, createConfigTree } from './configTree'
-import { changesEachCycle, cycleCount, editedScene, isOpen, layerPlace, layerPlane, placeDisplay, sceneSource, selectedShape, snap as snapTime, withKey, withPick, withoutDroppedVariables, withoutDroppedTiming, type Lens, type LayerPlace, type Scene, type SceneLayer, type Selection, type Vec2 } from './sceneModel'
+import { changesEachCycle, cycleCount, editedScene, isOpen, layerPlace, layerPlane, withBehind, placeDisplay, sceneSource, selectedShape, snap as snapTime, withKey, withPick, withoutDroppedVariables, withoutDroppedTiming, type Lens, type LayerPlace, type Scene, type SceneLayer, type Selection, type Vec2 } from './sceneModel'
 import LayerTools, { drawnLayer, toolAspect, type DrawnTool } from './LayerTools'
 import { LayerColorContext, layerColor, layerColorClass, type LayerColor } from './ScenePortal'
 import { createLayerMenu, LayerMenuContext } from './LayerMenu'
@@ -517,7 +517,8 @@ export default function SceneEditor(props: {
   }
 
   // a shape or text being drawn on the preview, which goes once it's drawn or there's nowhere to draw it
-  const [drawing, setDrawing] = createSignal<DrawnTool | null>(null)
+  // or part of the open layer being sent behind another, drawn as a polygon around it
+  const [drawing, setDrawing] = createSignal<DrawnTool | 'Behind' | null>(null)
   createEffect(() => {
     if (newLayerAt().place === null || playback.playing()) setDrawing(null)
   })
@@ -525,11 +526,22 @@ export default function SceneEditor(props: {
     const tool = drawing()
     const place = newLayerAt().place
     setDrawing(null)
+    if (tool === 'Behind') {
+      const open = openOnView()
+      if (open && 'points' in drawn) editing.set(withBehind(editing.get(), open.layer, drawnPoints('Polygon', drawn.points)))
+      return
+    }
     if (!tool || !place) return
     tree.addLayer(drawnLayer(tool, editing.get(), place, layerSurface, drawn))
     // new text is typed straight away, over the box it was drawn as
     if (tool === 'Text') editText(editing.get().layers.length - 1)
   }
+
+  /** Set while part of the open layer can be sent behind something, which takes a layer open on what's on show */
+  const behindTool = () => (openOnView() === null || playback.playing() ? undefined : { reason: null })
+  createEffect(() => {
+    if (drawing() === 'Behind' && behindTool() === undefined) setDrawing(null)
+  })
 
   // a text layer whose words are being typed over in the preview, and what they were, to put back
   const [editingText, setEditingText] = createSignal<{ index: number; was: string } | null>(null)
@@ -695,6 +707,13 @@ export default function SceneEditor(props: {
     if (open === null || !rendered || !openShown()) return null
     return rendered.shapes[open.layer] ?? null
   }
+  /** The area of each part of the selected layer that goes behind another, as it stands */
+  const selectedBehind = () => {
+    const open = selected()
+    const rendered = drawn()
+    if (open === null || !rendered || !openShown()) return []
+    return rendered.behind[open.layer] ?? []
+  }
   /** Which of the selected shape's transforms is selected in the tree, if any */
   const editedTransform = () => {
     const open = selected()
@@ -829,14 +848,14 @@ export default function SceneEditor(props: {
           </Show>
         )}
       </Show>
-      <ShapeHandles space={space} selection={selected()} pose={selectedPose()} outlines={outline()} time={playback.position()} grid={snap().on ? snap().size : null} openTransform={editedTransform()} />
+      <ShapeHandles space={space} selection={selected()} pose={selectedPose()} behind={selectedBehind()} outlines={outline()} time={playback.position()} grid={snap().on ? snap().size : null} openTransform={editedTransform()} />
       <Show when={shown() && drawing()}>
         {(tool) => (
           <Show
-            when={tool() === 'Polygon' || tool() === 'Polyline' || tool() === 'Bezier'}
-            fallback={<ShapeDrawing space={space} aspect={toolAspect(tool())} color={viewColor(view())} onDrawn={finishDrawing} onCancel={() => setDrawing(null)} />}
+            when={tool() === 'Polygon' || tool() === 'Polyline' || tool() === 'Bezier' || tool() === 'Behind'}
+            fallback={<ShapeDrawing space={space} aspect={toolAspect(tool() as DrawnTool)} color={viewColor(view())} onDrawn={finishDrawing} onCancel={() => setDrawing(null)} />}
           >
-            <PointsDrawing space={space} open={tool() !== 'Polygon'} color={viewColor(view())} onDrawn={finishDrawing} onCancel={() => setDrawing(null)} />
+            <PointsDrawing space={space} open={tool() === 'Polyline' || tool() === 'Bezier'} color={viewColor(view())} onDrawn={finishDrawing} onCancel={() => setDrawing(null)} />
           </Show>
         )}
       </Show>
@@ -952,7 +971,7 @@ export default function SceneEditor(props: {
             >
               <Splitter.Panel id="preview" class="scene-output">
                 <Show when={scene() !== null}>
-                  <LayerTools place={newLayerAt().place} reason={newLayerAt().reason} drawing={drawing()} onDraw={setDrawing} />
+                  <LayerTools place={newLayerAt().place} reason={newLayerAt().reason} drawing={drawing()} onDraw={setDrawing} behind={behindTool()} />
                 </Show>
                 <div class="scene-output-main">
                   {/* how the preview is shown, and how dragging its handles works */}
