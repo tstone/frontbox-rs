@@ -14,7 +14,8 @@ transforms: Array<[number, number, number, number, number, number]>,
  */
 min: [number, number], max: [number, number], 
 /**
- * The points of a polygon, route or bezier in its own space
+ * The points of a polygon, route or bezier in its own space, or where each handle of an external shape's generator
+ * is
  */
 points: Array<[number, number]>, 
 /**

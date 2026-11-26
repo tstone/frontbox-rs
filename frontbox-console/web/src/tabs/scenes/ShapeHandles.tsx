@@ -1,13 +1,15 @@
 import { createMemo, createSignal, Index, Show, useContext } from 'solid-js'
 import type { Layer } from '../../types/generated/Layer'
 import type { Prop } from '../../types/generated/Prop'
+import type { ShapeGeneratorInfo } from '../../types/generated/ShapeGeneratorInfo'
 import type { RenderedShape } from '../../types/generated/RenderedShape'
 import type { Sweep } from '../../types/generated/Sweep'
 import type { Transform } from '../../types/generated/Transform'
 import type { PreviewSpace } from '../machine/PlayfieldView'
 import { layerColorClass, type LayerColor } from './ScenePortal'
 import { SceneContext } from './SceneFields'
-import { field, isHidden, isOpen, item, newShapeSize, orEmpty, variableReads, selectedShape, selectedShapeLens, shapePoints, startingValue, variant, withKey, withVariable, type Lens, type Scene, type SceneValue, type Selection, type Surface, type Vec2 } from './sceneModel'
+import { shapeGenerator } from '../../state/shapeGenerators'
+import { field, generatorSetting, isHidden, isOpen, item, newShapeSize, orEmpty, variableReads, selectedShape, selectedShapeLens, settingLabel, shapePoints, startingValue, variant, withKey, withVariable, type Lens, type Scene, type SceneValue, type Selection, type Surface, type Vec2 } from './sceneModel'
 
 type Shape = NonNullable<Layer['region']>
 
@@ -142,9 +144,11 @@ export default function ShapeHandles(props: { space: PreviewSpace; selection: Se
 function outOfStep(shape: Lens<Shape>, pose: RenderedShape) {
   const { base, transform } = shape.get()
   const handles = 'Bezier' in base ? base.Bezier.points.length : 0
+  // an external shape's are its generator's handles, which the machine knows best
+  const points = 'External' in base ? pose.points.length : shapePoints(base).length
   return (
     (transform ?? []).length !== pose.transforms.length ||
-    shapePoints(base).length !== pose.points.length ||
+    points !== pose.points.length ||
     handles !== pose.handles.length
   )
 }
@@ -412,6 +416,33 @@ function shapeHandles(shape: Lens<Shape>, pose: RenderedShape, write: Write, gri
     }
   }
 
+  /**
+   * A handle on a point two of a generator's settings make, which a drag sets both of, each held to its range. It's
+   * left out if the generator doesn't have a setting it names.
+   */
+  const settingsHandle = (index: number, generator: ShapeGeneratorInfo): Handle[] => {
+    const { name, x, y } = generator.handles[index]
+    const settings = [x, y].map((axis) => generator.settings.find((setting) => setting.name === axis))
+    const [across, down] = settings
+    if (!across || !down) return []
+    const props = [generatorSetting(base, across), generatorSetting(base, down)]
+    const held = (value: number, range: [number, number] | null) => (range ? Math.min(Math.max(value, range[0]), range[1]) : value)
+    return [
+      {
+        label: settingLabel(name),
+        kind: 'point',
+        cursor: 'move',
+        at: apply(toScene, pose.points[index]),
+        locked: props.some((prop) => !write.can(prop.get(), 0)),
+        drag(to) {
+          const reached = toPoint(to)
+          // one after the other, as the second is set in what the first leaves
+          props.forEach((prop, axis) => write.to(prop, rounded(held(reached[axis], settings[axis]!.range))))
+        },
+      },
+    ]
+  }
+
   /** Width and height of a shape that's drawn in a box, from the corner at the right of its base and from its top */
   const boxed = (shaped: Lens<{ width: Prop<number>; height: Prop<number> }>, widest: number) => [
     size('Width', field(shaped, 'width'), [right, widest], (local) => across(local) * 2),
@@ -459,6 +490,10 @@ function shapeHandles(shape: Lens<Shape>, pose: RenderedShape, write: Write, gri
       if (index < pose.points.length - 1) handles.push(curveHandle(index, prop, 1))
       if (index > 0) handles.push(curveHandle(index, prop, -1))
     })
+  } else if ('External' in current) {
+    const generator = shapeGenerator(current.External.generator)
+    // only the ones the machine has placed, as it may have a newer generator than was asked about
+    if (generator) pose.points.slice(0, generator.handles.length).forEach((_, index) => handles.push(...settingsHandle(index, generator)))
   }
   return handles
 }

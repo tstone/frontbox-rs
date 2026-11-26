@@ -29,6 +29,11 @@ pub trait ShapeGenerator: Send + Sync + fmt::Debug {
     false
   }
 
+  /// Points of its settings that an editor can show a handle on, to drag. None unless it lists them.
+  fn handles(&self) -> &[GeneratorHandle] {
+    &[]
+  }
+
   /// The outline at `frame`, in local space, before transforms
   fn generate(&self, frame: &GeneratorFrame) -> Generated;
 }
@@ -62,6 +67,24 @@ impl GeneratorSetting {
       Some((min, max)) => value.clamp(min, max),
       None => value,
     }
+  }
+}
+
+/// A point in a [`ShapeGenerator`]'s local space that two of its settings make, such as where it reaches to, which an
+/// editor shows a handle on: dragging it sets both
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GeneratorHandle {
+  /// What an editor calls it
+  pub name: &'static str,
+  /// The name of the setting that's the point's x
+  pub x: &'static str,
+  /// The name of the setting that's the point's y
+  pub y: &'static str,
+}
+
+impl GeneratorHandle {
+  pub const fn new(name: &'static str, x: &'static str, y: &'static str) -> Self {
+    Self { name, x, y }
   }
 }
 
@@ -190,6 +213,26 @@ impl LoadedGenerator {
 
   pub fn generator(&self) -> &dyn ShapeGenerator {
     self.generator.as_ref()
+  }
+
+  /// Where each of its [`ShapeGenerator::handles`] is, in its local space, with `setting` giving the scene's value for
+  /// a setting it sets. A handle on a setting the generator doesn't list is at 0 there.
+  pub(crate) fn handle_points(&self, setting: impl Fn(&str) -> Option<f32>) -> Vec<Vec2> {
+    let specs = self.generator.settings();
+    let value = |name: &str| {
+      specs
+        .iter()
+        .find(|spec| spec.name == name)
+        .map_or(0.0, |spec| {
+          spec.clamped(setting(spec.name).unwrap_or(spec.default))
+        })
+    };
+    self
+      .generator
+      .handles()
+      .iter()
+      .map(|handle| Vec2::new(value(handle.x), value(handle.y)))
+      .collect()
   }
 
   /// The output at a moment, with `setting` giving the scene's value for a setting it sets
@@ -379,6 +422,9 @@ mod tests {
       GeneratorSetting::new("spacing", 0.5),
     ];
 
+    const SQUARES_HANDLES: &[GeneratorHandle] =
+      &[GeneratorHandle::new("reach", "count", "spacing")];
+
     impl ShapeGenerator for Squares {
       fn settings(&self) -> &[GeneratorSetting] {
         SQUARES
@@ -386,6 +432,10 @@ mod tests {
 
       fn has_path(&self) -> bool {
         true
+      }
+
+      fn handles(&self) -> &[GeneratorHandle] {
+        SQUARES_HANDLES
       }
 
       fn generate(&self, frame: &GeneratorFrame) -> Generated {
@@ -472,6 +522,20 @@ mod tests {
       assert_eq!(covered(&shape, &assets(), 0.5, 0.0).1, 0.0);
       // the second square's right edge, outside them both
       assert_eq!(covered(&shape, &assets(), 1.0, 0.0).1, 1.0);
+    }
+
+    #[test]
+    fn its_pose_has_where_each_of_its_handles_is() {
+      let variables = Variables::new();
+      let assets = assets();
+      let env = Env {
+        assets: &assets,
+        ..env(0.0, &variables)
+      };
+      // a setting the scene sets, held to its range, and one left at its default
+      let shape = external("squares", &[("count", 20.0.into())]);
+      assert_eq!(shape.pose(&env).unwrap().points, vec![Vec2::new(8.0, 0.5)]);
+      assert!(external("line", &[]).pose(&env).unwrap().points.is_empty());
     }
 
     #[test]

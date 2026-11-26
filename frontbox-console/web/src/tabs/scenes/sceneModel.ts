@@ -1489,21 +1489,25 @@ export function shapeProps(base: Lens<ShapeNode>, surface: Surface): PropField[]
   }
   if ('External' in current) {
     // one for each setting its generator has, whether or not the scene sets it
-    const settings = field(variant(base, 'External'), 'settings')
-    return (shapeGenerator(current.External.generator)?.settings ?? []).map((setting) => {
-      const rest: Prop<number> = { Fixed: setting.default }
-      const lens: Lens<Prop<number>> = {
-        get: () => settings.get()?.[setting.name] ?? rest,
-        set: (value) => settings.set({ ...settings.get(), [setting.name]: value }),
-      }
-      return propField(setting.name, settingLabel(setting.name), setting.default, both(settingRange(setting, surface)), lens)
-    })
+    return (shapeGenerator(current.External.generator)?.settings ?? []).map((setting) =>
+      propField(setting.name, settingLabel(setting.name), setting.default, both(settingRange(setting, surface)), generatorSetting(base, setting)),
+    )
   }
   return []
 }
 
+/** One of the settings of an external shape's generator, which is at its default while the scene leaves it out */
+export function generatorSetting(base: Lens<ShapeNode>, setting: GeneratorSettingInfo): Lens<Prop<number>> {
+  const settings = field(variant(base, 'External'), 'settings')
+  const rest: Prop<number> = { Fixed: setting.default }
+  return {
+    get: () => settings.get()?.[setting.name] ?? rest,
+    set: (value) => settings.set({ ...settings.get(), [setting.name]: value }),
+  }
+}
+
 /** A generator setting's name as a label: `target_x` is "Target x" */
-function settingLabel(name: string) {
+export function settingLabel(name: string) {
   const words = name.replaceAll('_', ' ')
   return words.charAt(0).toUpperCase() + words.slice(1)
 }

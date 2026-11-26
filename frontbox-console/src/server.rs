@@ -14,7 +14,8 @@ use tokio::sync::broadcast::error::RecvError;
 
 use crate::console_hub::{ConsoleHub, Subscription};
 use crate::protocol::{
-  ClientMessage, FontInfo, GeneratorSettingInfo, ImageInfo, SceneSource, ShapeGeneratorInfo,
+  ClientMessage, FontInfo, GeneratorHandleInfo, GeneratorSettingInfo, ImageInfo, SceneSource,
+  ShapeGeneratorInfo,
 };
 use crate::scene_render::scene_file;
 
@@ -363,6 +364,15 @@ async fn content_shape_generators(State(hub): State<ConsoleHub>) -> Response {
           name: setting.name.into(),
           default: setting.default,
           range: setting.range,
+        })
+        .collect(),
+      handles: generator
+        .handles()
+        .iter()
+        .map(|handle| GeneratorHandleInfo {
+          name: handle.name.into(),
+          x: handle.x.into(),
+          y: handle.y.into(),
         })
         .collect(),
     })

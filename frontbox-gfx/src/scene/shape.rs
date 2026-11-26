@@ -185,7 +185,8 @@ pub struct ShapePose {
   pub transforms: Vec<Affine2>,
   /// Bounds in local space, before transforms
   pub bounds: Bounds,
-  /// Local-space points of a polygon, polyline, or bezier. Empty for other shapes.
+  /// Local-space points of a polygon, polyline, or bezier, or where each of an external shape's generator's handles
+  /// is. Empty for other shapes.
   pub points: Vec<Vec2>,
   /// Bezier handles, relative to their points. Empty for other shapes.
   pub handles: Vec<Vec2>,
@@ -327,6 +328,7 @@ impl Shape {
         points.iter().map(|p| p.resolve(env)).collect()
       }
       ShapeNode::Bezier { points } => points.iter().map(|p| p.point.resolve(env)).collect(),
+      ShapeNode::External { .. } => self.base.generator_handles(env),
       _ => Vec::new(),
     };
     let handles = match &self.base {
@@ -595,6 +597,24 @@ impl ShapeNode {
         settings.get(name).map(|setting| setting.resolve(env))
       }),
     )
+  }
+
+  /// Where each of its generator's handles is at `env`. None for a shape that isn't external, or a generator the
+  /// assets don't have.
+  fn generator_handles(&self, env: &Env) -> Vec<Vec2> {
+    let Self::External {
+      generator,
+      settings,
+    } = self
+    else {
+      return Vec::new();
+    };
+    env
+      .assets
+      .shape_generator(generator)
+      .map_or_else(Vec::new, |loaded| {
+        loaded.handle_points(|name| settings.get(name).map(|setting| setting.resolve(env)))
+      })
   }
 
   fn is_animated(&self) -> bool {

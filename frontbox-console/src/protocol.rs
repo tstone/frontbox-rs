@@ -253,7 +253,8 @@ pub struct RenderedShape {
   /// The corners of its bounds in its own space
   pub min: [f32; 2],
   pub max: [f32; 2],
-  /// The points of a polygon, route or bezier in its own space
+  /// The points of a polygon, route or bezier in its own space, or where each handle of an external shape's generator
+  /// is
   pub points: Vec<[f32; 2]>,
   /// A bezier's handles, each from its point
   pub handles: Vec<[f32; 2]>,
@@ -320,6 +321,17 @@ pub struct ShapeGeneratorInfo {
   /// Whether its outline changes with time when its settings don't
   pub is_animated: bool,
   pub settings: Vec<GeneratorSettingInfo>,
+  /// Points an editor shows a handle on, in the order a `RenderedShape` of it has them as its `points`
+  pub handles: Vec<GeneratorHandleInfo>,
+}
+
+/// A point two of a shape generator's settings make, which an editor shows a handle on
+#[derive(Clone, serde::Serialize, TS)]
+pub struct GeneratorHandleInfo {
+  pub name: String,
+  /// The names of the settings that are its x and its y
+  pub x: String,
+  pub y: String,
 }
 
 /// One setting of a shape generator, which a scene sets as a number
