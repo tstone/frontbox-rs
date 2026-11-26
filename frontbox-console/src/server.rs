@@ -6,14 +6,16 @@ use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::get;
 use frontbox_core::prelude::{Resource, ResourceError, Resources};
-use frontbox_scene::{Fonts, Images, Scenes, Sounds};
+use frontbox_scene::{Fonts, Images, Scenes, ShapeGenerators, Sounds};
 use rust_embed::RustEmbed;
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::console_hub::{ConsoleHub, Subscription};
-use crate::protocol::{ClientMessage, FontInfo, ImageInfo, SceneSource};
+use crate::protocol::{
+  ClientMessage, FontInfo, GeneratorSettingInfo, ImageInfo, SceneSource, ShapeGeneratorInfo,
+};
 use crate::scene_render::scene_file;
 
 /// The largest image a client can add
@@ -40,6 +42,7 @@ pub(crate) async fn serve(hub: ConsoleHub, addr: SocketAddr) {
     .route("/content/image-info/{*name}", get(content_image_info))
     .route("/content/sounds", get(content_sounds))
     .route("/content/fonts", get(content_fonts))
+    .route("/content/shape-generators", get(content_shape_generators))
     .route("/content/sounds/{*name}", get(content_sound))
     .route("/content/scenes", get(content_scenes))
     .route(
@@ -342,6 +345,29 @@ async fn content_sound(Path(name): Path<String>, State(hub): State<ConsoleHub>) 
     }
     Err(_) => StatusCode::NOT_FOUND.into_response(),
   }
+}
+
+/// The shape generators the app has added, by name. They're the app's code, so there are none in the content folder.
+async fn content_shape_generators(State(hub): State<ConsoleHub>) -> Response {
+  let resources = hub.resources();
+  let generators: Vec<ShapeGeneratorInfo> = resources
+    .added::<ShapeGenerators>()
+    .map(|(name, generator)| ShapeGeneratorInfo {
+      name: name.into(),
+      has_path: generator.has_path(),
+      is_animated: generator.is_animated(),
+      settings: generator
+        .settings()
+        .iter()
+        .map(|setting| GeneratorSettingInfo {
+          name: setting.name.into(),
+          default: setting.default,
+          range: setting.range,
+        })
+        .collect(),
+    })
+    .collect();
+  Json(generators).into_response()
 }
 
 /// The name of every scene in the content folder. An app without one has none.

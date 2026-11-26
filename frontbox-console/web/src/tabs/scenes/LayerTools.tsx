@@ -7,7 +7,8 @@ import { ancestry } from './configNodes'
 import { ConfigTreeContext, type ConfigTree } from './configTree'
 import { ImageDialog } from './ImagePicker'
 import { contentImageSize } from '../../state/contentImages'
-import { addModifier, drawnPoints, drawnShape, modifierIcon, modifierOptions, newShape, newTraversal, type ModifierKind, type ModifiersNode, type ShapeKind, type TemplateKind } from './PropertiesPanel'
+import { shapeGenerators } from '../../state/shapeGenerators'
+import { addModifier, drawnAspect, drawnPoints, drawnShape, modifierIcon, modifierOptions, newShape, newTraversal, type ModifierKind, type ModifiersNode, type ShapeKind, type TemplateKind } from './PropertiesPanel'
 import ScenePortal, { LayerColorContext, layerColor, layerColorClass, type LayerColor } from './ScenePortal'
 import { LayerSurfacesContext, SceneContext } from './SceneFields'
 import { freshTraversalName, isOpen, newLayerPlace, newShapeSize, newStroke, traversalNames, withTiming, type LayerPlace, type LayerSurfaces, type Scene, type SceneLayer } from './sceneModel'
@@ -19,8 +20,8 @@ import { SoundDialog } from './SoundPicker'
  * on `place`, the plane or display chosen for the preview, which is `null` with `reason` saying why when there's nowhere
  * to draw one. An image and a sound are chosen first, and a shape or text is drawn on the preview: picking one of those
  * hands it to `onDraw`, and `drawing` is the one being drawn. A sequence and a sound go where they always do, and a
- * sequence isn't offered on a display. A full layer has no region, so it covers all of what it's on. Each tool is in
- * the color of the layers it adds. Below them are the modifiers that can be added to what's selected.
+ * sequence isn't offered on a display. A full layer has no region, so it covers all of what it's on. Each of the app's
+ * shape generators is a tool too, when it has any. Each tool is in the color of the layers it adds. Below them are the modifiers that can be added to what's selected.
  */
 export default function LayerTools(props: { place: LayerPlace | null; reason: string | null; drawing: DrawnTool | null; onDraw: (tool: DrawnTool | null) => void }) {
   const scene = useContext(SceneContext)!
@@ -79,9 +80,9 @@ export default function LayerTools(props: { place: LayerPlace | null; reason: st
       type="button"
       class={`scene-tool ${layerColorClass(color)}`}
       classList={{ active: props.drawing === tool }}
-      aria-label={`Add ${TOOL_LABELS[tool].toLowerCase()} layer`}
+      aria-label={`Add ${toolLabel(tool).toLowerCase()} layer`}
       aria-pressed={isDrawn(tool) ? props.drawing === tool : undefined}
-      title={reason ?? TOOL_LABELS[tool]}
+      title={reason ?? toolLabel(tool)}
       disabled={reason !== null}
       onClick={() => add(tool)}
     >
@@ -114,6 +115,17 @@ export default function LayerTools(props: { place: LayerPlace | null; reason: st
         reason={props.reason}
         onPick={add}
       />
+      <Show when={shapeGenerators().length > 0}>
+        <MenuTool
+          label="Generators"
+          icon={icons.Code}
+          groups={[shapeGenerators().map(({ name }) => ({ value: generatorTool(name), label: name, icon: icons.Code }))]}
+          color={drawnColor()}
+          active={props.drawing !== null && isGenerator(props.drawing)}
+          reason={props.reason}
+          onPick={add}
+        />
+      </Show>
       {button('Graph', drawnColor(), graphReason())}
       {button('Text', drawnColor())}
       <ImageDialog open={choosing() === 'Image'} chosen="" onChoose={addImage} onClose={() => setChoosing(null)} />
@@ -125,21 +137,44 @@ export default function LayerTools(props: { place: LayerPlace | null; reason: st
 
 /**
  * What a tool adds: a shape, an image, a layer over all of what it's on (with no region), a graph of lights, a sequence
- * of lights, or a sound
+ * of lights, a sound, or a shape made by one of the app's shape generators
  */
-type Tool = Exclude<ShapeKind, 'None'> | TemplateKind | 'Image' | 'Full' | 'Graph' | 'Sequence' | 'Sound'
+type Tool = Exclude<ShapeKind, 'None' | 'External'> | TemplateKind | 'Image' | 'Full' | 'Graph' | 'Sequence' | 'Sound' | GeneratorTool
 
-/** A tool whose layer is drawn on the preview: text or a shape, which a polygon or line is drawn a point at a time and the rest as a box */
+/** The tool for the shape generator named after the colon */
+type GeneratorTool = `External:${string}`
+
+const generatorTool = (name: string): GeneratorTool => `External:${name}`
+const isGenerator = (tool: Tool): tool is GeneratorTool => tool.startsWith('External:')
+const generatorName = (tool: GeneratorTool) => tool.slice('External:'.length)
+
+/** What a tool is called: a generator's by its name */
+const toolLabel = (tool: Tool) => (isGenerator(tool) ? generatorName(tool) : TOOL_LABELS[tool])
+
+/**
+ * The width over the height of what a drawn tool draws, when it can only be one. A generator's outline is its own, so
+ * it has none, and only where it's drawn counts.
+ */
+export const toolAspect = (tool: DrawnTool) => (isGenerator(tool) ? null : drawnAspect(tool))
+
+/**
+ * A tool whose layer is drawn on the preview: text or a shape, which a polygon or line is drawn a point at a time and
+ * the rest as a box. A generator's shape is drawn as a box too, to say where it goes.
+ */
 export type DrawnTool = Exclude<Tool, 'Image' | 'Full' | 'Graph' | 'Sequence' | 'Sound'>
 
 const isDrawn = (tool: Tool): tool is DrawnTool => !['Image', 'Full', 'Graph', 'Sequence', 'Sound'].includes(tool)
 
 /**
  * A layer of a drawn tool's kind on `place`, filling the box that was drawn, or through the points of a polygon or line.
- * A click rather than a drag places one of the size a new shape has, around where it was.
+ * A click rather than a drag places one of the size a new shape has, around where it was. A generator's shape is its
+ * own size either way, with its origin at the click or the middle of the box.
  */
 export function drawnLayer(tool: DrawnTool, scene: Scene, place: LayerPlace, surfaces: LayerSurfaces, drawn: DrawnBox | DrawnPoints): SceneLayer {
   const layer = newLayer(tool, scene, place, surfaces)
+  if (isGenerator(tool)) {
+    return { ...layer, region: { base: { External: { generator: generatorName(tool) } }, transform: [{ Translate: { Fixed: 'points' in drawn ? [0, 0] : drawn.center } }] } }
+  }
   const across = newShapeSize(surfaces(layer))
   const region =
     'points' in drawn
@@ -376,11 +411,13 @@ function modifierTargets(tree: ConfigTree, id: string | null) {
  * it's on at a size that fits, and a line is stroked white over a clear fill, an image covers all of it, and a graph starts with a traversal out from its middle.
  */
 function newLayer(tool: Exclude<Tool, 'Sound'>, scene: Scene, place: LayerPlace, surfaces: LayerSurfaces): SceneLayer {
-  const layer: SceneLayer = { ...newLayerPlace(scene, place), name: freshLayerName(scene, TOOL_LABELS[tool]), fill: { base: { Solid: { Fixed: WHITE } } } }
+  const layer: SceneLayer = { ...newLayerPlace(scene, place), name: freshLayerName(scene, toolLabel(tool)), fill: { base: { Solid: { Fixed: WHITE } } } }
   const surface = surfaces(layer)
   if (tool === 'Image' || tool === 'Full') return layer
   if (tool === 'Graph') return { ...layer, graph: { traversals: [newTraversal(freshTraversalName(layer, 'walk'), [], surface)] } }
   if (tool === 'Sequence') return layer
+  // placed by whatever draws it
+  if (isGenerator(tool)) return { ...layer, region: { base: { External: { generator: generatorName(tool) } } } }
   const region = newShape(tool, surface)
   // a line has no inside to fill, so it's drawn by a stroke, over a fill left clear
   if (isOpen(region.base)) return { ...layer, fill: { base: { Solid: { Fixed: CLEAR } } }, region: { ...region, adjust: [newStroke(surface)] } }

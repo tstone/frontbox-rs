@@ -29,14 +29,14 @@ import type { ReferenceScene } from '../../types/generated/ReferenceScene'
 import type { RenderedScene } from '../../types/generated/RenderedScene'
 import type { SceneSource } from '../../types/generated/SceneSource'
 import PlayfieldView, { countOnPlane, type PreviewSpace, type ViewAngle } from '../machine/PlayfieldView'
-import PropertiesPanel, { drawnAspect } from './PropertiesPanel'
+import PropertiesPanel from './PropertiesPanel'
 import ConfirmDialog from './ConfirmDialog'
 import { createPlayback } from './playback'
 import { Dropdown, NumberBox, LayerSurfacesContext, NodePickingContext, RegionPickingContext, RegionVisibilityContext, SceneContext, ShapePosesContext, type NodePicking, type RegionVisibility, type ShapePoses } from './SceneFields'
 import { configNodes, is, openTransform, selectionNode } from './configNodes'
 import { ConfigTreeContext, createConfigTree } from './configTree'
 import { changesEachCycle, cycleCount, editedScene, isOpen, layerPlace, layerPlane, placeDisplay, sceneSource, selectedShape, snap as snapTime, withKey, withPick, withoutDroppedVariables, withoutDroppedTiming, type Lens, type LayerPlace, type Scene, type SceneLayer, type Selection, type Vec2 } from './sceneModel'
-import LayerTools, { drawnLayer, type DrawnTool } from './LayerTools'
+import LayerTools, { drawnLayer, toolAspect, type DrawnTool } from './LayerTools'
 import { LayerColorContext, layerColor, layerColorClass, type LayerColor } from './ScenePortal'
 import { createLayerMenu, LayerMenuContext } from './LayerMenu'
 import TextEditor, { editableText, withText } from './TextEditing'
@@ -834,7 +834,7 @@ export default function SceneEditor(props: {
         {(tool) => (
           <Show
             when={tool() === 'Polygon' || tool() === 'Polyline' || tool() === 'Bezier'}
-            fallback={<ShapeDrawing space={space} aspect={drawnAspect(tool())} color={viewColor(view())} onDrawn={finishDrawing} onCancel={() => setDrawing(null)} />}
+            fallback={<ShapeDrawing space={space} aspect={toolAspect(tool())} color={viewColor(view())} onDrawn={finishDrawing} onCancel={() => setDrawing(null)} />}
           >
             <PointsDrawing space={space} open={tool() !== 'Polygon'} color={viewColor(view())} onDrawn={finishDrawing} onCancel={() => setDrawing(null)} />
           </Show>

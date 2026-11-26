@@ -309,6 +309,29 @@ pub struct FontInfo {
   pub cap_height: Option<f32>,
 }
 
+/// A shape generator the app has added, which a scene's `External` shape can name, so an editor can offer it and a
+/// field for each of its settings
+#[derive(Clone, serde::Serialize, TS)]
+pub struct ShapeGeneratorInfo {
+  /// What a scene names it by
+  pub name: String,
+  /// Whether it has a path a sweep can follow
+  pub has_path: bool,
+  /// Whether its outline changes with time when its settings don't
+  pub is_animated: bool,
+  pub settings: Vec<GeneratorSettingInfo>,
+}
+
+/// One setting of a shape generator, which a scene sets as a number
+#[derive(Clone, serde::Serialize, TS)]
+pub struct GeneratorSettingInfo {
+  pub name: String,
+  /// What it is when a scene leaves it out
+  pub default: f32,
+  /// The lowest and highest it can be, if it has them
+  pub range: Option<(f32, f32)>,
+}
+
 /// How to read a clip, which is the one thing sent as a binary message: this as JSON, its length before it as a
 /// little-endian `u32`. After it come each canvas's frames, canvas by canvas, with red, green, blue, and alpha for each
 /// point as in `RenderedCanvas::colors`, then the frames' lights, as red, green, and blue in the order of `lights`.

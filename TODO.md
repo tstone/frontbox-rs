@@ -28,9 +28,9 @@
 
 ### Scenes/Editor
 
-- Shape generators in the editor. A scene can use one the app adds to its resources (`ShapeGenerators`), but only by
-  hand: the console needs a route listing each generator's name, `has_path`, `is_animated`, and settings (name,
-  default, range), and the editor needs `External` as a shape kind, with a generator picker and a field per setting.
+- Shape generators in the editor: a generator that draws lines doesn't get the stroke a new line comes with, and the
+  editor doesn't say which generators have a path for a sweep to follow. `/content/shape-generators` has both
+  (`has_path`), but not whether an outline is lines.
 - Anchors on generated shapes: named points of a generator's output (a hand, a tentacle's tip) that other layers attach
   to, as `Prop::Anchor { layer, point }` beside `Prop::Sweep`. A scene naming one the generator doesn't list fails to
   load.

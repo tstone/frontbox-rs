@@ -10,6 +10,7 @@ import { NAMED_VALUE_LABELS, namedValueKind, ValueFields } from './ValueFields'
 import { VariableFields, VariableSource } from './VariableFields'
 import { contentImageInfo } from '../../state/contentImages'
 import { contentFonts, fontLabel, refreshContentFonts } from '../../state/contentFonts'
+import { refreshShapeGenerators, shapeGenerator, shapeGenerators } from '../../state/shapeGenerators'
 import { contentSoundLength, contentSounds, refreshContentSounds } from '../../state/contentSounds'
 
 import type { BezierPoint } from '../../types/generated/BezierPoint'
@@ -152,7 +153,7 @@ type CellsFill = Extract<FillNode, { Cells: unknown }>['Cells']
 type WarpTransform = Extract<Transform, { Warp: unknown }>
 type ImageFill = Extract<FillNode, { Image: unknown }>['Image']
 type SpritesheetFill = Extract<FillNode, { Spritesheet: unknown }>['Spritesheet']
-export type ShapeKind = 'None' | 'Circle' | 'Ellipse' | 'Rect' | 'Diamond' | 'Star' | 'Chevron' | 'Text' | 'Polygon' | 'Polyline' | 'Bezier' | 'Spiral' | 'Wave'
+export type ShapeKind = 'None' | 'Circle' | 'Ellipse' | 'Rect' | 'Diamond' | 'Star' | 'Chevron' | 'Text' | 'Polygon' | 'Polyline' | 'Bezier' | 'Spiral' | 'Wave' | 'External'
 /** A shape set up from the others, which is a shape of their kind once it's picked */
 export type TemplateKind = 'Pinwheel' | 'Propeller' | 'Triangle' | 'Zigzag' | 'Serpentine'
 /** What a layer's region can be: a shape, or on a light scene its graph */
@@ -212,13 +213,15 @@ const LINES: ShapeOption[] = ([
 const isTemplate = (kind: RegionKind | TemplateKind): kind is TemplateKind =>
   TEMPLATES.some((option) => option.value === kind) || WAVE_TEMPLATES[kind as TemplateKind] !== undefined
 const ALL: ShapeOption = { value: 'None', label: 'All' }
-/** "All", then the shapes by label, then the templates made of them, then lines */
-const SHAPE_OPTIONS: ShapeOption[] = [ALL, ...SHAPES, ...TEMPLATES, ...LINES]
+/** A shape made by one of the app's shape generators, which is only offered when the app has any */
+const GENERATED: ShapeOption = { value: 'External', label: 'Generator', group: 'Code' }
+/** "All", then the shapes by label, then the templates made of them, then lines, then the app's generators */
+const SHAPE_OPTIONS: ShapeOption[] = [ALL, ...SHAPES, ...TEMPLATES, ...LINES, GENERATED]
 const TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = (['Translate', 'Rotate', 'Scale', 'Repeat'] as const).map((value) => ({ value, label: TRANSFORM_LABELS[value] }))
 /** Only for a shape, rather than a fill */
 const SHAPE_TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = [...COPY_KINDS, ...RESHAPE_KINDS].map((value) => ({ value, label: TRANSFORM_LABELS[value] }))
 /** Only for a layer on a light scene */
-const GRAPH_REGION_OPTIONS: ShapeOption[] = [ALL, { value: 'Graph', label: 'Graph' }, ...SHAPES, ...TEMPLATES, ...LINES]
+const GRAPH_REGION_OPTIONS: ShapeOption[] = [ALL, { value: 'Graph', label: 'Graph' }, ...SHAPES, ...TEMPLATES, ...LINES, GENERATED]
 /** Only for a layer with traversals to fit to */
 const FIT_OPTION: { value: TransformKind; label: string } = { value: 'Fit', label: TRANSFORM_LABELS.Fit }
 /** Only for a fill */
@@ -335,6 +338,7 @@ const SHAPE_ICONS: Record<RegionKind, Icon> = {
   Bezier: icons.Curve,
   Spiral: icons.Spiral,
   Wave: icons.Wave,
+  External: icons.Code,
   Graph: icons.Network,
 }
 const FILL_ICONS: Record<FillKind, Icon> = { None: icons.Ban, Solid: icons.PaintBucket, Linear: icons.Blend, Radial: icons.Blend, Conical: icons.Blend, Noise: icons.Cloud, Cells: icons.Hexagon, Image: icons.ImageIcon, Spritesheet: icons.ImageIcon }
@@ -414,6 +418,7 @@ export default function PropertiesPanel() {
   const graphNodes = useGraphNodes()
   onMount(refreshContentSounds)
   onMount(refreshContentFonts)
+  onMount(refreshShapeGenerators)
   const [tab, setTab] = createSignal<SidebarSection>('properties')
   createEffect(
     on(
@@ -1030,6 +1035,9 @@ function NodeFields(props: { node: ConfigNode }) {
             </Match>
             <Match when={region().value !== undefined && 'Wave' in (region().value as Shape).base}>
               <WaveFields lens={region().lens as Lens<Shape>} />
+            </Match>
+            <Match when={region().value !== undefined && 'External' in (region().value as Shape).base}>
+              <GeneratorFields lens={region().lens as Lens<Shape>} />
             </Match>
           </Switch>
         )}
@@ -1865,6 +1873,28 @@ function regionKind(lens: Lens<Shape | undefined>, layer?: Lens<SceneLayer>): Re
   return current ? (Object.keys(current.base)[0] as ShapeKind) : 'None'
 }
 
+/** Which of the app's shape generators makes a shape. Its settings are the values under it. */
+function GeneratorFields(props: { lens: Lens<Shape> }) {
+  const external = () => variant(field(props.lens, 'base') as Lens<ShapeNode>, 'External')
+  const name = () => external().get()?.generator ?? ''
+  // one the app doesn't have stays chosen, so it can be seen and changed
+  const options = () => [...new Set([...shapeGenerators().map((generator) => generator.name), name()])].filter((each) => each !== '').map((each) => ({ value: each, label: each }))
+  // another generator has other settings
+  const change = (generator: string) => external().set({ generator })
+  return (
+    <>
+      <FieldRow label="Generator">
+        <Show when={options().length > 0} fallback={<span class="scene-note">The app has no shape generators</span>}>
+          <Dropdown label="Generator" options={options()} value={name()} onChange={change} />
+        </Show>
+      </FieldRow>
+      <Show when={name() !== '' && shapeGenerators().length > 0 && !shapeGenerator(name())}>
+        <p class="scene-note scene-note-warn">The app has no shape generator by this name, so this scene can't be drawn.</p>
+      </Show>
+    </>
+  )
+}
+
 /**
  * Picks what a layer's region is. On a light scene, it can also be its graph. In the file the two are separate, and a layer could have both, but the graph already says which
  * lights it shows on. A region has its outline in the preview, which can be hidden.
@@ -1881,7 +1911,9 @@ function ShapeKindPicker(props: { node: Extract<ConfigNode, { kind: 'region' }> 
   // a graph's nodes are where its lights are on a plane, so a sequence has none
   const graphs = () => layer() !== undefined && layerPlane(layer()!.get()) !== null
   const kind = () => regionKind(lens(), layer())
-  const options = () => (graphs() ? GRAPH_REGION_OPTIONS : SHAPE_OPTIONS)
+  // a generator is the app's code, so there's none to pick without any, though a shape that names one still says so
+  const options = () =>
+    (graphs() ? GRAPH_REGION_OPTIONS : SHAPE_OPTIONS).filter((option) => option !== GENERATED || shapeGenerators().length > 0 || kind() === 'External')
   const of = () => selectionOf(props.node.id)
 
   const change = (next: RegionKind | TemplateKind) => {
@@ -1907,8 +1939,11 @@ function ShapeKindPicker(props: { node: Extract<ConfigNode, { kind: 'region' }> 
     }
     const current = lens().get()
     if (!current) return lens().set(newShape(next, surface()))
-    // one shape turned into another takes up the same room
-    const size = shapeSize(base().get(), scene.get())
+    // a generator's outline is its own, with no size to take on: it stays where the shape was placed
+    if (next === 'External') return base().set(sizedShape(next, [0, 0]))
+    // one shape turned into another takes up the same room, and one in place of a generator's is the size of a new shape
+    const across = newShapeSize(surface())
+    const size: Vec2 = 'External' in current.base ? [across, across] : shapeSize(base().get(), scene.get())
     if (!isTemplate(next)) return base().set(sizedShape(next, size))
     const style = WAVE_TEMPLATES[next]
     if (style) return base().set(waveShape(size, style))
@@ -2074,6 +2109,8 @@ function sizedShape(kind: Exclude<ShapeKind, 'None'>, [width, height]: Vec2): Sh
   if (kind === 'Chevron') return { Chevron: { width: { Fixed: width }, height: { Fixed: height }, notch: { Fixed: NOTCH.rest! } } }
   if (kind === 'Spiral') return { Spiral: { radius: { Fixed: reach }, turns: { Fixed: TURNS.rest! }, flare: { Fixed: FLARE.rest! } } }
   if (kind === 'Wave') return waveShape([width, height], 'Smooth')
+  // the first the app has, with each setting where the generator has it
+  if (kind === 'External') return { External: { generator: shapeGenerators()[0]?.name ?? '' } }
   if (kind === 'Text') {
     const font = contentFonts()[0] ?? ''
     const size = { Fixed: crispTextSize(font, Math.max(Math.round(height / 2), 1)) }

@@ -59,7 +59,8 @@ seed: number,
  */
 stops: Array<Stop>, } } | { "Image": { 
 /**
- * Path within the [`Content`](crate::scene::Content) folder. Empty draws nothing, for an image not chosen yet.
+ * The image's name in the scene's [`Assets`](crate::scene::Assets): for a game, its path within the content
+ * folder. Empty draws nothing, for an image not chosen yet.
  */
 name: string, 
 /**
@@ -68,7 +69,8 @@ name: string,
  */
 frame?: Prop<number>, size?: ImageSize, } } | { "Spritesheet": { 
 /**
- * Path within the [`Content`](crate::scene::Content) folder. Empty draws nothing, for an image not chosen yet.
+ * The image's name in the scene's [`Assets`](crate::scene::Assets): for a game, its path within the content
+ * folder. Empty draws nothing, for an image not chosen yet.
  */
 name: string, rows: number, columns: number, 
 /**

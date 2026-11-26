@@ -349,8 +349,8 @@ function regionNode(id: string, lens: Lens<Shape | undefined>, surface: Surface,
     lens,
     layer,
     value: shape,
-    // text has its words and font as fields, and a wave its style
-    fields: shape !== undefined && ('Text' in shape.base || 'Wave' in shape.base),
+    // text has its words and font as fields, a wave its style, and a generated shape its generator
+    fields: shape !== undefined && ('Text' in shape.base || 'Wave' in shape.base || 'External' in shape.base),
     children: shape ? shapeChildren(id, lens as Lens<Shape>, surface) : [],
   })
 }

@@ -1,4 +1,6 @@
 import { fontPixelSize } from '../../state/contentFonts'
+import { shapeGenerator } from '../../state/shapeGenerators'
+import type { GeneratorSettingInfo } from '../../types/generated/GeneratorSettingInfo'
 import { contentImageInfo } from '../../state/contentImages'
 import type { Color } from '../../types/generated/Color'
 import type { ColorAdjust } from '../../types/generated/ColorAdjust'
@@ -667,7 +669,8 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
         use(field(item(points, i), 'point'), `${label} · Point ${i + 1}`, pointRanges(surface))
         use(field(item(points, i), 'handle'), `${label} · Point ${i + 1} · Handle`, pointRanges(surface))
       })
-    } else {
+    } else if ('Polygon' in current || 'Polyline' in current) {
+      // anything else has nothing here: a generator with no settings, or one the app doesn't have
       const points = 'Polygon' in current ? field(variant(base, 'Polygon'), 'points') : field(variant(base, 'Polyline'), 'points')
       points.get().forEach((_, i) => use(item(points, i), `${label} · Point ${i + 1}`, pointRanges(surface)))
     }
@@ -1484,7 +1487,37 @@ export function shapeProps(base: Lens<ShapeNode>, surface: Surface): PropField[]
     if ('Number' in current.Text.text) props.push(propField('value', 'Number', 0, both(NUMBER), field(variant(source, 'Number'), 'value')))
     return props
   }
+  if ('External' in current) {
+    // one for each setting its generator has, whether or not the scene sets it
+    const settings = field(variant(base, 'External'), 'settings')
+    return (shapeGenerator(current.External.generator)?.settings ?? []).map((setting) => {
+      const rest: Prop<number> = { Fixed: setting.default }
+      const lens: Lens<Prop<number>> = {
+        get: () => settings.get()?.[setting.name] ?? rest,
+        set: (value) => settings.set({ ...settings.get(), [setting.name]: value }),
+      }
+      return propField(setting.name, settingLabel(setting.name), setting.default, both(settingRange(setting, surface)), lens)
+    })
+  }
   return []
+}
+
+/** A generator setting's name as a label: `target_x` is "Target x" */
+function settingLabel(name: string) {
+  const words = name.replaceAll('_', ' ')
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
+/**
+ * How far a generator's setting can be moved: its own range, or for one without, as far each way as what it's on is
+ * across, as a setting is often a place or a size
+ */
+function settingRange(setting: GeneratorSettingInfo, surface: Surface): Range {
+  const [width, height] = surface ?? [1, 0]
+  const reach = Math.max(width, height, Math.abs(setting.default) * 2)
+  const [min, max] = setting.range ?? [-reach, reach]
+  const span = max - min
+  return { min, max, step: span <= 2 ? 0.01 : span <= 50 ? 0.1 : 1, rest: setting.default }
 }
 
 function propField(key: string, label: string, fallback: SceneValue, ranges: Ranges, lens: Lens<unknown>): PropField {
