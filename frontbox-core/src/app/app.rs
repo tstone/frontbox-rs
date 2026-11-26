@@ -13,6 +13,7 @@ use futures_util::FutureExt;
 use std::any::{TypeId, type_name};
 use std::collections::HashMap;
 use std::panic::AssertUnwindSafe;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 
 /// Main runnable of Frontbox
@@ -23,6 +24,7 @@ pub struct App {
   boot_config: BootConfig,
   routines: HashMap<TypeId, RoutineDefinition>,
   planes: Vec<AppPlane>,
+  resources: Resources,
 }
 
 impl App {
@@ -36,6 +38,7 @@ impl App {
       systems: Vec::new(),
       tracers: Vec::new(),
       configs,
+      resources: Resources::in_folder(boot_config.content_path.clone()),
       boot_config,
       routines: HashMap::new(),
       planes: Vec::new(),
@@ -71,6 +74,24 @@ impl App {
     self
   }
 
+  /// What the app is made with that isn't a system: what's in its content folder, and what code adds here, such as the
+  /// fonts and scenes a crate comes with. It can be used right away, so a scene opened while the app is built finds
+  /// what was added before it. Systems reach it as `ctx.resources`, where nothing more can be added.
+  ///
+  /// ```rust
+  /// # use frontbox_core::prelude::*;
+  /// # struct Greetings;
+  /// # impl Resource for Greetings {
+  /// #   type Item = String;
+  /// #   const NAME: &'static str = "greeting";
+  /// # }
+  /// # let mut app = App::new(BootConfig { config_path: None, ..Default::default() });
+  /// app.resources().add::<Greetings>("hello", "Hello!".into());
+  /// ```
+  pub fn resources(&mut self) -> &mut Resources {
+    &mut self.resources
+  }
+
   /// Register a tracer to monitor things
   pub fn tracer(&mut self, tracer: impl AppTracer + 'static) -> &mut Self {
     self.tracers.push(Box::new(tracer));
@@ -91,12 +112,14 @@ impl App {
       boot_config: self.boot_config,
       routines: self.routines,
       planes: self.planes,
+      resources: self.resources,
     }
   }
 
   pub async fn run(mut self) {
     let app_config = AppConfig {
       planes: std::mem::take(&mut self.planes),
+      resources: Arc::new(std::mem::take(&mut self.resources)),
       ..AppConfig::from_boot_config(&self.boot_config)
     };
     let (app_sender, app_receiver) = mpsc::unbounded_channel::<AppMessage>();
@@ -220,4 +243,5 @@ pub(crate) struct AppParts {
   pub boot_config: BootConfig,
   pub routines: HashMap<TypeId, RoutineDefinition>,
   pub planes: Vec<AppPlane>,
+  pub resources: Resources,
 }

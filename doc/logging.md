@@ -31,6 +31,7 @@ A filter matches every target that starts with it, so `frontbox::ball_management
 |---|---|
 | `frontbox::app` | Startup, opening the metrics store |
 | `frontbox::run_loop` | Message handling and timing, slow messages, shutdown |
+| `frontbox::resources` | A resource's item added twice by the same name |
 | `frontbox::config` | Reading and saving TOML files and operator config |
 | `frontbox::metrics` | Writing metrics |
 

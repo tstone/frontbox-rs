@@ -1,10 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::sync::Arc;
 
 use frontbox_core::prelude::app_tracer::SoundPreviewRequested;
 use frontbox_core::prelude::*;
-use frontbox_gfx::scene::Content;
-use frontbox_scene::{PlaybackId, Scene, SceneSystem};
+use frontbox_scene::{PlaybackId, Scene, SceneSystem, Sounds};
 use tokio::sync::mpsc;
 
 use crate::callout::CalloutRequest;
@@ -23,8 +23,8 @@ pub struct SoundSystem {
   )>,
   /// Lines asked for that haven't been reported done with
   callouts_pending: usize,
-  /// Where scenes' sounds are loaded from. Until the system spawns, and for an app without a content folder, it has none.
-  content: Content,
+  /// The app's, where scenes' sounds are found. Until the system spawns, it's an empty one.
+  resources: Arc<Resources>,
   /// Sounds from the content folder that have been asked to load, by name
   content_loaded: HashSet<String>,
   /// Sounds from the content folder asked for before the system spawned and knew where the folder is
@@ -49,7 +49,7 @@ impl SoundSystem {
       completed_rx,
       manager_channels: Some((rx, completed_tx)),
       callouts_pending: 0,
-      content: Content::without_folder(),
+      resources: Arc::default(),
       content_loaded: HashSet::new(),
       load_on_spawn: Vec::new(),
       playback_times: HashMap::new(),
@@ -137,7 +137,7 @@ impl SoundSystem {
     if self.content_loaded.contains(name) {
       return true;
     }
-    match self.content.sound_path(name) {
+    match self.resources.path::<Sounds>(name) {
       Ok(path) => {
         self.content_loaded.insert(name.to_string());
         let _ = self
@@ -189,10 +189,7 @@ impl System for SoundSystem {
   }
 
   fn on_spawn(&mut self, ctx: &SystemContext) {
-    self.content = ctx
-      .content_path
-      .clone()
-      .map_or_else(Content::without_folder, Content::new);
+    self.resources = ctx.resources.clone();
     let Some((rx, completed_tx)) = self.manager_channels.take() else {
       return;
     };
@@ -257,7 +254,7 @@ mod tests {
   fn context() -> (TestContext, mpsc::UnboundedReceiver<SoundManagerMessage>) {
     let mut sound = SoundSystem::new("test");
     let (rx, _) = sound.manager_channels.take().unwrap();
-    sound.content = Content::new("content");
+    sound.resources = Arc::new(Resources::new("content"));
     let mut context = TestContext::default();
     context.insert_system(SceneSystem::new());
     context.insert_system(sound);

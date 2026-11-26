@@ -65,6 +65,7 @@ mod boot_config;
 mod emergency_stop;
 pub mod event_box;
 mod groups_ext;
+mod resources;
 pub(crate) mod run_loop;
 
 use indexmap::IndexMap;
@@ -76,6 +77,7 @@ pub use app_state::*;
 pub use boot_config::*;
 pub(crate) use event_box::*;
 pub(crate) use groups_ext::GroupsExt;
+pub use resources::*;
 pub use run_loop::Synchronize;
 
 use crate::systems::{GroupId, SystemGroup};

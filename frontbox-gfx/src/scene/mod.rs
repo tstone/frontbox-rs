@@ -52,8 +52,8 @@
 //! - [`Inputs`] -- The variables a layer reads, to check against what the code playing it sends
 //! - [`Timing`] -- How long an animated scene runs, and how many times
 //! - [`file`](mod@file) -- Reading and writing scene files as RON
-//! - [`Content`], [`Assets`], [`Font`] -- The folder of scenes, images, and fonts, and the decoded images and fonts a
-//!   scene draws from
+//! - [`Assets`], [`Picture`], [`Font`] -- The decoded images and fonts a scene draws from. Finding and loading them is
+//!   up to what uses this crate: frontbox-scene loads them from the app's resources.
 //! - [`ShapeGenerator`] -- Outlines made by the app's code, for shapes too involved to build from the base shapes
 
 mod animatable;
@@ -61,7 +61,6 @@ mod assets;
 mod bounds;
 mod cells;
 mod color_adjust;
-mod content;
 mod contour;
 mod external_envelope;
 pub mod file;
@@ -104,7 +103,6 @@ pub use assets::*;
 pub use bounds::*;
 pub use cells::CellStyle;
 pub use color_adjust::*;
-pub use content::*;
 pub(crate) use contour::Contour;
 pub use external_envelope::*;
 pub use fill::*;
@@ -126,6 +124,7 @@ pub use scene_error::*;
 pub use shape::*;
 pub use shape_adjust::*;
 pub use shape_generator::*;
+pub use sound::SOUND_EXTENSIONS;
 pub use surface::*;
 pub use sweep::*;
 pub use text_layout::*;

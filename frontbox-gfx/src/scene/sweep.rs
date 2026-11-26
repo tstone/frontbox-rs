@@ -5,7 +5,8 @@ use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::scene::{
-  Animatable, Assets, ContentError, Env, Inputs, Layer, LayerAssetError, Prop, SceneError, Shape,
+  Animatable, Assets, Env, GeneratorError, Inputs, Layer, LayerGeneratorError, Prop, SceneError,
+  Shape,
 };
 
 /// A position on the outline of another layer's region
@@ -175,7 +176,7 @@ pub fn check_sweeps<K: PartialEq>(layers: &[(usize, &Layer, K)]) -> Result<(), S
 pub fn check_generated_paths(
   layers: &[(usize, &Layer)],
   assets: &Assets,
-) -> Result<(), LayerAssetError> {
+) -> Result<(), LayerGeneratorError> {
   for (index, layer) in layers {
     let mut inputs = Inputs::new();
     layer.read_inputs(&mut inputs);
@@ -189,9 +190,9 @@ pub fn check_generated_paths(
           .shape_generator(generator)
           .is_some_and(|loaded| !loaded.generator().has_path())
         {
-          return Err(LayerAssetError {
+          return Err(LayerGeneratorError {
             layer: layer.label(*index),
-            error: ContentError::GeneratorHasNoPath {
+            error: GeneratorError::NoPath {
               path: name.clone(),
               generator: generator.into(),
             },

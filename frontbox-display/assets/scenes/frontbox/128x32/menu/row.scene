@@ -48,7 +48,7 @@ Scene(
           ],
           base: Text(
             text: Variable("label"),
-            font: "TinyPixie2",
+            font: "frontbox/fonts/TinyPixie2.ttf",
             size: Fixed(6.0),
             width: Fixed(113.0),
             height: Fixed(7.0),
@@ -75,7 +75,7 @@ Scene(
           ],
           base: Text(
             text: Variable("label"),
-            font: "TinyPixie2",
+            font: "frontbox/fonts/TinyPixie2.ttf",
             size: Fixed(6.0),
             width: Fixed(80.0),
             height: Fixed(7.0),
@@ -102,7 +102,7 @@ Scene(
           ],
           base: Text(
             text: Variable("value"),
-            font: "TinyPixie2",
+            font: "frontbox/fonts/TinyPixie2.ttf",
             size: Fixed(6.0),
             width: Fixed(40.0),
             height: Fixed(7.0),

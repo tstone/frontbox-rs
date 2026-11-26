@@ -35,7 +35,7 @@ Scene(
           ],
           base: Text(
             text: Variable("text"),
-            font: "TinyPixie2",
+            font: "frontbox/fonts/TinyPixie2.ttf",
             size: Fixed(6.0),
             width: Fixed(121.0),
             height: Fixed(7.0),

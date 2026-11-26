@@ -3,11 +3,13 @@ use std::sync::{Arc, Mutex};
 
 use glam::Vec2;
 
+use crate::scene::ShapeNode;
+
 /// Outlines made by code outside gfx, for [`ShapeNode::External`](crate::scene::ShapeNode::External)
 ///
 /// A generator is for shapes too involved to build from the base shapes, such as a skeleton posed by kinematics or a
-/// tentacle that curls. A scene names it and sets its settings; the app gives it to
-/// [`Content::with_shape_generators`](crate::scene::Content::with_shape_generators) by that name. Its output is a shape
+/// tentacle that curls. A scene names it and sets its settings; whatever loads the scene puts it in the scene's
+/// [`Assets`](crate::scene::Assets) by that name. Its output is a shape
 /// like any other: transforms place it, and strokes, feathers, and shadows draw on it.
 ///
 /// [`Self::generate`] has to be a pure function of the frame it's given, so that any moment can be sampled on its own,
@@ -166,6 +168,26 @@ impl LoadedGenerator {
     }
   }
 
+  /// `generator` for the external shape `shape` names it in, which can only set the settings it has. `None` for a
+  /// shape that isn't external.
+  pub fn for_shape(
+    generator: Arc<dyn ShapeGenerator>,
+    shape: &ShapeNode,
+  ) -> Option<Result<Self, GeneratorError>> {
+    let name = shape.generator_name()?;
+    let specs = generator.settings();
+    let unknown = shape
+      .generator_settings()
+      .find(|setting| !specs.iter().any(|spec| spec.name == *setting));
+    Some(match unknown {
+      Some(setting) => Err(GeneratorError::NoSuchSetting {
+        generator: name.into(),
+        setting: setting.into(),
+      }),
+      None => Ok(Self::new(generator)),
+    })
+  }
+
   pub fn generator(&self) -> &dyn ShapeGenerator {
     self.generator.as_ref()
   }
@@ -218,6 +240,47 @@ impl LoadedGenerator {
     generated
   }
 }
+
+/// Why a scene can't use a [`ShapeGenerator`] as it does
+#[derive(Debug, Clone, PartialEq)]
+pub enum GeneratorError {
+  /// A scene sets a setting its shape generator doesn't have
+  NoSuchSetting { generator: String, setting: String },
+  /// A sweep follows the region of the layer named `path`, made by a shape generator with no path to follow
+  NoPath { path: String, generator: String },
+}
+
+impl fmt::Display for GeneratorError {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      Self::NoSuchSetting { generator, setting } => write!(
+        f,
+        "shape generator \"{generator}\" has no setting \"{setting}\""
+      ),
+      Self::NoPath { path, generator } => write!(
+        f,
+        "layer \"{path}\" is made by shape generator \"{generator}\", which has no path to follow"
+      ),
+    }
+  }
+}
+
+impl std::error::Error for GeneratorError {}
+
+/// A layer uses a [`ShapeGenerator`] in a way it can't be
+#[derive(Debug, Clone, PartialEq)]
+pub struct LayerGeneratorError {
+  pub layer: String,
+  pub error: GeneratorError,
+}
+
+impl fmt::Display for LayerGeneratorError {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{}: {}", self.layer, self.error)
+  }
+}
+
+impl std::error::Error for LayerGeneratorError {}
 
 /// An output a [`LoadedGenerator`] keeps, by what it was made for
 type Kept = (GeneratedKey, Arc<Generated>);
@@ -303,9 +366,8 @@ mod tests {
     use super::*;
     use crate::scene::value::tests::env;
     use crate::scene::{
-      Assets, Color, Content, ContentError, Env, Fill, FillNode, Inputs, Layer, Prop, Regions,
-      Sample, Shape, ShapeAdjust, ShapeNode, StrokeAlign, Sweep, Transform, Variables,
-      check_generated_paths, file,
+      Assets, Color, Env, Fill, FillNode, Inputs, Layer, Prop, Regions, Sample, Shape, ShapeAdjust,
+      ShapeNode, StrokeAlign, Sweep, Transform, Variables, check_generated_paths, file,
     };
 
     /// Unit squares in a row, `spacing` apart, centered on y = 0 from x = 0, with a path through their middles
@@ -511,28 +573,21 @@ mod tests {
       assert!(check("squares").is_ok());
       assert!(matches!(
         check("line"),
-        Err(ContentError::GeneratorHasNoPath { path, generator }) if path == "track" && generator == "line"
+        Err(GeneratorError::NoPath { path, generator }) if path == "track" && generator == "line"
       ));
     }
 
     #[test]
-    fn content_gives_a_layer_its_generator_and_only_the_settings_it_has() {
-      let content = Content::without_folder()
-        .with_shape_generators([("squares", Arc::new(Squares) as Arc<dyn ShapeGenerator>)]);
-      assert_eq!(content.shape_generator_names(), ["squares"]);
-      let assets = content
-        .assets_for([&layer("a", external("squares", &[("count", 1.0.into())]))])
-        .unwrap();
-      assert!(assets.shape_generator("squares").is_some());
-      let error = |shape: Shape| content.assets_for([&layer("a", shape)]).unwrap_err().error;
+    fn a_shape_can_only_set_the_settings_its_generator_has() {
+      let loaded = |shape: Shape| LoadedGenerator::for_shape(Arc::new(Squares), &shape.base);
+      assert!(
+        loaded(external("squares", &[("count", 1.0.into())])).is_some_and(|loaded| loaded.is_ok())
+      );
       assert!(matches!(
-        error(external("tentacle", &[])),
-        ContentError::NoShapeGenerator(name) if name == "tentacle"
+        loaded(external("squares", &[("size", 1.0.into())])),
+        Some(Err(GeneratorError::NoSuchSetting { generator, setting })) if generator == "squares" && setting == "size"
       ));
-      assert!(matches!(
-        error(external("squares", &[("size", 1.0.into())])),
-        ContentError::NoSuchSetting { setting, .. } if setting == "size"
-      ));
+      assert!(loaded(Shape::new(ShapeNode::circle(1.0))).is_none());
     }
 
     #[test]

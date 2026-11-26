@@ -1,48 +1,65 @@
 use frontbox_gfx::scene::Font;
 
-/// The pixel fonts this crate comes with, by the name a scene uses for each. Who made them is in
-/// `assets/fonts/CREDITS.md`.
+/// The pixel fonts this crate comes with, by the name a scene uses for each, which is where a game's own file would
+/// replace it. Who made them is in `assets/fonts/CREDITS.md`.
 const FONTS: [(&str, &[u8]); 13] = [
-  ("DMDSmall", include_bytes!("../assets/fonts/DMDSmall.ttf")),
   (
-    "ImpactBits",
+    "frontbox/fonts/DMDSmall.ttf",
+    include_bytes!("../assets/fonts/DMDSmall.ttf"),
+  ),
+  (
+    "frontbox/fonts/ImpactBits.ttf",
     include_bytes!("../assets/fonts/ImpactBits.ttf"),
   ),
-  ("LCDBlock", include_bytes!("../assets/fonts/LCDBlock.ttf")),
-  ("Minimal4", include_bytes!("../assets/fonts/Minimal4.ttf")),
   (
-    "MooseNooks",
+    "frontbox/fonts/LCDBlock.ttf",
+    include_bytes!("../assets/fonts/LCDBlock.ttf"),
+  ),
+  (
+    "frontbox/fonts/Minimal4.ttf",
+    include_bytes!("../assets/fonts/Minimal4.ttf"),
+  ),
+  (
+    "frontbox/fonts/MooseNooks.ttf",
     include_bytes!("../assets/fonts/MooseNooks.ttf"),
   ),
-  ("OwlsNInk", include_bytes!("../assets/fonts/OwlsNInk.ttf")),
-  ("SirClive", include_bytes!("../assets/fonts/SirClive.ttf")),
   (
-    "TenFatGuys",
+    "frontbox/fonts/OwlsNInk.ttf",
+    include_bytes!("../assets/fonts/OwlsNInk.ttf"),
+  ),
+  (
+    "frontbox/fonts/SirClive.ttf",
+    include_bytes!("../assets/fonts/SirClive.ttf"),
+  ),
+  (
+    "frontbox/fonts/TenFatGuys.ttf",
     include_bytes!("../assets/fonts/TenFatGuys.ttf"),
   ),
   (
-    "TimesNewPixel",
+    "frontbox/fonts/TimesNewPixel.ttf",
     include_bytes!("../assets/fonts/TimesNewPixel.ttf"),
   ),
-  ("TinyPix", include_bytes!("../assets/fonts/TinyPix.ttf")),
   (
-    "TinyPixie2",
+    "frontbox/fonts/TinyPix.ttf",
+    include_bytes!("../assets/fonts/TinyPix.ttf"),
+  ),
+  (
+    "frontbox/fonts/TinyPixie2.ttf",
     include_bytes!("../assets/fonts/TinyPixie2.ttf"),
   ),
   (
-    "VSansSerif8bold",
+    "frontbox/fonts/VSansSerif8bold.ttf",
     include_bytes!("../assets/fonts/VSansSerif8bold.ttf"),
   ),
   (
-    "Webslinger",
+    "frontbox/fonts/Webslinger.ttf",
     include_bytes!("../assets/fonts/Webslinger.ttf"),
   ),
 ];
 
-/// The pixel fonts this crate comes with, by the name a scene uses for them, to give to
-/// [`Content::with_fonts`](frontbox_gfx::scene::Content::with_fonts). Each is crisp at its
+/// The pixel fonts this crate comes with, by the name a scene uses for them. Each is crisp at its
 /// [`Font::pixel_size`], or a whole multiple of it: 16 for most, and 6 for `TinyPixie2`.
-pub fn bundled_fonts() -> impl Iterator<Item = (&'static str, Font)> {
+pub(crate) fn fonts() -> impl Iterator<Item = (&'static str, Font)> {
   FONTS.into_iter().map(|(name, bytes)| {
     (
       name,
@@ -63,17 +80,21 @@ mod tests {
 
   #[test]
   fn every_bundled_font_loads() {
-    assert_eq!(bundled_fonts().count(), FONTS.len());
+    assert_eq!(fonts().count(), FONTS.len());
   }
 
   #[test]
   fn every_bundled_font_is_on_whole_units_at_its_design_size() {
     let (width, height) = (240, 24);
-    for (name, font) in bundled_fonts() {
+    for (name, font) in fonts() {
       let size = font
         .pixel_size()
         .unwrap_or_else(|| panic!("{name} is a pixel font"));
-      let expected = if name == "TinyPixie2" { 6.0 } else { 16.0 };
+      let expected = if name == "frontbox/fonts/TinyPixie2.ttf" {
+        6.0
+      } else {
+        16.0
+      };
       assert_eq!(size, expected, "{name}");
       let mut assets = Assets::new();
       assets.insert_font(name, font);

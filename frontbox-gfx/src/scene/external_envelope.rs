@@ -4,6 +4,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::animation::Cycle;
+use crate::scene::sound;
 use crate::scene::{Animatable, Env, SceneError, Spread, Timing};
 
 /// A value that follows the rise and fall of something outside the scene's graphics, as an envelope follower does
@@ -150,7 +151,7 @@ impl EnvelopeKey {
 }
 
 /// Content analyzed into a curve, before any slew: values from 0 to 1, `rate` of them a second, from the start of the
-/// content. From [`Content::envelope`](crate::scene::Content::envelope).
+/// content. From [`Self::analyze`].
 #[derive(Clone, PartialEq)]
 pub struct EnvelopeContent {
   rate: f32,
@@ -167,6 +168,16 @@ impl EnvelopeContent {
         .map(|value| value.clamp(0.0, 1.0))
         .collect(),
     }
+  }
+
+  /// A sound file's contents analyzed by `analysis`, for an external envelope to follow. `name` is the file's, whose
+  /// extension hints at its format. The error says why it couldn't be decoded. Decodes the whole sound, so don't call
+  /// this mid-frame.
+  pub fn analyze(name: &str, bytes: Vec<u8>, analysis: Analysis) -> Result<Self, String> {
+    let (power, sample_rate) = sound::decode_power(name, bytes)?;
+    Ok(match analysis {
+      Analysis::Rms => Self::rms(&power, sample_rate),
+    })
   }
 
   /// [`Analysis::Rms`] of a sound, given the mean square of its channels at each frame, `sample_rate` frames a second

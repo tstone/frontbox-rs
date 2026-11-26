@@ -5,7 +5,8 @@ use axum::extract::{DefaultBodyLimit, Path, State};
 use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::get;
-use frontbox_gfx::scene::{Content, ContentError, SceneFileError};
+use frontbox_core::prelude::{Resource, ResourceError, Resources};
+use frontbox_scene::{Fonts, Images, Scenes, Sounds};
 use rust_embed::RustEmbed;
 use std::collections::HashSet;
 use std::net::SocketAddr;
@@ -220,8 +221,8 @@ async fn plane_image(Path(index): Path<usize>, State(hub): State<ConsoleHub>) ->
 
 /// The name of every image in the content folder. An app without one has none.
 async fn content_images(State(hub): State<ConsoleHub>) -> Response {
-  let content = hub.content();
-  match tokio::task::spawn_blocking(move || content.image_names()).await {
+  let resources = hub.resources();
+  match tokio::task::spawn_blocking(move || resources.names::<Images>()).await {
     Ok(names) => Json(names).into_response(),
     Err(err) => {
       log::error!(target: "frontbox::console", "Scanning the content folder stopped: {err}");
@@ -232,7 +233,7 @@ async fn content_images(State(hub): State<ConsoleHub>) -> Response {
 
 /// An image from the content folder, read from disk on each request so it can be edited while the machine runs
 async fn content_image(Path(name): Path<String>, State(hub): State<ConsoleHub>) -> Response {
-  let Ok(path) = hub.content().image_path(&name) else {
+  let Ok(path) = hub.resources().path::<Images>(&name) else {
     return StatusCode::NOT_FOUND.into_response();
   };
   match tokio::fs::read(&path).await {
@@ -247,8 +248,8 @@ async fn content_image(Path(name): Path<String>, State(hub): State<ConsoleHub>) 
 /// The size and frames of an image in the content folder. This decodes it if nothing has yet. The reply to a failure is
 /// text for showing to whoever chose it.
 async fn content_image_info(Path(name): Path<String>, State(hub): State<ConsoleHub>) -> Response {
-  let content = hub.content();
-  match tokio::task::spawn_blocking(move || content.picture(&name)).await {
+  let resources = hub.resources();
+  match tokio::task::spawn_blocking(move || resources.get::<Images>(&name)).await {
     Ok(Ok(picture)) => Json(ImageInfo {
       width: picture.width(),
       height: picture.height(),
@@ -256,11 +257,9 @@ async fn content_image_info(Path(name): Path<String>, State(hub): State<ConsoleH
       duration: picture.duration(),
     })
     .into_response(),
-    Ok(Err(ContentError::Decode { name, error })) => (
-      StatusCode::UNPROCESSABLE_ENTITY,
-      ContentError::Decode { name, error }.to_string(),
-    )
-      .into_response(),
+    Ok(Err(err @ ResourceError::Load { .. })) => {
+      (StatusCode::UNPROCESSABLE_ENTITY, err.to_string()).into_response()
+    }
     Ok(Err(err)) => (StatusCode::NOT_FOUND, err.to_string()).into_response(),
     Err(err) => {
       log::error!(target: "frontbox::console", "Reading an image stopped: {err}");
@@ -275,29 +274,11 @@ async fn add_content_image(
   State(hub): State<ConsoleHub>,
   bytes: Bytes,
 ) -> Response {
-  let content = hub.content();
-  let added = tokio::task::spawn_blocking(move || content.add_image(&name, &bytes)).await;
+  let resources = hub.resources();
+  let added = tokio::task::spawn_blocking(move || add_image(&resources, &name, &bytes)).await;
   match added {
     Ok(Ok(())) => StatusCode::CREATED.into_response(),
-    Ok(Err(err)) => {
-      let status = match err {
-        ContentError::Taken(_) | ContentError::NoFolder => StatusCode::CONFLICT,
-        ContentError::Write { .. }
-        | ContentError::Read { .. }
-        | ContentError::ReadFont { .. }
-        | ContentError::ReadSound { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-        ContentError::BadName(_)
-        | ContentError::Decode { .. }
-        | ContentError::BadFontName(_)
-        | ContentError::NotAFont(_)
-        | ContentError::BadSoundName(_)
-        | ContentError::NotASound { .. }
-        | ContentError::NoShapeGenerator(_)
-        | ContentError::NoSuchSetting { .. }
-        | ContentError::GeneratorHasNoPath { .. } => StatusCode::UNPROCESSABLE_ENTITY,
-      };
-      (status, err.to_string()).into_response()
-    }
+    Ok(Err(err)) => resources_failure(err),
     Err(err) => {
       log::error!(target: "frontbox::console", "Adding an image stopped: {err}");
       StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -307,8 +288,8 @@ async fn add_content_image(
 
 /// The name of every sound in the content folder. An app without one has none.
 async fn content_sounds(State(hub): State<ConsoleHub>) -> Response {
-  let content = hub.content();
-  match tokio::task::spawn_blocking(move || content.sound_names()).await {
+  let resources = hub.resources();
+  match tokio::task::spawn_blocking(move || resources.names::<Sounds>()).await {
     Ok(names) => Json(names).into_response(),
     Err(err) => {
       log::error!(target: "frontbox::console", "Scanning the content folder stopped: {err}");
@@ -319,10 +300,10 @@ async fn content_sounds(State(hub): State<ConsoleHub>) -> Response {
 
 /// Every font a scene can use: those frontbox comes with, and those in the content folder. Loads any that haven't been.
 async fn content_fonts(State(hub): State<ConsoleHub>) -> Response {
-  let content = hub.content();
+  let resources = hub.resources();
   let fonts = move || {
     let info = |name: String| {
-      let font = content.font(&name).ok();
+      let font = resources.get::<Fonts>(&name).ok();
       let pixel_size = font.as_ref().and_then(|font| font.pixel_size());
       let cap_height = font
         .zip(pixel_size)
@@ -334,8 +315,8 @@ async fn content_fonts(State(hub): State<ConsoleHub>) -> Response {
         cap_height,
       }
     };
-    content
-      .font_names()
+    resources
+      .names::<Fonts>()
       .into_iter()
       .map(info)
       .collect::<Vec<_>>()
@@ -351,7 +332,7 @@ async fn content_fonts(State(hub): State<ConsoleHub>) -> Response {
 
 /// A sound from the content folder, read from disk on each request so it can be edited while the machine runs
 async fn content_sound(Path(name): Path<String>, State(hub): State<ConsoleHub>) -> Response {
-  let Ok(path) = hub.content().sound_path(&name) else {
+  let Ok(path) = hub.resources().path::<Sounds>(&name) else {
     return StatusCode::NOT_FOUND.into_response();
   };
   match tokio::fs::read(&path).await {
@@ -365,8 +346,8 @@ async fn content_sound(Path(name): Path<String>, State(hub): State<ConsoleHub>) 
 
 /// The name of every scene in the content folder. An app without one has none.
 async fn content_scenes(State(hub): State<ConsoleHub>) -> Response {
-  let content = hub.content();
-  match tokio::task::spawn_blocking(move || content.scene_names()).await {
+  let resources = hub.resources();
+  match tokio::task::spawn_blocking(move || resources.names::<Scenes>()).await {
     Ok(names) => Json(names).into_response(),
     Err(err) => {
       log::error!(target: "frontbox::console", "Scanning the content folder stopped: {err}");
@@ -378,10 +359,10 @@ async fn content_scenes(State(hub): State<ConsoleHub>) -> Response {
 /// A scene's file as RON, read from disk on each request so it can be edited while the machine runs. The reply to a
 /// failure is text for showing to whoever is opening it.
 async fn content_scene(Path(name): Path<String>, State(hub): State<ConsoleHub>) -> Response {
-  let content = hub.content();
-  match tokio::task::spawn_blocking(move || content.read_scene(&name)).await {
+  let resources = hub.resources();
+  match tokio::task::spawn_blocking(move || resources.get::<Scenes>(&name)).await {
     Ok(Ok(ron)) => ron.into_response(),
-    Ok(Err(err)) => scene_file_failure(err),
+    Ok(Err(err)) => resources_failure(err),
     Err(err) => {
       log::error!(target: "frontbox::console", "Reading a scene stopped: {err}");
       StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -396,7 +377,14 @@ async fn add_content_scene(
   name: Path<String>,
   source: Json<SceneSource>,
 ) -> Response {
-  write_scene(hub, name, source, StatusCode::CREATED, Content::add_scene).await
+  write_scene(
+    hub,
+    name,
+    source,
+    StatusCode::CREATED,
+    Resources::create::<Scenes>,
+  )
+  .await
 }
 
 /// Saves a scene over the one in the content folder. Replies as `add_content_scene` does.
@@ -405,15 +393,15 @@ async fn save_content_scene(
   name: Path<String>,
   source: Json<SceneSource>,
 ) -> Response {
-  write_scene(hub, name, source, StatusCode::OK, Content::save_scene).await
+  write_scene(hub, name, source, StatusCode::OK, Resources::save::<Scenes>).await
 }
 
 /// Removes a scene from the content folder. The reply to a failure is text for showing to whoever is deleting it.
 async fn delete_content_scene(Path(name): Path<String>, State(hub): State<ConsoleHub>) -> Response {
-  let content = hub.content();
-  match tokio::task::spawn_blocking(move || content.delete_scene(&name)).await {
+  let resources = hub.resources();
+  match tokio::task::spawn_blocking(move || resources.delete::<Scenes>(&name)).await {
     Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
-    Ok(Err(err)) => scene_file_failure(err),
+    Ok(Err(err)) => resources_failure(err),
     Err(err) => {
       log::error!(target: "frontbox::console", "Deleting a scene stopped: {err}");
       StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -426,16 +414,18 @@ async fn write_scene(
   Path(name): Path<String>,
   Json(source): Json<SceneSource>,
   written: StatusCode,
-  write: fn(&Content, &str, &str) -> Result<(), SceneFileError>,
+  write: fn(&Resources, &str, &[u8]) -> Result<(), ResourceError>,
 ) -> Response {
-  let content = hub.content();
+  let resources = hub.resources();
   let ron = match scene_file(source) {
     Ok(ron) => ron,
     Err(err) => return (StatusCode::UNPROCESSABLE_ENTITY, err).into_response(),
   };
-  match tokio::task::spawn_blocking(move || write(&content, &name, &ron).map(|()| ron)).await {
+  match tokio::task::spawn_blocking(move || write(&resources, &name, ron.as_bytes()).map(|()| ron))
+    .await
+  {
     Ok(Ok(ron)) => (written, ron).into_response(),
-    Ok(Err(err)) => scene_file_failure(err),
+    Ok(Err(err)) => resources_failure(err),
     Err(err) => {
       log::error!(target: "frontbox::console", "Writing a scene stopped: {err}");
       StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -443,18 +433,28 @@ async fn write_scene(
   }
 }
 
-fn scene_file_failure(err: SceneFileError) -> Response {
+/// Adds a new image to the content folder, which has to decode. One that's there is never replaced.
+fn add_image(resources: &Resources, name: &str, bytes: &[u8]) -> Result<(), ResourceError> {
+  resources.path::<Images>(name)?;
+  Images::load(name, bytes.to_vec()).map_err(|error| ResourceError::Load {
+    resource: Images::NAME,
+    name: name.into(),
+    error,
+  })?;
+  resources.create::<Images>(name, bytes)
+}
+
+/// The reply to something in the resources that couldn't be read or written, as text for showing to whoever asked
+fn resources_failure(err: ResourceError) -> Response {
   let status = match err {
-    SceneFileError::Read { ref error, .. } | SceneFileError::Delete { ref error, .. }
-      if error.kind() == std::io::ErrorKind::NotFound =>
-    {
-      StatusCode::NOT_FOUND
-    }
-    SceneFileError::Taken(_) | SceneFileError::NoFolder => StatusCode::CONFLICT,
-    SceneFileError::Read { .. } | SceneFileError::Write { .. } | SceneFileError::Delete { .. } => {
+    ResourceError::Missing { .. } => StatusCode::NOT_FOUND,
+    ResourceError::Taken { .. } | ResourceError::NoFolder { .. } => StatusCode::CONFLICT,
+    ResourceError::Read { .. } | ResourceError::Write { .. } | ResourceError::Delete { .. } => {
       StatusCode::INTERNAL_SERVER_ERROR
     }
-    SceneFileError::BadName(_) => StatusCode::UNPROCESSABLE_ENTITY,
+    ResourceError::BadName { .. } | ResourceError::Load { .. } | ResourceError::NotAdded { .. } => {
+      StatusCode::UNPROCESSABLE_ENTITY
+    }
   };
   (status, err.to_string()).into_response()
 }

@@ -42,7 +42,7 @@ Scene(
           ],
           base: Text(
             text: Fixed("Frontbox"),
-            font: "TenFatGuys",
+            font: "frontbox/fonts/TenFatGuys.ttf",
             size: Fixed(16.0),
             width: Fixed(124.0),
             height: Fixed(16.0),
@@ -67,7 +67,7 @@ Scene(
           ],
           base: Text(
             text: Variable("version"),
-            font: "TinyPixie2",
+            font: "frontbox/fonts/TinyPixie2.ttf",
             size: Fixed(6.0),
             width: Fixed(124.0),
             height: Fixed(7.0),
@@ -92,7 +92,7 @@ Scene(
           ],
           base: Text(
             text: Fixed("Neon Blue Pinball 2026"),
-            font: "TinyPixie2",
+            font: "frontbox/fonts/TinyPixie2.ttf",
             size: Fixed(6.0),
             width: Fixed(124.0),
             height: Fixed(7.0),

@@ -62,9 +62,9 @@ impl System for DmdPointsSystem {
   }
 
   fn on_spawn(&mut self, ctx: &SystemContext) {
-    let content = content_with_bundled(ctx.content_path.clone());
     let open = |name, sends, z| {
-      open_scene(&content, name, sends, z).map(|scene| ScenePlayer::new(PlayableScene::new(scene)))
+      open_scene(&ctx.resources, name, sends, z)
+        .map(|scene| ScenePlayer::new(PlayableScene::new(scene)))
     };
     self.points = open(POINTS_SCENE, POINTS_SENDS, self.z);
     self.transition = open(TRANSITION_SCENE, TRANSITION_SENDS, self.z.saturating_sub(1));
@@ -289,13 +289,13 @@ mod tests {
 
   #[test]
   fn the_bundled_scenes_fit_what_is_sent() {
-    let content = content_with_bundled(None);
+    let resources = crate::dmd::bundle();
     for (name, sends) in [
       (POINTS_SCENE, POINTS_SENDS),
       (TRANSITION_SCENE, TRANSITION_SENDS),
     ] {
       assert_eq!(
-        sends.check(&Scene::open(&content, name).unwrap()),
+        sends.check(&Scene::open(&resources, name).unwrap()),
         [],
         "{name}"
       );

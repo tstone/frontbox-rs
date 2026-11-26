@@ -7,6 +7,8 @@
 //! [`frontbox_gfx::scene`]; this crate adds where they go, and playing them.
 //!
 //! - [`Scene`], [`SceneLayer`] -- The definition, as written to a file
+//! - [`Scenes`], [`Images`], [`Fonts`], [`Sounds`], [`ShapeGenerators`] -- What scenes are made from, each a
+//!   [`Resource`](frontbox_core::prelude::Resource) of the app: files in its content folder, and what code adds
 //! - [`PlayableScene`] -- A scene with values from the game bound to it: its variables, and how long it takes
 //! - [`SceneSystem`] -- Plays scenes. Systems that draw a kind of layer, like `LightManager`, read each [`Playback`] from
 //!   it each frame.
@@ -33,16 +35,20 @@
 mod moment;
 mod playable_scene;
 mod playback;
+mod resources;
 mod scene;
 mod scene_player;
 mod scene_system;
 mod scene_system_ext;
 mod sends;
 mod sound_layer;
+#[cfg(test)]
+mod test_folder;
 
 pub use moment::*;
 pub use playable_scene::*;
 pub use playback::*;
+pub use resources::*;
 pub use scene::*;
 pub use scene_player::*;
 pub use scene_system::*;
@@ -62,11 +68,11 @@ pub struct ScenePlaybackCompleted {
 pub mod prelude {
   pub use frontbox_gfx::animation::Curve;
   pub use frontbox_gfx::prelude::*;
-  pub use frontbox_gfx::scene::{Content, EndBehavior, Timing, Value, VariableType};
+  pub use frontbox_gfx::scene::{EndBehavior, Timing, Value, VariableType};
 
   pub use crate::{
-    Completes, DisplayLayer, LightLayer, LightSurface, PlayableScene, PlaybackId, Scene,
-    SceneLayer, ScenePlaybackCompleted, ScenePlayer, SceneSystem, SceneSystemExt, Sends,
-    SentVariable, SoundLayer,
+    Completes, DisplayLayer, Fonts, Images, LightLayer, LightSurface, PlayableScene, PlaybackId,
+    Scene, SceneLayer, ScenePlaybackCompleted, ScenePlayer, SceneSystem, SceneSystemExt, Scenes,
+    Sends, SentVariable, ShapeGenerators, SoundLayer, Sounds,
   };
 }

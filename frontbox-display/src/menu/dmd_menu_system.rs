@@ -328,10 +328,13 @@ impl System for DmdMenuSystem {
   }
 
   fn on_spawn(&mut self, ctx: &SystemContext) {
-    let content = content_with_bundled(ctx.content_path.clone());
-    match Fragments::open(&content, &self.folder) {
+    match Fragments::open(&ctx.resources, &self.folder) {
       Ok(fragments) => self.fragments = Some(fragments),
-      Err(error) => log::error!(target: "frontbox::display", "The menu can't be drawn: {error}"),
+      Err(error) => log::error!(
+        target: "frontbox::display",
+        "The menu can't be drawn: {error}{}",
+        crate::bundle_hint(&self.folder)
+      ),
     }
 
     if let Some(mut snd) = ctx.systems.get::<SoundSystem>() {
@@ -461,10 +464,10 @@ struct Fragments {
 }
 
 impl Fragments {
-  fn open(content: &Content, folder: &str) -> Result<Self, OpenError> {
+  fn open(resources: &Resources, folder: &str) -> Result<Self, OpenError> {
     let open = |name: &str, sends: Sends| {
       let path = format!("{folder}/{name}.scene");
-      let scene = Scene::open(content, &path)?;
+      let scene = Scene::open(resources, &path)?;
       sends.log_mismatches(&path, &scene);
       Ok(scene)
     };
@@ -694,6 +697,7 @@ mod tests {
 
   fn spawned(context: &mut TestContext) -> DmdMenuSystem {
     context.insert_system(SceneSystem::new());
+    context.set_resources(crate::bundle::bundle());
     let mut menu = menu();
     menu.on_spawn(&context.sys_ctx());
     menu.on_tick(Duration::ZERO, &context.sys_ctx());
@@ -926,8 +930,7 @@ mod tests {
 
   #[test]
   fn the_bundled_fragments_fit_what_the_menu_sends() {
-    let content = content_with_bundled(None);
-    let fragments = Fragments::open(&content, "frontbox/128x32/menu").unwrap();
+    let fragments = Fragments::open(&crate::bundle::bundle(), "frontbox/128x32/menu").unwrap();
     for (scene, sends) in [
       (&fragments.selection, SELECTION_SENDS),
       (&fragments.heading, HEADING_SENDS),
@@ -942,8 +945,7 @@ mod tests {
 
   #[test]
   fn a_copy_is_moved_down_to_its_row_and_drawn_at_the_menus_z() {
-    let content = content_with_bundled(None);
-    let fragments = Fragments::open(&content, "frontbox/128x32/menu").unwrap();
+    let fragments = Fragments::open(&crate::bundle::bundle(), "frontbox/128x32/menu").unwrap();
     let copy = placed(&fragments.row, 2, 5);
     let layer = copy.layers[0].as_display().unwrap();
     assert_eq!(layer.z, 5);

@@ -28,7 +28,14 @@
 
 ### Scenes/Editor
 
-- Plug in custom shapes or graphics with their own settings (e.g. a kinematics/skeleton extension)
+- Shape generators in the editor. A scene can use one the app adds to its resources (`ShapeGenerators`), but only by
+  hand: the console needs a route listing each generator's name, `has_path`, `is_animated`, and settings (name,
+  default, range), and the editor needs `External` as a shape kind, with a generator picker and a field per setting.
+- Anchors on generated shapes: named points of a generator's output (a hand, a tentacle's tip) that other layers attach
+  to, as `Prop::Anchor { layer, point }` beside `Prop::Sweep`. A scene naming one the generator doesn't list fails to
+  load.
+- The font picker shows the fonts frontbox comes with by their whole name (`frontbox/fonts/TinyPixie2.ttf`). Show the
+  file's stem, and group them apart from the game's own.
 - Graph algorithms have a "Reverse" option to perform the algo in reverse (ie. calculate then play backwards)
 - Changing a sound's volume while it plays (fades, modulators). Scene sound volume is a fixed number for now, as sounds are fire-and-forget; kira's `set_volume` on a kept handle could do it, but it may not belong in the scene.
 - Ability to compose LightQ in editor (are Reverse, Take, etc. still needed?)
@@ -39,7 +46,8 @@
 - Events and callouts fired when the clock passes them, tracked like sounds (`SoundLayer::started`). An event would be
   one untyped `SceneMilestoneReached { playback, name }`. Wait until a game needs them.
 - Scene transitions (cut, cross-fade, wipe, push) between two playbacks. First version drives opacity or a mask on both; with nested scenes, a transition is a scene with two slots.
-- Live reload of scenes and fonts, as `Content` already does for images.
+- Live reload of scenes and fonts: the `Resources` loads a changed file again when it's next asked for, but a scene that's
+  already open keeps what it opened with.
 - Golden-image tests: render a scene at a time to PNG and compare with a stored one.
 - All the different scene features will probably need a library of demos/templates ("presets")
 - `Transform::Warp` and `Transform::Polar` on shapes: bend the outline too, as fills already are. A shape's edges need cutting into short pieces first, or a rect barely bends.

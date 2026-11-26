@@ -41,20 +41,20 @@ async fn main() {
     _ => Platform::Virtual,
   };
 
-  let content = content_with_bundled(Some(folder.into()));
-  let scene =
-    Scene::open(&content, &name).unwrap_or_else(|err| panic!("Couldn't play {name}: {err}"));
-
   App::new(BootConfig {
     platform,
     config_path: None,
     metrics_path: None,
-    content_path: content.root().map(Into::into),
+    content_path: Some(folder.into()),
     // a display can show far more than LEDs, so it's worth more frames
     system_interval: Duration::from_millis(33),
     ..Default::default()
   })
   .configure(|app| {
+    frontbox_display::add_bundle(app.resources());
+    let scene = Scene::open(app.resources(), &name)
+      .unwrap_or_else(|err| panic!("Couldn't play {name}: {err}"));
+
     let console = WebTracer::new();
     app.system(SceneSystem::new());
     app.system(

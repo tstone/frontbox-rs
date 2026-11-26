@@ -1,7 +1,7 @@
-use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
-use crate::app::{BootConfig, DEFAULT_LIGHT_RADIUS, PlatformKind};
+use crate::app::{BootConfig, DEFAULT_LIGHT_RADIUS, PlatformKind, Resources};
 use crate::location::AppPlane;
 
 #[derive(Debug, Clone)]
@@ -11,20 +11,21 @@ pub struct AppConfig {
   pub system_interval: Duration,
   pub watchdog_interval: Option<Duration>,
   pub light_radius: f32,
-  /// See [`BootConfig::content_path`]
-  pub content_path: Option<PathBuf>,
+  /// What's in the content folder, and what code added while the app was built. See [`App::resources`](crate::app::App::resources)
+  pub resources: Arc<Resources>,
   /// See [`App::plane`](crate::app::App::plane)
   pub planes: Vec<AppPlane>,
 }
 
 impl AppConfig {
+  /// With only what's in the content folder as its resources
   pub fn from_boot_config(boot: &BootConfig) -> Self {
     Self {
       platform: boot.platform.kind(),
       system_interval: boot.system_interval,
       watchdog_interval: boot.platform.watchdog_interval(),
       light_radius: boot.light_radius,
-      content_path: boot.content_path.clone(),
+      resources: Arc::new(Resources::in_folder(boot.content_path.clone())),
       planes: Vec::new(),
     }
   }
@@ -37,7 +38,7 @@ impl Default for AppConfig {
       system_interval: Duration::ZERO,
       watchdog_interval: None,
       light_radius: DEFAULT_LIGHT_RADIUS,
-      content_path: None,
+      resources: Arc::default(),
       planes: Vec::new(),
     }
   }

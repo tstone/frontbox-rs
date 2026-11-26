@@ -201,6 +201,7 @@ impl ScenarioBuilder {
     let parts = self.app.into_parts();
     let app_config = AppConfig {
       planes: parts.planes,
+      resources: std::sync::Arc::new(parts.resources),
       ..AppConfig::from_boot_config(&parts.boot_config)
     };
 

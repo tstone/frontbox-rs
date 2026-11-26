@@ -4,6 +4,9 @@ use std::fmt;
 
 use crate::scene::{Bounds, cubic};
 
+/// The extensions of the font files [`Font::new`] reads, in lowercase
+pub const FONT_EXTENSIONS: [&str; 2] = ["ttf", "otf"];
+
 /// Line segments per curve in a glyph's outline
 const CURVE_STEPS: usize = 8;
 

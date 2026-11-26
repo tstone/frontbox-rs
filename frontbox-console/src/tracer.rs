@@ -125,7 +125,7 @@ impl AppTracer for WebTracer {
     self.hub.set_control(control);
     self.hub.set_metrics(metrics);
     self.hub.set_light_radius(config.light_radius);
-    self.hub.set_content(config.content_path.clone());
+    self.hub.set_resources(config.resources.clone());
     self.hub.set_planes(&config.planes);
     self.start();
     self.hub.set_hardware(hardware.clone());

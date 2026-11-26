@@ -43,6 +43,11 @@ impl TestContext {
     self.base.app_config.light_radius = radius;
   }
 
+  /// What systems find as `ctx.resources`, which is empty until this is called
+  pub fn set_resources(&mut self, resources: Resources) {
+    self.base.app_config.resources = std::sync::Arc::new(resources);
+  }
+
   /// Manually set the current state of all switches for test setup
   pub fn update_switch_states(&mut self, states: Vec<SwitchState>) {
     self.base.switches.update_switch_states(states);

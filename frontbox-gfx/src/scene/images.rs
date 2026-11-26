@@ -1,5 +1,22 @@
+use std::io::Cursor;
+
 use glam::Vec2;
-use image::{Rgba, RgbaImage};
+use image::codecs::gif::GifDecoder;
+use image::error::{LimitError, LimitErrorKind};
+use image::{
+  AnimationDecoder, ImageDecoder, ImageError, ImageFormat, ImageReader, ImageResult, Limits, Rgba,
+  RgbaImage,
+};
+
+/// The extensions of the image files [`Picture::decode`] reads, in lowercase
+pub const IMAGE_EXTENSIONS: [&str; 6] = ["png", "jpg", "jpeg", "gif", "webp", "bmp"];
+
+/// Largest width or height that will be decoded
+const MAX_IMAGE_SIDE: u32 = 8192;
+
+/// Frame cap for animated images. Each frame has a cost beyond its pixels, so many tiny frames could otherwise get
+/// around the byte cap.
+const MAX_FRAMES: usize = 10_000;
 
 /// A decoded image, possibly animated, ready to sample
 ///
@@ -27,6 +44,25 @@ impl Picture {
     }
   }
 
+  /// Memory cap for one image's decoded frames, and a good cap on all the decoded images kept at once. Guards
+  /// against small files that decode to huge sizes.
+  pub const MAX_DECODED_BYTES: u64 = 512 * 1024 * 1024;
+
+  /// Decodes an image file's contents, whatever its name says it is: a GIF keeps its frames and how long they take.
+  /// One too large to be worth decoding is refused. Decoding is slow, so don't call this mid-frame.
+  pub fn decode(bytes: &[u8]) -> ImageResult<Self> {
+    let mut limits = Limits::default();
+    limits.max_image_width = Some(MAX_IMAGE_SIDE);
+    limits.max_image_height = Some(MAX_IMAGE_SIDE);
+
+    let mut reader = ImageReader::new(Cursor::new(bytes)).with_guessed_format()?;
+    if reader.format() == Some(ImageFormat::Gif) {
+      return gif(bytes, limits);
+    }
+    reader.limits(limits);
+    reader.decode().map(|image| Self::new(image.into_rgba8()))
+  }
+
   pub fn width(&self) -> u32 {
     self.frames.first().map_or(0, |levels| levels[0].width())
   }
@@ -46,7 +82,7 @@ impl Picture {
   }
 
   /// Memory used by pixel data, including every mipmap level
-  pub(crate) fn bytes(&self) -> u64 {
+  pub fn bytes(&self) -> u64 {
     self
       .frames
       .iter()
@@ -147,9 +183,115 @@ fn average(pixels: [Rgba<u8>; 4]) -> Rgba<u8> {
   Rgba([channel(0), channel(1), channel(2), ((alpha + 2) / 4) as u8])
 }
 
+/// Decodes a GIF frame by frame, stopping as soon as it passes a limit
+fn gif(bytes: &[u8], limits: Limits) -> ImageResult<Picture> {
+  let mut decoder = GifDecoder::new(Cursor::new(bytes))?;
+  decoder.set_limits(limits)?;
+
+  let (mut frames, mut total, mut duration) = (Vec::new(), 0, 0.0);
+  for frame in decoder.into_frames() {
+    let frame = frame?;
+    let (milliseconds, divisor) = frame.delay().numer_denom_ms();
+    duration += milliseconds as f32 / divisor as f32 / 1000.0;
+
+    let image = frame.into_buffer();
+    total += image.as_raw().len() as u64;
+    if frames.len() == MAX_FRAMES || total > Picture::MAX_DECODED_BYTES {
+      return Err(ImageError::Limits(LimitError::from_kind(
+        LimitErrorKind::InsufficientMemory,
+      )));
+    }
+    frames.push(image);
+  }
+  Ok(Picture::animated(frames, duration))
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
+  use image::Delay;
+  use image::codecs::gif::GifEncoder;
+
+  fn png(width: u32, height: u32) -> Vec<u8> {
+    let mut bytes = Cursor::new(Vec::new());
+    RgbaImage::from_pixel(width, height, RED)
+      .write_to(&mut bytes, ImageFormat::Png)
+      .unwrap();
+    bytes.into_inner()
+  }
+
+  /// A 2 by 2 frame of each color, 100 milliseconds each
+  fn gif_of(colors: impl IntoIterator<Item = Rgba<u8>>) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    GifEncoder::new(&mut bytes)
+      .encode_frames(colors.into_iter().map(|color| {
+        let delay = Delay::from_numer_denom_ms(100, 1);
+        image::Frame::from_parts(RgbaImage::from_pixel(2, 2, color), 0, 0, delay)
+      }))
+      .unwrap();
+    bytes
+  }
+
+  #[test]
+  fn what_isnt_an_image_doesnt_decode() {
+    assert!(Picture::decode(b"not a png").is_err());
+  }
+
+  #[test]
+  fn a_gif_keeps_its_frames_and_how_long_they_take() {
+    let picture = Picture::decode(&gif_of([RED, BLUE, RED])).unwrap();
+
+    assert_eq!(
+      (picture.frames(), picture.width(), picture.height()),
+      (3, 2, 2)
+    );
+    assert!(
+      (picture.duration() - 0.3).abs() < 0.001,
+      "{}",
+      picture.duration()
+    );
+    assert_eq!(picture.color(1.0, Vec2::ZERO, Vec2::ZERO), BLUE);
+  }
+
+  #[test]
+  fn other_images_have_one_frame() {
+    let picture = Picture::decode(&png(2, 2)).unwrap();
+    assert_eq!((picture.frames(), picture.duration()), (1, 0.0));
+  }
+
+  #[test]
+  fn a_gif_with_too_many_frames_is_refused() {
+    let bytes = gif_of(std::iter::repeat_n(RED, MAX_FRAMES + 1));
+    assert!(Picture::decode(&bytes).is_err());
+  }
+
+  #[test]
+  fn a_gif_of_tiny_frames_on_a_huge_canvas_is_refused_partway() {
+    // each frame costs the whole canvas once decoded, however few bytes it takes in the file
+    let frame = |side| {
+      let image = RgbaImage::from_pixel(side, side, RED);
+      image::Frame::from_parts(image, 0, 0, Delay::from_numer_denom_ms(100, 1))
+    };
+    let frames = 1 + (Picture::MAX_DECODED_BYTES / (2048 * 2048 * 4)) as usize;
+    let mut bytes = Vec::new();
+    GifEncoder::new(&mut bytes)
+      .encode_frames(std::iter::once(frame(2048)).chain((0..frames).map(|_| frame(1))))
+      .unwrap();
+    assert!(bytes.len() < 1024 * 1024, "{}", bytes.len());
+
+    assert!(Picture::decode(&bytes).is_err());
+  }
+
+  #[test]
+  fn a_gif_that_stops_partway_says_so() {
+    let bytes = gif_of([RED, BLUE, RED]);
+    assert!(Picture::decode(&bytes[..bytes.len() - 8]).is_err());
+  }
+
+  #[test]
+  fn an_image_too_big_to_be_worth_decoding_is_refused() {
+    assert!(Picture::decode(&png(MAX_IMAGE_SIDE + 1, 1)).is_err());
+  }
 
   const RED: Rgba<u8> = Rgba([255, 0, 0, 255]);
   const GREEN: Rgba<u8> = Rgba([0, 255, 0, 255]);

@@ -158,17 +158,17 @@ impl System for DmdAttractSystem {
   }
 
   fn on_spawn(&mut self, ctx: &SystemContext) {
-    let content = content_with_bundled(ctx.content_path.clone());
+    let resources = &ctx.resources;
     self.scenes = self
       .screens
       .iter()
       .map(|screen| match screen {
-        AttractScreen::Scene(name) => open_scene(&content, name, Sends { variables: &[] }, self.z),
+        AttractScreen::Scene(name) => open_scene(resources, name, Sends { variables: &[] }, self.z),
         AttractScreen::LastScore(_) => {
-          open_scene(&content, LAST_SCORE_SCENE, LAST_SCORE_SENDS, self.z)
+          open_scene(resources, LAST_SCORE_SCENE, LAST_SCORE_SENDS, self.z)
         }
         AttractScreen::PressStart => open_scene(
-          &content,
+          resources,
           PRESS_START_SCENE,
           Sends { variables: &[] },
           self.z,
@@ -227,7 +227,7 @@ impl System for DmdAttractSystem {
 /// One of the screens [`DmdAttractSystem`] shows
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttractScreen {
-  /// A scene from the content folder, by name
+  /// A scene from the app's resources, by name
   Scene(&'static str),
   /// The score player `n` (from 0) finished the last game with: `frontbox/128x32/attract/last_score.scene`, sent the
   /// player's `label` ("Player 1" for player 0) and `score`. Skipped until a game has been played, and for a player who wasn't in it.
@@ -264,6 +264,7 @@ mod tests {
 
   fn spawned(context: &mut TestContext, screens: Vec<AttractScreen>) -> DmdAttractSystem {
     context.insert_system(SceneSystem::new());
+    context.set_resources(crate::dmd::bundle());
     let mut attract = DmdAttractSystem::new(screens);
     attract.on_spawn(&context.sys_ctx());
     attract.on_tick(Duration::ZERO, &context.sys_ctx());
@@ -310,9 +311,9 @@ mod tests {
 
   #[test]
   fn the_bundled_scenes_fit_what_is_sent() {
-    let content = content_with_bundled(None);
+    let resources = crate::dmd::bundle();
     assert_eq!(
-      LAST_SCORE_SENDS.check(&Scene::open(&content, LAST_SCORE_SCENE).unwrap()),
+      LAST_SCORE_SENDS.check(&Scene::open(&resources, LAST_SCORE_SCENE).unwrap()),
       []
     );
   }

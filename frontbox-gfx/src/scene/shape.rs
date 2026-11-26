@@ -135,8 +135,8 @@ pub enum ShapeNode {
     #[cfg_attr(feature = "ts", ts(as = "Option<TextOverflow>", optional))]
     overflow: TextOverflow,
   },
-  /// The outline a [`ShapeGenerator`](crate::scene::ShapeGenerator) makes, in code outside the scene, by the name the
-  /// app gives it to [`Content::with_shape_generators`](crate::scene::Content::with_shape_generators). `settings` sets
+  /// The outline a [`ShapeGenerator`](crate::scene::ShapeGenerator) makes, in code outside the scene, by the name it
+  /// has in the scene's [`Assets`](crate::scene::Assets). `settings` sets
   /// the generator's settings by name, and one left out is at its default. It's areas or lines as the generator makes
   /// them, each area covered as one with the others. Transforms that reshape an outline (`Shift`, `Bulge`, `Round`)
   /// leave it as it is. With no generator by that name, it draws nothing.

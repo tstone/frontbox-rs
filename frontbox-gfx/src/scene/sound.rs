@@ -9,6 +9,10 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
+/// The extensions of the sound files an [`EnvelopeContent`](crate::scene::EnvelopeContent) can be analyzed from, in
+/// lowercase: the formats the sound system decodes
+pub const SOUND_EXTENSIONS: [&str; 4] = ["wav", "mp3", "ogg", "flac"];
+
 /// Decodes the sound in `bytes`, from the file `name`, into the mean square of its channels at each frame, and how many
 /// frames a second it has. That's all an analysis of its loudness needs, whatever its channels. Errors say why it
 /// couldn't be decoded.

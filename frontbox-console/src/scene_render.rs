@@ -1,11 +1,11 @@
-use frontbox_core::prelude::{LightLookup, LightQ, Rgb, Vec2};
+use frontbox_core::prelude::{LightLookup, LightQ, Resources, Rgb, Vec2};
 use frontbox_gfx::layout::{Grid, Line};
 use frontbox_gfx::prelude::{Rgba, RgbaColor};
 use frontbox_gfx::scene::{
-  Bounds, Content, Graph, LayerFrame, PreparedLayer, Sample, ShapePose, Surface, Timing, Variables,
+  Bounds, Graph, LayerFrame, PreparedLayer, Sample, ShapePose, Surface, Timing, Variables,
 };
 use frontbox_lighting::{LightPlacement, PlacedLayer, led_color};
-use frontbox_scene::{Moment, Scene, SceneLayer};
+use frontbox_scene::{Moment, Scene, SceneLayer, Scenes};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -49,17 +49,17 @@ pub(crate) fn render_scene(
   source: SceneSource,
   size: SceneSize,
   machine: PreviewMachine,
-  content: Content,
+  resources: Arc<Resources>,
   time: f32,
   cycle: Option<u32>,
   reference: Option<ReferenceScene>,
   seed: u32,
 ) -> Result<RenderedScene, String> {
   let (scene, preview) = read(source)?;
-  let drawn = &with_assets(preview.unwrap_or_else(|| scene.clone()), &content)?;
+  let drawn = &with_assets(preview.unwrap_or_else(|| scene.clone()), &resources)?;
   // one that can't be drawn is left out, as the scene being edited still can be
   let (reference, reference_error) =
-    match reference.map(|reference| Reference::open(reference, size, &machine, &content)) {
+    match reference.map(|reference| Reference::open(reference, size, &machine, &resources)) {
       Some(Ok(reference)) => (Some(reference), None),
       Some(Err(error)) => (None, Some(error)),
       None => (None, None),
@@ -175,19 +175,19 @@ pub(crate) fn render_clip(
   source: SceneSource,
   size: SceneSize,
   machine: PreviewMachine,
-  content: Content,
+  resources: Arc<Resources>,
   cycle: u32,
   reference: Option<ReferenceScene>,
   seed: u32,
 ) -> Result<Vec<u8>, String> {
   let (scene, preview) = read(source)?;
-  let scene = with_assets(preview.unwrap_or(scene), &content)?;
+  let scene = with_assets(preview.unwrap_or(scene), &resources)?;
   let Some(timing) = scene.timing else {
     return Err("a static scene has nothing to play".into());
   };
   // one that can't be drawn is left out, as a render of the moment says why
   let reference =
-    reference.and_then(|reference| Reference::open(reference, size, &machine, &content).ok());
+    reference.and_then(|reference| Reference::open(reference, size, &machine, &resources).ok());
   let canvases = Canvas::all(
     &scene,
     reference.as_ref().map(|reference| &reference.scene),
@@ -324,8 +324,8 @@ fn checked(scene: Scene) -> Result<Scene, String> {
 
 /// The scene with the images and fonts it draws. Each is only loaded the first time, so this is cheap for every frame the
 /// client asks for.
-fn with_assets(scene: Scene, content: &Content) -> Result<Scene, String> {
-  scene.with_assets(content).map_err(|err| err.to_string())
+fn with_assets(scene: Scene, resources: &Resources) -> Result<Scene, String> {
+  scene.with_assets(resources).map_err(|err| err.to_string())
 }
 
 /// What each light shows, as light management would resolve it: higher z on top, and within a z, later layers on top.
@@ -370,14 +370,14 @@ impl Reference {
     reference: ReferenceScene,
     size: SceneSize,
     machine: &PreviewMachine,
-    content: &Content,
+    resources: &Resources,
   ) -> Result<Self, String> {
     let failed = |err: String| format!("{} can't be shown with this scene: {err}", reference.name);
-    let source = content
-      .read_scene(&reference.name)
+    let source = resources
+      .get::<Scenes>(&reference.name)
       .map_err(|err| failed(err.to_string()))?;
     let scene = Scene::load(&source).map_err(|err| failed(err.to_string()))?;
-    let scene = with_assets(scene, content).map_err(failed)?;
+    let scene = with_assets(scene, resources).map_err(failed)?;
     let views = Views::of(&scene, size, machine);
     Ok(Self {
       scene,
@@ -904,7 +904,7 @@ mod tests {
       ron(source),
       SIZE,
       target,
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -982,7 +982,7 @@ mod tests {
       ron(&two_layers(&["light0"], &["light1"])),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -1001,7 +1001,7 @@ mod tests {
       ron(&two_layers(&["light0"], &["light2"])),
       SIZE,
       three(),
-      Content::without_folder(),
+      Arc::default(),
       0,
       None,
       0,
@@ -1032,7 +1032,7 @@ mod tests {
       ron(WAVE),
       SIZE,
       target,
-      Content::without_folder(),
+      Arc::default(),
       2.0,
       Some(0),
       None,
@@ -1054,17 +1054,8 @@ mod tests {
 
   #[test]
   fn a_layer_without_a_graph_has_none() {
-    let rendered = render_scene(
-      ron(AREA),
-      SIZE,
-      three(),
-      Content::without_folder(),
-      0.0,
-      None,
-      None,
-      0,
-    )
-    .unwrap();
+    let rendered =
+      render_scene(ron(AREA), SIZE, three(), Arc::default(), 0.0, None, None, 0).unwrap();
     assert!(rendered.graphs[0].is_none());
   }
 
@@ -1075,7 +1066,7 @@ mod tests {
       ron(&source),
       SceneSize { lights: 5, ..SIZE },
       three(),
-      Content::without_folder(),
+      Arc::default(),
       1.0,
       Some(0),
       None,
@@ -1144,7 +1135,7 @@ mod tests {
       ron(RED_TO_BLUE),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -1159,7 +1150,7 @@ mod tests {
 
   #[test]
   fn a_display_renders_to_pixels_and_covers_what_it_was_asked_for() {
-    let rendered = render_scene(ron(r#"Scene(version: 2, layers: [Display(display: "Dmd", layer: (fill: (base: Solid(Fixed(0, 0, 0, 0)))))])"#), SIZE, no_lights(), Content::without_folder(), 0.0, None, None, 0).unwrap();
+    let rendered = render_scene(ron(r#"Scene(version: 2, layers: [Display(display: "Dmd", layer: (fill: (base: Solid(Fixed(0, 0, 0, 0)))))])"#), SIZE, no_lights(), Arc::default(), 0.0, None, None, 0).unwrap();
     assert_eq!((only(&rendered).width, only(&rendered).height), (4, 2));
     let area = &only(&rendered).area;
     assert_eq!(
@@ -1175,7 +1166,7 @@ mod tests {
       ron(source),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -1206,7 +1197,7 @@ mod tests {
       ron(EVERYWHERE),
       SIZE,
       with_dmd(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -1242,7 +1233,7 @@ mod tests {
       ron(source),
       SIZE,
       with_dmd(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -1262,7 +1253,7 @@ mod tests {
       ron(EVERYWHERE),
       SIZE,
       with_dmd(),
-      Content::without_folder(),
+      Arc::default(),
       0,
       None,
       0,
@@ -1284,8 +1275,7 @@ mod tests {
 
   #[test]
   fn a_reference_scene_shows_on_a_display_the_scene_leaves_alone() {
-    let content = Content::without_folder()
-      .with_scenes([("reference.scene", solid_display("0, 0, 255, 255").as_str())]);
+    let content = with_scene("reference.scene", &solid_display("0, 0, 255, 255"));
     let reference = ReferenceScene {
       name: "reference.scene".into(),
     };
@@ -1323,7 +1313,7 @@ mod tests {
       ron(&source),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -1373,7 +1363,7 @@ mod tests {
       ron(&source),
       SIZE,
       target,
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -1401,7 +1391,7 @@ mod tests {
       ron(&source),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -1427,7 +1417,7 @@ mod tests {
       ron(source),
       SIZE,
       target,
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -1453,7 +1443,7 @@ mod tests {
       ron(source),
       SIZE,
       target,
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -1470,7 +1460,7 @@ mod tests {
       ron(RED_TO_BLUE),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -1499,7 +1489,7 @@ mod tests {
       ron(source),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       1.0,
       Some(0),
       None,
@@ -1519,7 +1509,7 @@ mod tests {
       ron(RED_TO_BLUE),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -1551,7 +1541,7 @@ mod tests {
         height: 5,
       },
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -1569,7 +1559,7 @@ mod tests {
       ron("Scene(version: 2, layers: [Lights(surface: Sequence, layer: (fill: (base: Nope)))])"),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -1589,7 +1579,7 @@ mod tests {
         ron(RED_TO_BLUE),
         size,
         no_lights(),
-        Content::without_folder(),
+        Arc::default(),
         0.0,
         None,
         None,
@@ -1605,7 +1595,7 @@ mod tests {
       ron(RED_TO_BLUE),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -1616,7 +1606,7 @@ mod tests {
       SceneSource::Definition(from_ron.scene.clone()),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -1635,7 +1625,7 @@ mod tests {
       ron(&source),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -1652,7 +1642,7 @@ mod tests {
       SceneSource::Definition(scene.clone()),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -1663,7 +1653,7 @@ mod tests {
       SceneSource::Preview { scene, shown },
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -1681,17 +1671,7 @@ mod tests {
       scene: solid("255, 0, 0, 255", timing),
       shown: solid("0, 0, 255, 255", timing),
     };
-    let clip = render_clip(
-      0,
-      source,
-      SIZE,
-      no_lights(),
-      Content::without_folder(),
-      0,
-      None,
-      0,
-    )
-    .unwrap();
+    let clip = render_clip(0, source, SIZE, no_lights(), Arc::default(), 0, None, 0).unwrap();
     let header = u32::from_le_bytes(clip[0..4].try_into().unwrap()) as usize;
     assert_eq!(clip[4 + header..7 + header], [0, 0, 255]);
   }
@@ -1705,7 +1685,7 @@ mod tests {
       ron(source),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -1720,7 +1700,7 @@ mod tests {
       SceneSource::Definition(serde_json::from_value(json).unwrap()),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -1739,7 +1719,7 @@ mod tests {
       ron(source),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -1752,7 +1732,7 @@ mod tests {
       SceneSource::Definition(scene),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -1790,7 +1770,7 @@ mod tests {
       rising("Once"),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       1.0,
       None,
       None,
@@ -1806,7 +1786,7 @@ mod tests {
       rising("Forever"),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       2.0,
       None,
       None,
@@ -1834,7 +1814,7 @@ mod tests {
         source,
         SIZE,
         no_lights(),
-        Content::without_folder(),
+        Arc::default(),
         time,
         None,
         None,
@@ -1883,7 +1863,7 @@ mod tests {
   }
 
   /// A folder with a 2 by 1 image, red on the left and blue on the right, called `art/a.png`
-  fn content(folder: &str) -> Content {
+  fn content(folder: &str) -> Arc<Resources> {
     let root =
       std::env::temp_dir().join(format!("frontbox-console-{}-{folder}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
@@ -1897,7 +1877,14 @@ mod tests {
     })
     .save(root.join("art/a.png"))
     .unwrap();
-    Content::new(root)
+    Arc::new(Resources::new(root))
+  }
+
+  /// Resources without a content folder, with one scene added
+  fn with_scene(name: &str, source: &str) -> Arc<Resources> {
+    let mut resources = Resources::without_folder();
+    resources.add::<Scenes>(name, source.into());
+    Arc::new(resources)
   }
 
   const IMAGE: &str = r#"Scene(version: 2, layers: [Display(display: "Dmd", layer: (fill: (base: Image(name: "art/a.png"))))])"#;
@@ -1927,7 +1914,7 @@ mod tests {
         height: 5,
       },
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -1996,7 +1983,9 @@ mod tests {
     image::codecs::gif::GifEncoder::new(&mut gif)
       .encode_frames([frame([255, 0, 0, 255]), frame([0, 0, 255, 255])])
       .unwrap();
-    content.add_image("a.gif", &gif).unwrap();
+    content
+      .create::<frontbox_scene::Images>("a.gif", &gif)
+      .unwrap();
 
     let source = r#"Scene(version: 2, timing: (duration: 1.0, cycle: Once), layers: [Display(display: "Dmd", layer: (fill: (base: Image(
       name: "a.gif",
@@ -2046,7 +2035,7 @@ mod tests {
       ron(IMAGE),
       TWO_POINTS,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -2060,7 +2049,7 @@ mod tests {
         ron(RED_TO_BLUE),
         SIZE,
         no_lights(),
-        Content::without_folder(),
+        Arc::default(),
         0.0,
         None,
         None,
@@ -2078,7 +2067,7 @@ mod tests {
         picking("Forever", 0.0),
         SIZE,
         no_lights(),
-        Content::without_folder(),
+        Arc::default(),
         cycle,
         None,
         0,
@@ -2099,7 +2088,7 @@ mod tests {
         picking("Once", 0.0),
         SIZE,
         no_lights(),
-        Content::without_folder(),
+        Arc::default(),
         0,
         None,
         seed,
@@ -2114,7 +2103,7 @@ mod tests {
           picking("Once", 0.0),
           SIZE,
           no_lights(),
-          Content::without_folder(),
+          Arc::default(),
           0.0,
           Some(0),
           None,
@@ -2135,7 +2124,7 @@ mod tests {
       picking("Forever", 1.0),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0,
       None,
       0,
@@ -2153,7 +2142,7 @@ mod tests {
       picking("Forever", 1.0),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       4,
       None,
       0,
@@ -2166,7 +2155,7 @@ mod tests {
       picking("Forever", 1.0),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.5,
       Some(4),
       None,
@@ -2184,17 +2173,7 @@ mod tests {
         Sound(sound: "sounds/b.wav", volume: 0.5, start: 0.6, skip: 0.5, end: 0.85),
         Sound(sound: "sounds/a.wav", volume: 0.5, start: 0.1),
       ],)"#;
-    let clip = render_clip(
-      0,
-      ron(source),
-      SIZE,
-      three(),
-      Content::without_folder(),
-      2,
-      None,
-      0,
-    )
-    .unwrap();
+    let clip = render_clip(0, ron(source), SIZE, three(), Arc::default(), 2, None, 0).unwrap();
     let (header, _) = read_clip(&clip);
     let sounds = header["sounds"].as_array().unwrap();
     let starts: Vec<_> = sounds
@@ -2226,7 +2205,7 @@ mod tests {
       ron(source),
       SIZE,
       three(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       Some(0),
       None,
@@ -2246,7 +2225,7 @@ mod tests {
       rising("Forever"),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0,
       None,
       0,
@@ -2274,17 +2253,7 @@ mod tests {
       lights: lights(&[None, None]),
       ..no_lights()
     };
-    let clip = render_clip(
-      0,
-      ron(source),
-      SIZE,
-      target,
-      Content::without_folder(),
-      0,
-      None,
-      0,
-    )
-    .unwrap();
+    let clip = render_clip(0, ron(source), SIZE, target, Arc::default(), 0, None, 0).unwrap();
     let (header, colors) = read_clip(&clip);
     assert_eq!(header["lights"], serde_json::json!(["light0", "light1"]));
 
@@ -2305,7 +2274,7 @@ mod tests {
       ron(source),
       SIZE,
       target,
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -2340,7 +2309,7 @@ mod tests {
         ron(RED_TO_BLUE),
         SIZE,
         no_lights(),
-        Content::without_folder(),
+        Arc::default(),
         0,
         None,
         0
@@ -2361,7 +2330,7 @@ mod tests {
       rising("Once"),
       size,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0,
       None,
       0,
@@ -2387,7 +2356,7 @@ mod tests {
       ron(source),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -2399,7 +2368,7 @@ mod tests {
       SceneSource::Definition(serde_json::from_str(&json).unwrap()),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -2429,7 +2398,7 @@ mod tests {
       ron(source),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -2441,7 +2410,7 @@ mod tests {
       SceneSource::Definition(serde_json::from_str(&json).unwrap()),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -2484,7 +2453,7 @@ mod tests {
   }
 
   fn with_reference(source: &str, reference: &str) -> Vec<u8> {
-    let content = Content::without_folder().with_scenes([("reference.scene", reference)]);
+    let content = with_scene("reference.scene", reference);
     let reference = ReferenceScene {
       name: "reference.scene".into(),
     };
@@ -2572,8 +2541,7 @@ mod tests {
 
   #[test]
   fn a_clip_draws_its_reference_scene_in_every_frame() {
-    let content = Content::without_folder()
-      .with_scenes([("reference.scene", solid_display("0, 0, 255, 255").as_str())]);
+    let content = with_scene("reference.scene", &solid_display("0, 0, 255, 255"));
     let clear = r#"Scene(version: 2, timing: (duration: 0.1, cycle: Once), layers: [Display(display: "Dmd", layer: (fill: (base: Solid(Fixed(0, 0, 0, 0)))))])"#;
     let reference = ReferenceScene {
       name: "reference.scene".into(),
@@ -2610,7 +2578,7 @@ mod tests {
       ron(RED_TO_BLUE),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       None,
@@ -2621,7 +2589,7 @@ mod tests {
       ron(RED_TO_BLUE),
       SIZE,
       no_lights(),
-      Content::without_folder(),
+      Arc::default(),
       0.0,
       None,
       Some(reference),

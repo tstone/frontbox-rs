@@ -50,8 +50,8 @@ pub struct LayerFrame<'a> {
   /// The regions of the scene's layers, which sweeps follow. [`no_regions`](crate::scene::no_regions) for a layer
   /// sampled on its own.
   pub regions: &'a dyn Regions,
-  /// Decoded images and fonts by name. A layer whose image or font is missing draws nothing; get these from
-  /// [`Content::assets_for`](crate::scene::Content::assets_for), which reports missing ones up front.
+  /// Decoded images and fonts by name. A layer whose image or font is missing draws nothing, so whatever loads a scene
+  /// reports missing ones up front.
   pub assets: &'a Assets,
   /// Size of what the layer is drawn on, in its own units, which the layer's coordinates are in. Unused by a `Sequence`.
   pub size: Vec2,

@@ -4,13 +4,14 @@ use frontbox_core::prelude::*;
 use frontbox_gfx::animation::Cycle;
 use frontbox_gfx::scene::file::{self, FormatError};
 use frontbox_gfx::scene::{
-  self, Assets, Content, EnvelopeSource, Inputs, Layer, LayerAssetError, LayerFrame, Modulators,
-  Placement, PreparedEnvelope, Regions, SceneError, SceneFileError, Shape, Timing, Value, Values,
-  Variables, Visits, check_generated_paths, check_sweeps,
+  self, Assets, EnvelopeSource, Inputs, Layer, LayerFrame, Modulators, Placement, PreparedEnvelope,
+  Regions, SceneError, Shape, Timing, Value, Values, Variables, Visits, check_generated_paths,
+  check_sweeps,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{Moment, SoundLayer, SoundStart};
+use crate::resources::{assets_for, envelope};
+use crate::{LayerAssetError, Moment, Scenes, SoundLayer, SoundStart};
 
 /// Layers on one timeline, each saying what it's drawn on or that it's sound, as written to a `.scene` file. Each system
 /// plays the layers it knows: `LightManager` plays [`LightLayer`]s, a display plays the [`DisplayLayer`]s for it, and
@@ -87,16 +88,17 @@ impl Scene {
     Ok(scene)
   }
 
-  /// Reads scene `name` from `content`, with the images and fonts it draws. That reads files, so do it ahead of time
-  /// rather than in a tick.
-  pub fn open(content: &Content, name: &str) -> Result<Self, OpenError> {
-    let source = content.read_scene(name).map_err(OpenError::File)?;
+  /// Reads scene `name` from `resources`, with the images, fonts, and shape generators it draws. That reads files, so do
+  /// it ahead of time rather than in a tick: in a system's `on_spawn` from `ctx.resources`, or while the app is built
+  /// from [`App::resources`], once everything the scene names has been added.
+  pub fn open(resources: &Resources, name: &str) -> Result<Self, OpenError> {
+    let source = resources.get::<Scenes>(name).map_err(OpenError::File)?;
     let scene = Self::load(&source).map_err(|error| OpenError::Format {
       name: name.into(),
       error,
     })?;
     scene
-      .with_assets(content)
+      .with_assets(resources)
       .map_err(|error| OpenError::Assets {
         name: name.into(),
         error,
@@ -257,26 +259,30 @@ impl Scene {
     sound_starts(starts)
   }
 
-  /// Loads the images, fonts, and shape generators its layers draw from `content`, and prepares the external envelopes
+  /// Loads the images, fonts, and shape generators its layers draw from `resources`, and prepares the external envelopes
   /// they follow from the sounds of its sound layers. A layer whose image, font, generator, or sound is missing is an
   /// error, rather than one that silently draws nothing, as is a sweep following a generator with no path. That reads and decodes files, so do it ahead of time rather than in a tick.
   ///
   /// An envelope following a sound layer the scene doesn't have is left out, to rest at its spread's default.
   /// [`Scene::check`] reports it.
-  pub fn with_assets(mut self, content: &Content) -> Result<Self, LayerAssetError> {
-    let mut assets = content.assets_for(self.layers.iter().filter_map(SceneLayer::layer))?;
+  pub fn with_assets(mut self, resources: &Resources) -> Result<Self, LayerAssetError> {
+    let drawn: Vec<_> = self
+      .layers
+      .iter()
+      .enumerate()
+      .filter_map(|(index, layer)| Some((index, layer.layer()?)))
+      .collect();
+    let mut assets = assets_for(resources, drawn.iter().copied())?;
     for key in self.inputs().envelopes {
       let EnvelopeSource::Sound { layer, analysis } = &key.source;
       let Some((index, sound)) = self.sound_layer(layer) else {
         continue;
       };
       let analyzed =
-        content
-          .envelope(&sound.sound, *analysis)
-          .map_err(|error| LayerAssetError {
-            layer: sound.label(index),
-            error,
-          })?;
+        envelope(resources, &sound.sound, *analysis).map_err(|error| LayerAssetError {
+          layer: sound.label(index),
+          error: error.into(),
+        })?;
       let placement = Placement {
         start: sound.start,
         skip: sound.skip,
@@ -285,13 +291,8 @@ impl Scene {
       let prepared = PreparedEnvelope::new(&analyzed, placement, key.attack(), key.release());
       assets.insert_envelope(key, prepared);
     }
-    let drawn: Vec<_> = self
-      .layers
-      .iter()
-      .enumerate()
-      .filter_map(|(index, layer)| Some((index, layer.layer()?)))
-      .collect();
     check_generated_paths(&drawn, &assets)?;
+    drop(drawn);
     self.assets = assets;
     Ok(self)
   }
@@ -606,7 +607,8 @@ fn is_zero(z: &i8) -> bool {
 /// Why [`Scene::open`] couldn't open a scene
 #[derive(Debug)]
 pub enum OpenError {
-  File(SceneFileError),
+  /// Its source couldn't be had from the resources
+  File(ResourceError),
   Format {
     name: String,
     error: FormatError,
@@ -648,6 +650,7 @@ mod tests {
   use frontbox_gfx::scene::*;
 
   use super::*;
+  use crate::test_folder::Folder;
 
   fn layer() -> Layer {
     Layer::new(Fill::new(FillNode::Solid(Color(Rgba::red()).into())))
@@ -1021,21 +1024,39 @@ mod tests {
 
   #[test]
   fn a_bundled_scene_opens_until_a_file_replaces_it() {
-    let content = Content::without_folder().with_scenes([(
+    let folder = Folder::new();
+    let mut resources = Resources::new(&folder.0);
+    resources.add::<Scenes>(
       "frontbox/a.scene",
-      "Scene(version: 2, timing: (duration: 2.0))",
-    )]);
-    assert_eq!(
-      Scene::open(&content, "frontbox/a.scene")
-        .unwrap()
-        .timing
-        .unwrap()
-        .duration,
-      2.0
+      "Scene(version: 2, timing: (duration: 2.0))".into(),
     );
+    let duration = |resources: &Resources| {
+      let scene = Scene::open(resources, "frontbox/a.scene").unwrap();
+      scene.timing.unwrap().duration
+    };
+    assert_eq!(duration(&resources), 2.0);
+    assert_eq!(
+      Scene::open(&resources, "b.scene").unwrap_err().to_string(),
+      "there's no scene \"b.scene\" in the content folder"
+    );
+
+    folder.write(
+      "frontbox/a.scene",
+      b"Scene(version: 2, timing: (duration: 3.0))",
+    );
+    assert_eq!(duration(&resources), 3.0);
+    assert_eq!(resources.names::<Scenes>(), ["frontbox/a.scene"]);
+  }
+
+  #[test]
+  fn a_broken_scene_can_still_be_read_but_not_opened() {
+    let folder = Folder::new();
+    folder.write("a.scene", b"(oops");
+    let resources = Resources::new(&folder.0);
+    assert_eq!(resources.get::<Scenes>("a.scene").unwrap(), "(oops");
     assert!(matches!(
-      Scene::open(&content, "b.scene"),
-      Err(OpenError::File(_))
+      Scene::open(&resources, "a.scene"),
+      Err(OpenError::Format { .. })
     ));
   }
 
@@ -1075,15 +1096,14 @@ mod tests {
 
   #[test]
   fn an_envelope_follows_its_sound_where_the_layer_plays_it() {
-    let folder =
-      std::env::temp_dir().join(format!("frontbox-scene-envelope-{}", std::process::id()));
-    std::fs::create_dir_all(&folder).unwrap();
-    std::fs::write(folder.join("hit.wav"), hit()).unwrap();
-    let scene = following("hit")
-      .unwrap()
-      .with_assets(&Content::new(&folder));
-    std::fs::remove_dir_all(&folder).unwrap();
-    let scene = scene.unwrap();
+    let folder = Folder::new();
+    folder.write("hit.wav", &hit());
+    let resources = Resources::new(&folder.0);
+    let scene = following("hit").unwrap().with_assets(&resources).unwrap();
+    assert!(
+      following("hit").unwrap().with_assets(&resources).is_ok(),
+      "analyzed once, and found again"
+    );
 
     let NamedValue::Float(glow) = &scene.values["glow"] else {
       panic!("{:?}", scene.values);
@@ -1118,9 +1138,24 @@ mod tests {
   fn an_envelopes_sound_has_to_be_in_the_content_folder() {
     let error = following("hit")
       .unwrap()
-      .with_assets(&Content::without_folder())
+      .with_assets(&Resources::without_folder())
       .unwrap_err();
-    assert_eq!(error.layer, "layer \"hit\"");
+    assert_eq!(
+      error.to_string(),
+      "layer \"hit\": there's no sound \"hit.wav\": the app has no content folder"
+    );
+
+    let folder = Folder::new();
+    folder.write("hit.wav", b"not a sound");
+    let error = following("hit")
+      .unwrap()
+      .with_assets(&Resources::new(&folder.0))
+      .unwrap_err()
+      .to_string();
+    assert!(
+      error.starts_with("layer \"hit\": couldn't load sound \"hit.wav\": "),
+      "{error}"
+    );
   }
 
   #[test]

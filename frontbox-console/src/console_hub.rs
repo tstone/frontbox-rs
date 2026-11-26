@@ -2,10 +2,9 @@ use axum::body::Bytes;
 use axum::extract::ws::{Message, Utf8Bytes};
 use frontbox_core::prelude::app_tracer::{ConfigView, StepEnding, TraceEvent, TracerControlEvent};
 use frontbox_core::prelude::{
-  AppPlane, ConfigDomainValue, DEFAULT_LIGHT_RADIUS, Hardware, Rgb, RoutineCompleted,
+  AppPlane, ConfigDomainValue, DEFAULT_LIGHT_RADIUS, Hardware, Resources, Rgb, RoutineCompleted,
   RoutineStarted, SwitchState, SystemDespawned, SystemSpawned,
 };
-use frontbox_gfx::scene::Content;
 use frontbox_metrics::MetricsDb;
 use frontbox_pinball::{GameEnding, GameStarting, TurnStarting};
 use std::any::type_name;
@@ -58,7 +57,7 @@ impl ConsoleHub {
         next_seq: 0,
         plane_images: Vec::new(),
         light_radius: DEFAULT_LIGHT_RADIUS,
-        content: content(None),
+        resources: Arc::default(),
         control: None,
         metrics: None,
         led_names: HashMap::new(),
@@ -195,9 +194,11 @@ impl ConsoleHub {
     seed: u32,
   ) -> Option<Utf8Bytes> {
     let machine = self.preview_machine();
-    let content = self.content();
+    let resources = self.resources();
     let message = match tokio::task::spawn_blocking(move || {
-      render_scene(source, size, machine, content, time, cycle, reference, seed)
+      render_scene(
+        source, size, machine, resources, time, cycle, reference, seed,
+      )
     })
     .await
     {
@@ -224,9 +225,9 @@ impl ConsoleHub {
     let machine = self.preview_machine();
     let failed =
       |error: String| serialize(&ServerMessage::SceneClipFailed { id, error }).map(Message::Text);
-    let content = self.content();
+    let resources = self.resources();
     match tokio::task::spawn_blocking(move || {
-      render_clip(id, source, size, machine, content, cycle, reference, seed)
+      render_clip(id, source, size, machine, resources, cycle, reference, seed)
     })
     .await
     {
@@ -243,20 +244,20 @@ impl ConsoleHub {
     self.state.lock().unwrap().light_radius = radius;
   }
 
-  /// Uses the app's content folder, or none
-  pub fn set_content(&self, path: Option<PathBuf>) {
-    if let Some(path) = &path
+  /// Uses the app's resources
+  pub fn set_resources(&self, resources: Arc<Resources>) {
+    if let Some(path) = resources.root()
       && !path.is_dir()
     {
       log::warn!(target: "frontbox::console", "Content folder {} isn't there yet", path.display());
     }
-    self.state.lock().unwrap().content = content(path);
+    self.state.lock().unwrap().resources = resources;
   }
 
-  /// Where scenes' images, fonts, and sounds come from. Until `AppTracer::init`, and for an app without a content
-  /// folder, it has only the fonts and scenes frontbox comes with.
-  pub fn content(&self) -> Content {
-    self.state.lock().unwrap().content.clone()
+  /// The app's resources, where scenes and their images, fonts, and sounds come from. Until `AppTracer::init`, it's an
+  /// empty one.
+  pub fn resources(&self) -> Arc<Resources> {
+    self.state.lock().unwrap().resources.clone()
   }
 
   fn preview_machine(&self) -> PreviewMachine {
@@ -876,18 +877,12 @@ pub(crate) struct Subscription {
   pub displays: broadcast::Receiver<Bytes>,
 }
 
-/// The content in `path`, or without a folder, with the fonts and scenes frontbox comes with, which can be used without
-/// a file
-fn content(path: Option<PathBuf>) -> Content {
-  frontbox_display::content_with_bundled(path)
-}
-
 struct HubState {
   snapshot: Snapshot,
   started: Instant,
   next_seq: u64,
   light_radius: f32,
-  content: Content,
+  resources: Arc<Resources>,
   /// Image files for `snapshot.planes`, by the same index
   plane_images: Vec<Option<PathBuf>>,
   /// Where requests from clients (e.g. pressing a switch) go into the app. `None` until `AppTracer::init`.

@@ -8,9 +8,10 @@ static NONE: LazyLock<Assets> = LazyLock::new(Assets::default);
 /// Decoded images, loaded fonts, and shape generators by name, and prepared external envelopes, passed to sampling through
 /// [`LayerFrame::assets`](crate::scene::LayerFrame::assets)
 ///
-/// Scenes refer to images and fonts by name only. [`Content::assets_for`](crate::scene::Content::assets_for) builds this
-/// for a scene's layers, and the scene adds the envelopes they follow, as only it knows where its sounds play. Clones
-/// share pixel, font, and envelope data.
+/// Scenes refer to images, fonts, and shape generators by name only. Whatever loads a scene builds this for its layers,
+/// from [`Layer::image_names`](crate::scene::Layer::image_names), [`Layer::font_names`](crate::scene::Layer::font_names),
+/// and each region's [`ShapeNode::generator_name`](crate::scene::ShapeNode::generator_name), and adds the envelopes
+/// they follow. Clones share pixel, font, and envelope data.
 #[derive(Debug, Clone, Default)]
 pub struct Assets {
   pictures: HashMap<String, Arc<Picture>>,

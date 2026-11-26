@@ -44,7 +44,7 @@ Scene(
           ],
           base: Text(
             text: Variable("label"),
-            font: "TinyPixie2",
+            font: "frontbox/fonts/TinyPixie2.ttf",
             size: Fixed(6.0),
             width: Fixed(121.0),
             height: Fixed(7.0),
@@ -70,7 +70,7 @@ Scene(
           ],
           base: Text(
             text: Fixed("Are you sure?"),
-            font: "TinyPixie2",
+            font: "frontbox/fonts/TinyPixie2.ttf",
             size: Fixed(6.0),
             width: Fixed(124.0),
             height: Fixed(7.0),
@@ -95,7 +95,7 @@ Scene(
           ],
           base: Text(
             text: Fixed("Select: yes   Back: no"),
-            font: "TinyPixie2",
+            font: "frontbox/fonts/TinyPixie2.ttf",
             size: Fixed(6.0),
             width: Fixed(124.0),
             height: Fixed(7.0),

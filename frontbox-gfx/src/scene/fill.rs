@@ -149,7 +149,8 @@ pub enum FillNode {
   /// An image over the unit box at its `size`, and transparent outside it. On a `Sequence`, samples run along its
   /// middle row.
   Image {
-    /// Path within the [`Content`](crate::scene::Content) folder. Empty draws nothing, for an image not chosen yet.
+    /// The image's name in the scene's [`Assets`](crate::scene::Assets): for a game, its path within the content
+    /// folder. Empty draws nothing, for an image not chosen yet.
     name: String,
     /// Frame index for an animated image, 0 if not set. Truncated to a whole number, so animating it from 0 to the frame
     /// count gives each frame equal time. Clamped to the last frame.
@@ -163,7 +164,8 @@ pub enum FillNode {
   /// One sprite from an image laid out as a grid of equal sprites, drawn like an `Image`. Its `Native` size is the
   /// sprite's pixels.
   Spritesheet {
-    /// Path within the [`Content`](crate::scene::Content) folder. Empty draws nothing, for an image not chosen yet.
+    /// The image's name in the scene's [`Assets`](crate::scene::Assets): for a game, its path within the content
+    /// folder. Empty draws nothing, for an image not chosen yet.
     name: String,
     rows: u32,
     columns: u32,
