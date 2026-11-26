@@ -200,6 +200,12 @@ export function newNamedValue(kind: NamedValueKind): NamedValue {
   return kind === 'Int' ? { Int: 0 } : { Text: '' }
 }
 
+/** A kind of named value that's a prop, which can be keyframed or moved in a wave */
+export type DrawnValueKind = Exclude<NamedValueKind, 'Int' | 'Text'>
+
+/** What a prop of each kind of named value starts at with nothing to go on */
+export const NAMED_VALUE_FALLBACKS: Record<DrawnValueKind, SceneValue> = { Color: [0, 0, 0, 0], Float: 0, Vec2: [0, 0], Bool: true }
+
 /** `base`, or `base_2` and so on if `taken` says it's taken */
 function freshName(base: string, taken: (name: string) => boolean) {
   if (!taken(base)) return base

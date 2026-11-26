@@ -319,7 +319,7 @@
 }
 
 /*
- * the tools down the side of the preview, each of which adds a layer, then the modifiers for what's selected. They go
+ * the tools down the side of the preview, each of which adds a layer. They go
  * on in a second column when there are more than fit, on rows small enough for a divider to take two
  */
 .scene-tools {
@@ -335,8 +335,7 @@
   overflow: hidden;
 }
 
-.scene-tools > .scene-tool,
-.scene-modifier-tools > .scene-tool {
+.scene-tools > .scene-tool {
   grid-row: span 10;
 }
 
@@ -390,11 +389,6 @@
   border-right-color: currentColor;
   border-bottom-color: currentColor;
   content: '';
-}
-
-/* the modifiers for what's selected, laid out in the column with the tools */
-.scene-modifier-tools {
-  display: contents;
 }
 
 .scene-tools-divider {

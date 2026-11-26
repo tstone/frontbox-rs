@@ -336,6 +336,9 @@ pub struct ImageGeneratorInfo {
   pub name: String,
   /// Whether its image changes with time when its settings don't
   pub is_animated: bool,
+  /// How many pixels wide and tall its image is with every setting at its default, which is the size an editor adds
+  /// it at
+  pub size: (u32, u32),
   pub settings: Vec<GeneratorSettingInfo>,
 }
 

@@ -13,4 +13,9 @@ name: string,
 /**
  * Whether its image changes with time when its settings don't
  */
-is_animated: boolean, settings: Array<GeneratorSettingInfo>, };
+is_animated: boolean, 
+/**
+ * How many pixels wide and tall its image is with every setting at its default, which is the size an editor adds
+ * it at
+ */
+size: [number, number], settings: Array<GeneratorSettingInfo>, };

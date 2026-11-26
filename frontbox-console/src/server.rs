@@ -6,7 +6,7 @@ use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::get;
 use frontbox_core::prelude::{Resource, ResourceError, Resources};
-use frontbox_gfx::scene::GeneratorSetting;
+use frontbox_gfx::scene::{GeneratorFrame, GeneratorSetting, ImageGenerator};
 use frontbox_scene::{Fonts, ImageGenerators, Images, Scenes, ShapeGenerators, Sounds};
 use rust_embed::RustEmbed;
 use std::collections::HashSet;
@@ -382,10 +382,20 @@ async fn content_image_generators(State(hub): State<ConsoleHub>) -> Response {
     .map(|(name, generator)| ImageGeneratorInfo {
       name: name.into(),
       is_animated: generator.is_animated(),
+      size: default_size(generator.as_ref()),
       settings: setting_infos(generator.settings()),
     })
     .collect();
   Json(generators).into_response()
+}
+
+/// How big an image generator's image is with every setting at its default, which it's asked to make to find out
+fn default_size(generator: &dyn ImageGenerator) -> (u32, u32) {
+  let settings = generator.settings();
+  let defaults: Vec<f32> = settings.iter().map(|setting| setting.default).collect();
+  generator
+    .generate(&GeneratorFrame::new(0.0, 0, 0, settings, &defaults))
+    .dimensions()
 }
 
 /// A generator's settings, as an editor is told of them

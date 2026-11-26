@@ -93,7 +93,8 @@ function writeTreeWidth(width: number) {
 
 /**
  * The scene's layers as a tree, each node on one row with its time along the rest of it: a keyframed prop's keys, a
- * sound's bar, or a traversal's. A closed node shows when the props under it change. Selecting a row selects the node
+ * sound's bar, or a traversal's. A closed node shows when the props under it change. Under the layers are the scene's
+ * named values that change along the timeline, each on a row of its own. Selecting a row selects the node
  * for the properties panel. `graphs` are the layers' graphs as last drawn, which measure how long a traversal with a
  * rate takes. A preview scene has a row of its own at the top, which can't be opened or selected.
  */
@@ -417,15 +418,22 @@ type GroupRowData = { group: LayerGroup; open: boolean }
  * Layers that draw on the same thing, together in the tree: the light layers, each display's layers, or the sound
  * layers. In the file they're in one list. A group of drawn layers lists them in the order they're drawn in, backwards,
  * so the one on top is at the top, as in an image editor: by z, then later in the list over earlier. Sounds keep the
- * list's order.
+ * list's order. The last group isn't of layers: it's the scene's named values that change along the timeline, which
+ * the layers reading them through a variable change with. `named` is what the group is called in full.
  */
-type LayerGroup = { id: string; label: string; icon: typeof icons.Circle; color: LayerColor; nodes: ConfigNode[] }
+type LayerGroup = { id: string; label: string; named: string; icon: typeof icons.Circle; color: LayerColor; nodes: ConfigNode[] }
 
-/** The scene's layers in groups: the lights, then each display in the order the scene first draws on it, then the sounds */
+/**
+ * The scene's layers in groups: the lights, then each display in the order the scene first draws on it, then the
+ * sounds. After them come its named values with a track, in the order the scene has them. The rest of the values, and
+ * the variables, are in the sidebar.
+ */
 function layerGroups(tree: ConfigTree): LayerGroup[] {
   const layers = (tree.nodes().find((node) => node.id === 'scene')?.children ?? []).filter(shownInTree)
-  const groups: LayerGroup[] = [{ id: 'lights', label: 'Lights', icon: icons.Lightbulb, color: 'lights', nodes: [] }]
-  const sounds: LayerGroup = { id: 'sounds', label: 'Sounds', icon: icons.AudioLines, color: 'sound', nodes: [] }
+  const groups: LayerGroup[] = [{ id: 'lights', label: 'Lights', named: 'Lights layers', icon: icons.Lightbulb, color: 'lights', nodes: [] }]
+  const sounds: LayerGroup = { id: 'sounds', label: 'Sounds', named: 'Sounds layers', icon: icons.AudioLines, color: 'sound', nodes: [] }
+  const tracked = (tree.find('values')?.children ?? []).flatMap((value) => (value.children ?? []).filter(shownInTree))
+  const values: LayerGroup = { id: 'values', label: 'Values', named: 'Values', icon: icons.Braces, color: undefined, nodes: tracked }
   for (const node of layers) {
     if (node.kind !== 'layer') {
       sounds.nodes.push(node)
@@ -434,19 +442,20 @@ function layerGroups(tree: ConfigTree): LayerGroup[] {
     const id = layerGroupId(node.lens.get())
     let group = groups.find((found) => found.id === id)
     if (!group) {
-      group = { id, label: node.lens.get().display!, icon: icons.Monitor, color: 'display', nodes: [] }
+      const display = node.lens.get().display!
+      group = { id, label: display, named: `${display} layers`, icon: icons.Monitor, color: 'display', nodes: [] }
       groups.push(group)
     }
     group.nodes.push(node)
   }
   groups.forEach((group) => group.nodes.reverse().sort((a, b) => layerZ(b) - layerZ(a)))
-  return [...groups, sounds].filter(({ nodes }) => nodes.length > 0)
+  return [...groups, sounds, values].filter(({ nodes }) => nodes.length > 0)
 }
 
 /** The group of layers a layer is in, by its id */
 const layerGroupId = (layer: SceneLayer) => (layer.display === undefined ? 'lights' : `display:${layer.display}`)
 
-/** The rows that are showing, in order: each group's row, then its layers. The variables and values are in the sidebar. */
+/** The rows that are showing, in order: each group's row, then what's in it */
 function treeRows(tree: ConfigTree, groups: LayerGroup[]): (TreeRowData | GroupRowData)[] {
   const rows: (TreeRowData | GroupRowData)[] = []
   const visit = (nodes: TreeChild[], depth: number, color: LayerColor) => {
@@ -471,7 +480,7 @@ function GroupRow(props: { row: GroupRowData; timed: boolean; percent: (seconds:
   const group = () => props.row.group
   const toggle = () => tree.setGroupOpen(group().id, !props.row.open)
   return (
-    <div class={`scene-timeline-row scene-layers-row scene-layers-group ${layerColorClass(group().color) ?? ''}`} role="treeitem" aria-level={1} aria-expanded={props.row.open} aria-label={`${group().label} layers`} tabIndex={-1}>
+    <div class={`scene-timeline-row scene-layers-row scene-layers-group ${layerColorClass(group().color) ?? ''}`} role="treeitem" aria-level={1} aria-expanded={props.row.open} aria-label={group().named} tabIndex={-1}>
       <div class="scene-timeline-name scene-layers-name" style={{ '--depth': 0 }} onDblClick={(e) => !(e.target as Element).closest('button') && toggle()}>
         <button type="button" class="scene-layers-indicator" classList={{ 'scene-layers-open': props.row.open }} tabIndex={-1} aria-label={`${props.row.open ? 'Close' : 'Open'} ${group().label}`} onClick={toggle}>
           <icons.ChevronRight aria-hidden="true" />

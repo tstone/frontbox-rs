@@ -1,4 +1,5 @@
 import { contentImageInfo } from '../../state/contentImages'
+import type { NamedValue } from '../../types/generated/NamedValue'
 import type { BezierPoint } from '../../types/generated/BezierPoint'
 import type { ColorAdjust } from '../../types/generated/ColorAdjust'
 import type { Behind } from '../../types/generated/Behind'
@@ -50,11 +51,14 @@ import {
   repeatRanges,
   translateRanges,
   UNIT,
+  UNREFERENCED,
+  NAMED_VALUE_FALLBACKS,
   variant,
   WANDER,
   EVOLUTION,
   NOISE_SCALE,
   CELL_JITTER,
+  type DrawnValueKind,
   type LayerSurfaces,
   type AdjustKind,
   type Lens,
@@ -208,9 +212,21 @@ export function configNodes(scene: Lens<Scene>, surfaces: LayerSurfaces): Config
       section: 'values',
       value: values,
       fields: Object.keys(values).length === 0,
-      children: Object.keys(values).map((name) => branch({ id: `values/${name}`, label: name, kind: 'value', name, value: values[name], fields: true })),
+      children: Object.keys(values).map((name) => branch({ id: `values/${name}`, label: name, kind: 'value', name, value: values[name], fields: true, children: valueProps(scene, name) })),
     }),
   ]
+}
+
+/**
+ * Under a named value that's a prop, the prop, which has a row on the timeline while it changes along it. A whole number
+ * or text isn't one, and has nothing under it.
+ */
+function valueProps(scene: Lens<Scene>, name: string): ConfigNode[] {
+  const value = field(field(scene, 'values') as Lens<Record<string, NamedValue>>, name)
+  const kind = Object.keys(value.get())[0] as DrawnValueKind | 'Int' | 'Text'
+  if (kind === 'Int' || kind === 'Text') return []
+  const lens = variant(value as Lens<Record<string, Prop<SceneValue>>>, kind) as Lens<Prop<SceneValue>>
+  return [{ id: `values/${name}/value`, label: name, kind: 'prop', lens, variableName: name, fallback: NAMED_VALUE_FALLBACKS[kind], ranges: both(UNREFERENCED), value: lens.get() }]
 }
 
 /** The scene's layers, then its sound layers */
