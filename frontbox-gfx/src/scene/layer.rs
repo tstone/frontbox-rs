@@ -145,6 +145,14 @@ impl Layer {
       .filter_map(|shape| shape.base.font_name())
   }
 
+  /// Names of the shape generators that make its region's outline
+  pub fn generator_names(&self) -> impl Iterator<Item = &str> {
+    self
+      .region
+      .iter()
+      .filter_map(|shape| shape.base.generator_name())
+  }
+
   /// Validates what the types can't enforce, for the layer at `index` in a scene with `timing`
   pub fn check(&self, index: usize, timing: Option<Timing>) -> Result<(), SceneError> {
     if timing.is_none() && self.is_animated() {

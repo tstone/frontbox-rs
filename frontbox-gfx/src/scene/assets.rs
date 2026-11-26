@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 
-use crate::scene::{EnvelopeKey, Font, Picture, PreparedEnvelope};
+use crate::scene::{EnvelopeKey, Font, LoadedGenerator, Picture, PreparedEnvelope};
 
 static NONE: LazyLock<Assets> = LazyLock::new(Assets::default);
 
-/// Decoded images and loaded fonts by name, and prepared external envelopes, passed to sampling through
+/// Decoded images, loaded fonts, and shape generators by name, and prepared external envelopes, passed to sampling through
 /// [`LayerFrame::assets`](crate::scene::LayerFrame::assets)
 ///
 /// Scenes refer to images and fonts by name only. [`Content::assets_for`](crate::scene::Content::assets_for) builds this
@@ -15,6 +15,7 @@ static NONE: LazyLock<Assets> = LazyLock::new(Assets::default);
 pub struct Assets {
   pictures: HashMap<String, Arc<Picture>>,
   fonts: HashMap<String, Font>,
+  generators: HashMap<String, LoadedGenerator>,
   envelopes: HashMap<EnvelopeKey, Arc<PreparedEnvelope>>,
 }
 
@@ -36,6 +37,10 @@ impl Assets {
     self.fonts.insert(name.into(), font);
   }
 
+  pub fn insert_shape_generator(&mut self, name: impl Into<String>, generator: LoadedGenerator) {
+    self.generators.insert(name.into(), generator);
+  }
+
   pub fn insert_envelope(&mut self, key: EnvelopeKey, envelope: impl Into<Arc<PreparedEnvelope>>) {
     self.envelopes.insert(key, envelope.into());
   }
@@ -46,6 +51,10 @@ impl Assets {
 
   pub fn font(&self, name: &str) -> Option<&Font> {
     self.fonts.get(name)
+  }
+
+  pub fn shape_generator(&self, name: &str) -> Option<&LoadedGenerator> {
+    self.generators.get(name)
   }
 
   pub fn envelope(&self, key: &EnvelopeKey) -> Option<&PreparedEnvelope> {

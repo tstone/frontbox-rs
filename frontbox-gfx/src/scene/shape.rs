@@ -1,11 +1,14 @@
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
 use glam::{Affine2, Mat2, Vec2};
 use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::scene::{
-  Bounds, Contour, Cut, Env, Fill, Inputs, Node, PreparedAdjust, PreparedShadow, PreparedStroke,
-  Prop, Reshape, Sample, ShapeAdjust, ShiftLine, TextAlign, TextOutline, TextOverflow, TextSource,
-  Transform, VerticalAlign, layout_text,
+  Bounds, Contour, Cut, Env, Fill, Generated, Inputs, Node, PreparedAdjust, PreparedShadow,
+  PreparedStroke, Prop, Reshape, Sample, ShapeAdjust, ShiftLine, TextAlign, TextOutline,
+  TextOverflow, TextSource, Transform, VerticalAlign, layout_text,
 };
 
 /// Points in the outline polygon of a round shape
@@ -132,6 +135,20 @@ pub enum ShapeNode {
     #[cfg_attr(feature = "ts", ts(as = "Option<TextOverflow>", optional))]
     overflow: TextOverflow,
   },
+  /// The outline a [`ShapeGenerator`](crate::scene::ShapeGenerator) makes, in code outside the scene, by the name the
+  /// app gives it to [`Content::with_shape_generators`](crate::scene::Content::with_shape_generators). `settings` sets
+  /// the generator's settings by name, and one left out is at its default. It's areas or lines as the generator makes
+  /// them, each area covered as one with the others. Transforms that reshape an outline (`Shift`, `Bulge`, `Round`)
+  /// leave it as it is. With no generator by that name, it draws nothing.
+  External {
+    generator: String,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cfg_attr(
+      feature = "ts",
+      ts(as = "Option<BTreeMap<String, Prop<f32>>>", optional)
+    )]
+    settings: BTreeMap<String, Prop<f32>>,
+  },
 }
 
 /// How a [`ShapeNode::Wave`] crosses from one side of its box to the other
@@ -199,7 +216,7 @@ impl Shape {
   pub(crate) fn prepare(&self, env: &Env) -> Option<PreparedShape> {
     let bounds = self.base.bounds(env);
     let to_scene = self.to_scene(bounds.center(), env)?;
-    let open = self.base.is_open();
+    let open = self.base.is_open(env);
     let edge = match self.reshaped(env) {
       Some((outline, _)) if open => Edge::Line(outline),
       Some((outline, _)) => Edge::Polygon(outline),
@@ -269,24 +286,29 @@ impl Shape {
     if self.to_scene(bounds.center(), env).is_none() {
       return Vec::new();
     }
-    let own = self.own_outline(env);
-    let open = self.base.is_open();
+    let own = self.own_outlines(env);
+    let open = self.base.is_open(env);
     let placed = self
       .placements(bounds.center(), env)
       .into_iter()
-      .map(|placed| {
-        let outline: Vec<Vec2> = own
+      .flat_map(|placed| {
+        own
           .iter()
-          .map(|p| placed.to_scene.transform_point2(*p))
-          .collect();
-        if open {
-          outline
-        } else {
-          placed
-            .cuts
-            .iter()
-            .fold(outline, |outline, cut| clipped(&outline, cut))
-        }
+          .map(|part| {
+            let outline: Vec<Vec2> = part
+              .iter()
+              .map(|p| placed.to_scene.transform_point2(*p))
+              .collect();
+            if open {
+              outline
+            } else {
+              placed
+                .cuts
+                .iter()
+                .fold(outline, |outline, cut| clipped(&outline, cut))
+            }
+          })
+          .collect::<Vec<_>>()
       });
     placed.filter(|outline| !outline.is_empty()).collect()
   }
@@ -357,21 +379,23 @@ impl Shape {
     })
   }
 
-  /// The base's outline in local space, with each `Shift`, `Bulge`, and `Round` applied
-  fn own_outline(&self, env: &Env) -> Vec<Vec2> {
+  /// The base's outlines in local space, with each `Shift`, `Bulge`, and `Round` applied: one, or a generator's parts
+  fn own_outlines(&self, env: &Env) -> Vec<Vec<Vec2>> {
     self
       .reshaped(env)
-      .map_or_else(|| self.base.outline(env), |(outline, _)| outline)
+      .map_or_else(|| self.base.outlines(env), |(outline, _)| vec![outline])
   }
 
   /// The base's outline in local space with each `Shift`, `Bulge`, and `Round` applied, and for each transform, where a
-  /// `Shift` moves the shape. `None` without any of them, or for text, which isn't reshaped.
+  /// `Shift` moves the shape. `None` without any of them, or for text or a generator's outline, which aren't reshaped.
   fn reshaped(&self, env: &Env) -> Option<(Vec<Vec2>, Vec<Option<ShiftLine>>)> {
-    if matches!(self.base, ShapeNode::Text { .. })
-      || self
-        .transform
-        .iter()
-        .all(|transform| transform.reshape(env).is_none())
+    if matches!(
+      self.base,
+      ShapeNode::Text { .. } | ShapeNode::External { .. }
+    ) || self
+      .transform
+      .iter()
+      .all(|transform| transform.reshape(env).is_none())
     {
       return None;
     }
@@ -457,7 +481,7 @@ impl Shape {
   /// The scene-space point `phase` (0 to 1) of the way along the outline. The origin if there's no outline.
   pub(crate) fn along(&self, phase: f32, env: &Env) -> Vec2 {
     let own = match self.reshaped(env) {
-      Some((outline, _)) if self.base.is_open() => along_line(&outline, phase),
+      Some((outline, _)) if self.base.is_open(env) => along_line(&outline, phase),
       Some((outline, _)) => along_loop(&outline, phase),
       None => self.base.along(phase, env),
     };
@@ -539,6 +563,40 @@ impl ShapeNode {
     }
   }
 
+  /// The name of the generator that makes its outline, if it's external
+  pub fn generator_name(&self) -> Option<&str> {
+    match self {
+      Self::External { generator, .. } => Some(generator),
+      _ => None,
+    }
+  }
+
+  /// Each name it sets a generator setting by, if it's external
+  pub fn generator_settings(&self) -> impl Iterator<Item = &str> {
+    let settings = match self {
+      Self::External { settings, .. } => Some(settings.keys().map(String::as_str)),
+      _ => None,
+    };
+    settings.into_iter().flatten()
+  }
+
+  /// A generator's output at `env`. `None` for a shape that isn't external, or a generator the assets don't have.
+  fn generated(&self, env: &Env) -> Option<Arc<Generated>> {
+    let Self::External {
+      generator,
+      settings,
+    } = self
+    else {
+      return None;
+    };
+    let loaded = env.assets.shape_generator(generator)?;
+    Some(
+      loaded.generate(env.time, env.cycle, env.playback_seed, |name| {
+        settings.get(name).map(|setting| setting.resolve(env))
+      }),
+    )
+  }
+
   fn is_animated(&self) -> bool {
     match self {
       Self::Circle { radius } => radius.is_animated(),
@@ -590,6 +648,8 @@ impl ShapeNode {
             .iter()
             .any(|prop| prop.is_animated())
       }
+      // a generator that animates on its own does so whatever the scene's timing, so only its settings count here
+      Self::External { settings, .. } => settings.values().any(Prop::is_animated),
     }
   }
 
@@ -647,6 +707,9 @@ impl ShapeNode {
           .iter()
           .for_each(|prop| prop.read_inputs(inputs));
       }
+      Self::External { settings, .. } => settings
+        .values()
+        .for_each(|setting| setting.read_inputs(inputs)),
     }
   }
 
@@ -670,6 +733,17 @@ impl ShapeNode {
       }
       // points only, so dragging a handle doesn't move the center that `Rotate` pivots on
       Self::Bezier { points } => bounds_of(points.iter().map(|p| p.point.resolve(env))),
+      Self::External { .. } => bounds_of(self.outlines(env).into_iter().flatten()),
+    }
+  }
+
+  /// Outlines in local space, before transforms: the one outline, or each of a generator's parts
+  fn outlines(&self, env: &Env) -> Vec<Vec<Vec2>> {
+    match self {
+      Self::External { .. } => self
+        .generated(env)
+        .map_or_else(Vec::new, |generated| generated.parts().to_vec()),
+      _ => vec![self.outline(env)],
     }
   }
 
@@ -734,6 +808,11 @@ impl ShapeNode {
       Self::Wave { runs, style, .. } => {
         wave_line(self.reach(env), whole_count(runs, MAX_RUNS, env), *style)
       }
+      // the first part, for the one outline an editor draws
+      Self::External { .. } => self
+        .generated(env)
+        .and_then(|generated| generated.parts().first().cloned())
+        .unwrap_or_default(),
     }
   }
 
@@ -747,8 +826,8 @@ impl ShapeNode {
       | Self::Wave {
         style: WaveStyle::Smooth,
         ..
-      } => Contour::curved(self.outline(env), !self.is_open()),
-      _ => Contour::straight(self.outline(env), !self.is_open()),
+      } => Contour::curved(self.outline(env), !self.is_open(env)),
+      _ => Contour::straight(self.outline(env), !self.is_open(env)),
     }
   }
 
@@ -762,16 +841,37 @@ impl ShapeNode {
       Self::Polyline { .. } | Self::Bezier { .. } | Self::Spiral { .. } | Self::Wave { .. } => {
         along_line(&self.outline(env), phase)
       }
+      // along the generator's path, which a scene can only follow when there is one
+      Self::External { .. } => match self.generated(env).as_deref().and_then(Generated::followed) {
+        Some(path) if path.closed => along_loop(&path.points, phase),
+        Some(path) => along_line(&path.points, phase),
+        None => Vec2::ZERO,
+      },
       _ => along_loop(&self.outline(env), phase),
     }
   }
 
   /// Whether it's a line, with no inside
-  pub(crate) fn is_open(&self) -> bool {
-    matches!(
-      self,
-      Self::Polyline { .. } | Self::Bezier { .. } | Self::Spiral { .. } | Self::Wave { .. }
-    )
+  pub(crate) fn is_open(&self, env: &Env) -> bool {
+    match self {
+      Self::Polyline { .. } | Self::Bezier { .. } | Self::Spiral { .. } | Self::Wave { .. } => true,
+      Self::External { .. } => self
+        .generated(env)
+        .is_some_and(|generated| generated.is_open()),
+      _ => false,
+    }
+  }
+
+  /// Whether what a sweep follows along it has ends, rather than going around: its outline, or a generator's path
+  pub(crate) fn is_open_path(&self, env: &Env) -> bool {
+    match self {
+      Self::External { .. } => self
+        .generated(env)
+        .as_deref()
+        .and_then(Generated::followed)
+        .is_some_and(|path| !path.closed),
+      _ => self.is_open(env),
+    }
   }
 
   /// Half-extents of a shape that isn't made of points or text. Zero for those that are.
@@ -789,7 +889,10 @@ impl ShapeNode {
       Self::Star { radius, .. } | Self::Spiral { radius, .. } => {
         Vec2::splat(radius.resolve(env).max(0.0))
       }
-      Self::Polygon { .. } | Self::Polyline { .. } | Self::Bezier { .. } => Vec2::ZERO,
+      Self::Polygon { .. }
+      | Self::Polyline { .. }
+      | Self::Bezier { .. }
+      | Self::External { .. } => Vec2::ZERO,
     }
   }
 
@@ -840,6 +943,12 @@ impl ShapeNode {
       Self::Polyline { .. } | Self::Bezier { .. } | Self::Spiral { .. } | Self::Wave { .. } => {
         Edge::Line(self.outline(env))
       }
+      Self::External { .. } => match self.generated(env) {
+        Some(generated) if generated.parts().is_empty() => Edge::Empty,
+        Some(generated) if generated.is_open() => Edge::Lines(generated.parts().to_vec()),
+        Some(generated) => Edge::Areas(generated.parts().to_vec()),
+        None => Edge::Empty,
+      },
     }
   }
 }
@@ -911,7 +1020,7 @@ impl PreparedShape {
   }
 
   fn is_line(&self) -> bool {
-    matches!(self.edge, Edge::Line(_))
+    matches!(self.edge, Edge::Line(_) | Edge::Lines(_))
   }
 
   /// The signed distance at `pos` to the edge of the nearest copy, and where `pos` is in that copy's local space. Each
@@ -1107,7 +1216,11 @@ enum Edge {
   Text(TextOutline, Vec2),
   /// A polyline or bezier, which has no inside, so its distance is never negative
   Line(Vec<Vec2>),
-  /// Text with no font, which draws nothing
+  /// A generator's polygons, covered as one: inside any of them is inside
+  Areas(Vec<Vec<Vec2>>),
+  /// A generator's lines, which have no inside
+  Lines(Vec<Vec<Vec2>>),
+  /// Text with no font, or a generator with nothing to draw, which draws nothing
   Empty,
 }
 
@@ -1124,6 +1237,9 @@ impl Edge {
         if frame.0 > text.0 { frame } else { text }
       }
       Self::Line(points) => line_distance(points, p),
+      // the nearest of them, which is the union's edge outside them all, and inside the one reached in deepest
+      Self::Areas(parts) => nearest_part(parts, |points| polygon_distance(points, p)),
+      Self::Lines(parts) => nearest_part(parts, |points| line_distance(points, p)),
       Self::Empty => (f32::INFINITY, Vec2::X),
     }
   }
@@ -1135,6 +1251,7 @@ impl Edge {
     match self {
       Self::Ellipse(reach) | Self::Rect(reach) => around(reach.abs()),
       Self::Polygon(points) | Self::Line(points) => bounds_of(points.iter().copied()),
+      Self::Areas(parts) | Self::Lines(parts) => bounds_of(parts.iter().flatten().copied()),
       Self::Text(outline, reach) => {
         let extent = outline.extent();
         Bounds::new(extent.min.max(-*reach), extent.max.min(*reach))
@@ -1142,6 +1259,15 @@ impl Edge {
       Self::Empty => Bounds::new(Vec2::ZERO, Vec2::ZERO),
     }
   }
+}
+
+/// The least of each part's signed distance, with its gradient
+fn nearest_part(parts: &[Vec<Vec2>], distance: impl Fn(&[Vec2]) -> (f32, Vec2)) -> (f32, Vec2) {
+  parts
+    .iter()
+    .map(|points| distance(points))
+    .min_by(|a, b| a.0.total_cmp(&b.0))
+    .unwrap_or((f32::INFINITY, Vec2::X))
 }
 
 fn bounds_of(mut points: impl Iterator<Item = Vec2>) -> Bounds {

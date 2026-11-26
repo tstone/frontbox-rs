@@ -291,7 +291,10 @@ async fn add_content_image(
         | ContentError::BadFontName(_)
         | ContentError::NotAFont(_)
         | ContentError::BadSoundName(_)
-        | ContentError::NotASound { .. } => StatusCode::UNPROCESSABLE_ENTITY,
+        | ContentError::NotASound { .. }
+        | ContentError::NoShapeGenerator(_)
+        | ContentError::NoSuchSetting { .. }
+        | ContentError::GeneratorHasNoPath { .. } => StatusCode::UNPROCESSABLE_ENTITY,
       };
       (status, err.to_string()).into_response()
     }

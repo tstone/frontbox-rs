@@ -13,7 +13,9 @@ use std::time::SystemTime;
 
 use crate::scene::file;
 use crate::scene::sound;
-use crate::scene::{Analysis, Assets, EnvelopeContent, Font, Layer, Picture};
+use crate::scene::{
+  Analysis, Assets, EnvelopeContent, Font, Layer, LoadedGenerator, Picture, ShapeGenerator,
+};
 
 /// Largest width or height that will be decoded
 const MAX_IMAGE_SIDE: u32 = 8192;
@@ -51,6 +53,8 @@ const SOUND_EXTENSIONS: [&str; 4] = ["wav", "mp3", "ogg", "flac"];
 /// An app without a folder still has a `Content`, from [`Self::without_folder`]. It has only the fonts it's given, and
 /// anything that needs a file is a [`ContentError::NoFolder`] or [`SceneFileError::NoFolder`].
 ///
+/// Shape generators come from [`Self::with_shape_generators`], as they're the app's code rather than files.
+///
 /// Decoded images, loaded fonts, and analyzed sounds are cached until their file changes. Clones share the cache.
 #[derive(Debug, Clone)]
 pub struct Content {
@@ -65,6 +69,8 @@ pub struct Content {
   bundled_fonts: Arc<BTreeMap<String, Font>>,
   /// From [`Self::with_scenes`]: each scene's source, by name
   bundled_scenes: Arc<BTreeMap<String, String>>,
+  /// From [`Self::with_shape_generators`], by name
+  generators: Arc<BTreeMap<String, Arc<dyn ShapeGenerator>>>,
 }
 
 impl Content {
@@ -84,6 +90,7 @@ impl Content {
       envelopes: Arc::default(),
       bundled_fonts: Arc::default(),
       bundled_scenes: Arc::default(),
+      generators: Arc::default(),
     }
   }
 
@@ -108,6 +115,36 @@ impl Content {
     bundled.extend(scenes.map(|(name, source)| (name.to_owned(), source.to_owned())));
     self.bundled_scenes = Arc::new(bundled);
     self
+  }
+
+  /// Adds shape generators, each by the name a scene's
+  /// [`ShapeNode::External`](crate::scene::ShapeNode::External) gives it. A name given again replaces the one before.
+  pub fn with_shape_generators<'a>(
+    mut self,
+    generators: impl IntoIterator<Item = (&'a str, Arc<dyn ShapeGenerator>)>,
+  ) -> Self {
+    let mut all = (*self.generators).clone();
+    all.extend(
+      generators
+        .into_iter()
+        .map(|(name, generator)| (name.to_owned(), generator)),
+    );
+    self.generators = Arc::new(all);
+    self
+  }
+
+  /// Every shape generator's name, sorted
+  pub fn shape_generator_names(&self) -> Vec<String> {
+    self.generators.keys().cloned().collect()
+  }
+
+  /// The shape generator named `name`
+  pub fn shape_generator(&self, name: &str) -> Result<Arc<dyn ShapeGenerator>, ContentError> {
+    self
+      .generators
+      .get(name)
+      .cloned()
+      .ok_or_else(|| ContentError::NoShapeGenerator(name.into()))
   }
 
   /// The folder. `None` for an app without one.
@@ -315,8 +352,9 @@ impl Content {
     Ok(envelope)
   }
 
-  /// Loads every image and font a scene's layers use, given in the scene's order. A missing one is an error here,
-  /// rather than a layer silently drawing nothing.
+  /// Loads every image and font a scene's layers use, given in the scene's order, with the shape generators they name.
+  /// A missing one is an error here, rather than a layer silently drawing nothing, as is a setting its generator
+  /// doesn't have.
   pub fn assets_for<'a>(
     &self,
     layers: impl IntoIterator<Item = &'a Layer>,
@@ -332,6 +370,23 @@ impl Content {
       }
       for name in layer.font_names() {
         assets.insert_font(name, self.font(name).map_err(failed)?);
+      }
+      if let Some(shape) = &layer.region
+        && let Some(name) = shape.base.generator_name()
+      {
+        let generator = self.shape_generator(name).map_err(failed)?;
+        let specs = generator.settings();
+        if let Some(setting) = shape
+          .base
+          .generator_settings()
+          .find(|setting| !specs.iter().any(|spec| spec.name == *setting))
+        {
+          return Err(failed(ContentError::NoSuchSetting {
+            generator: name.into(),
+            setting: setting.into(),
+          }));
+        }
+        assets.insert_shape_generator(name, LoadedGenerator::new(generator));
       }
     }
     Ok(assets)
@@ -492,6 +547,18 @@ pub enum ContentError {
     name: String,
     error: io::Error,
   },
+  /// The app gave no shape generator by this name
+  NoShapeGenerator(String),
+  /// A scene sets a setting its shape generator doesn't have
+  NoSuchSetting {
+    generator: String,
+    setting: String,
+  },
+  /// A sweep follows the region of the layer named `path`, made by a shape generator with no path to follow
+  GeneratorHasNoPath {
+    path: String,
+    generator: String,
+  },
 }
 
 impl fmt::Display for ContentError {
@@ -527,6 +594,15 @@ impl fmt::Display for ContentError {
       Self::NotASound { name, error } => write!(f, "couldn't decode sound \"{name}\": {error}"),
       Self::Taken(name) => write!(f, "there's already an image \"{name}\""),
       Self::Write { name, error } => write!(f, "couldn't save image \"{name}\": {error}"),
+      Self::NoShapeGenerator(name) => write!(f, "the app has no shape generator \"{name}\""),
+      Self::NoSuchSetting { generator, setting } => write!(
+        f,
+        "shape generator \"{generator}\" has no setting \"{setting}\""
+      ),
+      Self::GeneratorHasNoPath { path, generator } => write!(
+        f,
+        "layer \"{path}\" is made by shape generator \"{generator}\", which has no path to follow"
+      ),
     }
   }
 }

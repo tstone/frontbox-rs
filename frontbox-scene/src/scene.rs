@@ -6,7 +6,7 @@ use frontbox_gfx::scene::file::{self, FormatError};
 use frontbox_gfx::scene::{
   self, Assets, Content, EnvelopeSource, Inputs, Layer, LayerAssetError, LayerFrame, Modulators,
   Placement, PreparedEnvelope, Regions, SceneError, SceneFileError, Shape, Timing, Value, Values,
-  Variables, Visits, check_sweeps,
+  Variables, Visits, check_generated_paths, check_sweeps,
 };
 use serde::{Deserialize, Serialize};
 
@@ -257,9 +257,9 @@ impl Scene {
     sound_starts(starts)
   }
 
-  /// Loads the images and fonts its layers draw from `content`, and prepares the external envelopes they follow from
-  /// the sounds of its sound layers. A layer whose image, font, or sound is missing is an error, rather than one that
-  /// silently draws nothing. That reads and decodes files, so do it ahead of time rather than in a tick.
+  /// Loads the images, fonts, and shape generators its layers draw from `content`, and prepares the external envelopes
+  /// they follow from the sounds of its sound layers. A layer whose image, font, generator, or sound is missing is an
+  /// error, rather than one that silently draws nothing, as is a sweep following a generator with no path. That reads and decodes files, so do it ahead of time rather than in a tick.
   ///
   /// An envelope following a sound layer the scene doesn't have is left out, to rest at its spread's default.
   /// [`Scene::check`] reports it.
@@ -285,6 +285,13 @@ impl Scene {
       let prepared = PreparedEnvelope::new(&analyzed, placement, key.attack(), key.release());
       assets.insert_envelope(key, prepared);
     }
+    let drawn: Vec<_> = self
+      .layers
+      .iter()
+      .enumerate()
+      .filter_map(|(index, layer)| Some((index, layer.layer()?)))
+      .collect();
+    check_generated_paths(&drawn, &assets)?;
     self.assets = assets;
     Ok(self)
   }

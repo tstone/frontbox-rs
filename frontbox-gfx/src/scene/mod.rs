@@ -54,6 +54,7 @@
 //! - [`file`](mod@file) -- Reading and writing scene files as RON
 //! - [`Content`], [`Assets`], [`Font`] -- The folder of scenes, images, and fonts, and the decoded images and fonts a
 //!   scene draws from
+//! - [`ShapeGenerator`] -- Outlines made by the app's code, for shapes too involved to build from the base shapes
 
 mod animatable;
 mod assets;
@@ -84,6 +85,7 @@ mod sample;
 mod scene_error;
 mod shape;
 mod shape_adjust;
+mod shape_generator;
 mod sound;
 mod surface;
 mod sweep;
@@ -123,6 +125,7 @@ pub use sample::*;
 pub use scene_error::*;
 pub use shape::*;
 pub use shape_adjust::*;
+pub use shape_generator::*;
 pub use surface::*;
 pub use sweep::*;
 pub use text_layout::*;

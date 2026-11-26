@@ -4,7 +4,9 @@ use glam::Vec2;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::scene::{Animatable, Env, Inputs, Layer, Prop, SceneError, Shape};
+use crate::scene::{
+  Animatable, Assets, ContentError, Env, Inputs, Layer, LayerAssetError, Prop, SceneError, Shape,
+};
 
 /// A position on the outline of another layer's region
 ///
@@ -49,7 +51,7 @@ impl Sweep {
     let Some((path, path_env)) = env.region(&self.layer) else {
       return Vec2::ZERO;
     };
-    let ends = self.ends.unwrap_or(if path.base.is_open() {
+    let ends = self.ends.unwrap_or(if path.base.is_open_path(&path_env) {
       SweepEnds::Hold
     } else {
       SweepEnds::Wrap
@@ -164,6 +166,41 @@ pub fn check_sweeps<K: PartialEq>(layers: &[(usize, &Layer, K)]) -> Result<(), S
     }),
     None => Ok(()),
   }
+}
+
+/// Checks no sweep in `layers` follows a region made by a shape generator with no path, which only `assets` knows. The
+/// rest of what a sweep needs is [`check_sweeps`]'s.
+///
+/// Each layer comes with its index among the scene's layers, to name it by in errors.
+pub fn check_generated_paths(
+  layers: &[(usize, &Layer)],
+  assets: &Assets,
+) -> Result<(), LayerAssetError> {
+  for (index, layer) in layers {
+    let mut inputs = Inputs::new();
+    layer.read_inputs(&mut inputs);
+    for name in &inputs.regions {
+      let generated = layers
+        .iter()
+        .filter(|(_, path)| path.name.as_ref() == Some(name))
+        .filter_map(|(_, path)| path.region.as_ref()?.base.generator_name());
+      for generator in generated {
+        if assets
+          .shape_generator(generator)
+          .is_some_and(|loaded| !loaded.generator().has_path())
+        {
+          return Err(LayerAssetError {
+            layer: layer.label(*index),
+            error: ContentError::GeneratorHasNoPath {
+              path: name.clone(),
+              generator: generator.into(),
+            },
+          });
+        }
+      }
+    }
+  }
+  Ok(())
 }
 
 /// Deserializes `Prop::Sweep`, rejecting it unless `T` is a position type
