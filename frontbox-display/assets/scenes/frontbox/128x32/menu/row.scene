@@ -129,10 +129,12 @@ Scene(
             Translate(Fixed(121.5, 5.5)),
             Translate(Variable("arrow_offset")),
           ],
-          base: Chevron(
-            width: Fixed(5.0),
-            height: Fixed(3.0),
-            notch: Fixed(0.0),
+          base: Polygon(
+            points: [
+              Fixed(0.0, -1.5),
+              Fixed(2.5, 1.5),
+              Fixed(-2.5, 1.5),
+            ],
           ),
         ),
       ),

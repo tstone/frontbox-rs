@@ -1275,7 +1275,7 @@ export const BULGE: Range = { min: -1, max: 1, step: 0.01, rest: 0 }
 export const SHIFT: Range = { min: -1, max: 1, step: 0.01, rest: 0 }
 /** How far a warp pushes, as a share of the region's shorter side */
 export const WARP_AMOUNT: Range = { min: 0, max: 0.5, step: 0.01, rest: 0.05 }
-/** How far up a chevron's notch reaches */
+/** How far a chevron's point rises, and how far up its notch reaches, as a share of its height */
 export const NOTCH: Range = { ...UNIT, rest: 0.5 }
 /** How wide a star's legs are where they meet, as a fraction of its radius. It rests at 2·tan(18°), where a 5-legged
  * star's sides line up into a pentagram. */

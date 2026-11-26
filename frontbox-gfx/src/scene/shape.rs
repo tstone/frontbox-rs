@@ -67,8 +67,10 @@ pub enum ShapeNode {
     legs: Prop<f32>,
     leg_width: Prop<f32>,
   },
-  /// A triangle pointing up with a smaller one cut out of its base: `width` across, `height` from the bottom corners to
-  /// the tip, and the cut reaching `notch` (0 to 1) of the way up.
+  /// A band pointing up, as an arrow insert is: a box `width` by `height` whose top rises to a point in the middle,
+  /// with straight sides below it and its bottom cut in to match, so it's as thick in the middle as at its sides. The
+  /// point rises `notch` (0 to 1) of the height, and the cut reaches as far up: 0 is a rect, and by 1 it has thinned
+  /// to nothing.
   Chevron {
     width: Prop<f32>,
     height: Prop<f32>,
@@ -827,12 +829,14 @@ impl ShapeNode {
       }
       Self::Chevron { notch, .. } => {
         let Vec2 { x, y } = self.reach(env);
-        let notch = y - 2.0 * y * unit_fraction(notch, env);
+        let rise = 2.0 * y * unit_fraction(notch, env);
         vec![
           Vec2::new(0.0, -y),
+          Vec2::new(x, rise - y),
           Vec2::new(x, y),
-          Vec2::new(0.0, notch),
+          Vec2::new(0.0, y - rise),
           Vec2::new(-x, y),
+          Vec2::new(-x, rise - y),
         ]
       }
       // too few points to enclose anything, so it draws nothing
@@ -2299,17 +2303,26 @@ mod tests {
   }
 
   #[test]
-  fn a_chevron_is_a_triangle_with_its_base_cut_in() {
-    let shape = Shape::new(ShapeNode::Chevron {
-      width: 20.0.into(),
-      height: 20.0.into(),
-      notch: 0.5.into(),
-    });
-    for (x, y) in [(0.0, -5.0), (9.0, 8.5), (-9.0, 8.5)] {
+  fn a_chevron_is_a_band_that_rises_to_a_point_with_straight_sides() {
+    let chevron = |notch: f32| {
+      Shape::new(ShapeNode::Chevron {
+        width: 20.0.into(),
+        height: 20.0.into(),
+        notch: notch.into(),
+      })
+    };
+    let shape = chevron(0.5);
+    // under the point, down each straight side, and in its bottom corners
+    for (x, y) in [(0.0, -5.0), (9.0, 2.0), (-9.0, 2.0), (9.5, 8.0), (-9.5, 8.0)] {
       assert_eq!(covered(&shape, x, y, 0.1), 1.0, "at ({x}, {y})");
     }
-    for (x, y) in [(0.0, 5.0), (0.0, 9.0), (8.0, -8.0)] {
+    // in the cut, and beside the point
+    for (x, y) in [(0.0, 5.0), (0.0, 9.0), (8.0, -8.0), (-8.0, -8.0)] {
       assert_eq!(covered(&shape, x, y, 0.1), 0.0, "at ({x}, {y})");
+    }
+    // with no rise it's a rect
+    for (x, y) in [(9.0, -9.0), (0.0, 9.0)] {
+      assert_eq!(covered(&chevron(0.0), x, y, 0.1), 1.0, "at ({x}, {y})");
     }
   }
 
