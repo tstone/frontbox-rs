@@ -9,10 +9,21 @@ export const contentFonts = () => fonts().map(({ name }) => name)
 /** For a pixel font, the size that's one scene unit to its pixels, which it's crisp at whole multiples of */
 export const fontPixelSize = (name: string) => fonts().find((font) => font.name === name)?.pixel_size ?? undefined
 
-/** A font's name, and for a pixel font how many pixels tall its capitals are, as "TinyPix (4)" */
+/** The folder the fonts frontbox comes with are named under, as `frontbox/fonts/TinyPix.ttf` */
+const BUNDLED = 'frontbox/'
+
+/** Which fonts a font is listed with: the game's own, or the ones frontbox comes with */
+export const fontGroup = (name: string) => (name.startsWith(BUNDLED) ? 'Frontbox' : 'Game')
+
+/**
+ * A font's name, and for a pixel font how many pixels tall its capitals are, as "TinyPix (4)". One frontbox comes
+ * with goes by its file's stem, as they're all in one folder. The game's own keeps its path, which may be what tells
+ * two apart.
+ */
 export function fontLabel(name: string) {
   const capHeight = fonts().find((font) => font.name === name)?.cap_height
-  return capHeight == null ? name : `${name} (${capHeight})`
+  const shown = name.startsWith(BUNDLED) ? name.slice(name.lastIndexOf('/') + 1).replace(/\.[^.]+$/, '') : name
+  return capHeight == null ? shown : `${shown} (${capHeight})`
 }
 
 /** Scans the folder, which can change on the machine at any time */

@@ -16,4 +16,9 @@ name: string, from: NodeRef, algorithm: TraversalAlgorithm, speed: Speed,
 /**
  * Seconds into the cycle when it leaves `from`
  */
-start: number, };
+start: number, 
+/**
+ * Plays its visits backwards: worked out from `from` as ever, then the node it would visit last is visited first,
+ * at `start`, and `from` last. A fill closes in on `from` instead of spreading out from it.
+ */
+reverse?: boolean, };

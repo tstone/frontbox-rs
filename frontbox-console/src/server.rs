@@ -6,7 +6,7 @@ use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::get;
 use frontbox_core::prelude::{Resource, ResourceError, Resources};
-use frontbox_gfx::scene::{GeneratorFrame, GeneratorSetting, ImageGenerator};
+use frontbox_gfx::scene::{GeneratorFrame, GeneratorSetting, ImageGenerator, ShapeGenerator};
 use frontbox_scene::{Fonts, ImageGenerators, Images, Scenes, ShapeGenerators, Sounds};
 use rust_embed::RustEmbed;
 use std::collections::HashSet;
@@ -358,6 +358,7 @@ async fn content_shape_generators(State(hub): State<ConsoleHub>) -> Response {
     .map(|(name, generator)| ShapeGeneratorInfo {
       name: name.into(),
       has_path: generator.has_path(),
+      draws_lines: draws_lines(generator.as_ref()),
       is_animated: generator.is_animated(),
       settings: setting_infos(generator.settings()),
       handles: generator
@@ -387,6 +388,15 @@ async fn content_image_generators(State(hub): State<ConsoleHub>) -> Response {
     })
     .collect();
   Json(generators).into_response()
+}
+
+/// Whether a shape generator makes lines with every setting at its default, which it's asked to make to find out
+fn draws_lines(generator: &dyn ShapeGenerator) -> bool {
+  let settings = generator.settings();
+  let defaults: Vec<f32> = settings.iter().map(|setting| setting.default).collect();
+  generator
+    .generate(&GeneratorFrame::new(0.0, 0, 0, settings, &defaults))
+    .is_open()
 }
 
 /// How big an image generator's image is with every setting at its default, which it's asked to make to find out

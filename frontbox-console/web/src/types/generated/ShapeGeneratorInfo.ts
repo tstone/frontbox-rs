@@ -16,6 +16,11 @@ name: string,
  */
 has_path: boolean, 
 /**
+ * Whether what it draws is lines, with no inside, which only a stroke shows. Going by what it makes with every
+ * setting at its default.
+ */
+draws_lines: boolean, 
+/**
  * Whether its outline changes with time when its settings don't
  */
 is_animated: boolean, settings: Array<GeneratorSettingInfo>, 

@@ -26,26 +26,11 @@
 - Metrics show on DMD menu
 
 ### Scenes/Editor
-
-- Shape generators in the editor: a generator that draws lines doesn't get the stroke a new line comes with, and the editor doesn't say which generators have a path for a sweep to follow. `/content/shape-generators` has both (`has_path`), but not whether an outline is lines.
-- Anchors on generated shapes: named points of a generator's output (a hand, a tentacle's tip) that other layers attach to, as `Prop::Anchor { layer, point }` beside `Prop::Sweep`. A scene naming one the generator doesn't list fails to load.
-- The font picker shows the fonts frontbox comes with by their whole name (`frontbox/fonts/TinyPixie2.ttf`). Show the file's stem, and group them apart from the game's own.
-- Graph algorithms have a "Reverse" option to perform the algo in reverse (ie. calculate then play backwards)
-- Changing a sound's volume while it plays (fades, modulators). Scene sound volume is a fixed number for now, as sounds are fire-and-forget; kira's `set_volume` on a kept handle could do it, but it may not belong in the scene.
-- Ability to compose LightQ in editor (are Reverse, Take, etc. still needed?)
-- SVG import for layer shapes
-- Animations should be able to be specified as relative to the frame rate
-- Proper BPM sync between music+scenes: a playback clock that follows music
-- Idea: reflect is bisect + mirror (e.g. a leaf shape from a circle)
-- Events and callouts fired when the clock passes them, tracked like sounds (`SoundLayer::started`). An event would be one untyped `SceneMilestoneReached { playback, name }`. Wait until a game needs them.
 - Scene transitions (cut, cross-fade, wipe, push) between two playbacks. First version drives opacity or a mask on both; with nested scenes, a transition is a scene with two slots.
-- Live reload of scenes and fonts: the `Resources` loads a changed file again when it's next asked for, but a scene that's
-  already open keeps what it opened with.
-- Golden-image tests: render a scene at a time to PNG and compare with a stored one.
+- Ability to compose LightQ in editor (are Reverse, Take, etc. still needed?)
+- Changing a sound's volume while it plays (fades, modulators). Scene sound volume is a fixed number for now, as sounds are fire-and-forget; kira's `set_volume` on a kept handle could do it, but it may not belong in the scene.
+- Proper BPM sync between music+scenes: a playback clock that follows music
 - All the different scene features will probably need a library of demos/templates ("presets")
-- `Transform::Warp` and `Transform::Polar` on shapes: bend the outline too, as fills already are. A shape's edges need cutting into short pieces first, or a rect barely bends.
-- Show a `Repeat`'s copies in the editor's outline of a shape, and give it a handle for its spacing. Only the shape itself is outlined now.
-- Plane stitching for playback (or should this just be real 3d rendering?)
 
 ### Lighting
 

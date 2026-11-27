@@ -6,10 +6,11 @@ import * as icons from '../../components/icons'
 import ScenePortal, { LayerColorContext, layerColor, layerColorClass, type LayerColor } from './ScenePortal'
 import { ConfigTreeContext, shownInTree, type ConfigTree } from './configTree'
 import { LayerMenuContext } from './LayerMenu'
+import { ValueField } from './SceneFields'
 import { NAMED_VALUE_LABELS, namedValueKind, ValueFields } from './ValueFields'
 import { VariableFields, VariableSource } from './VariableFields'
 import { contentImageInfo } from '../../state/contentImages'
-import { contentFonts, fontLabel, refreshContentFonts } from '../../state/contentFonts'
+import { contentFonts, fontGroup, fontLabel, refreshContentFonts } from '../../state/contentFonts'
 import { imageGenerator, imageGenerators, refreshImageGenerators } from '../../state/imageGenerators'
 import { refreshShapeGenerators, shapeGenerator, shapeGenerators } from '../../state/shapeGenerators'
 import { contentSoundLength, contentSounds, refreshContentSounds } from '../../state/contentSounds'
@@ -1286,7 +1287,11 @@ function TextFields(props: { lens: Lens<Shape>; layer?: Lens<SceneLayer> }) {
     source().set({ Variable: name })
   }
   // one that isn't in the folder stays chosen, so it can be seen and changed
-  const fonts = () => [...new Set([...contentFonts(), text().get().font])].filter((name) => name !== '').map((name) => ({ value: name, label: fontLabel(name) }))
+  // the game's own first, then the ones frontbox comes with, each from the smallest capitals to the largest
+  const fonts = () => {
+    const options = [...new Set([...contentFonts(), text().get().font])].filter((name) => name !== '').map((name) => ({ value: name, label: fontLabel(name), group: fontGroup(name) }))
+    return [...options.filter((option) => option.group === 'Game'), ...options.filter((option) => option.group !== 'Game')]
+  }
   // a fixed size moves to the nearest the new font is crisp at
   const changeFont = (font: string) => {
     const { size } = text().get()
@@ -1562,6 +1567,16 @@ function TraversalFields(props: { lens: Lens<Traversal>; layer: Lens<SceneLayer>
       <FieldRow label="Speed">
         <Dropdown label="Speed" options={SPEED_OPTIONS} value={speedKind()} onChange={setSpeedKind} />
       </FieldRow>
+      <FieldRow label="Reverse">
+        <ValueField
+          label="Reverse"
+          lens={{ get: () => traversal().reverse ?? false, set: (reverse) => props.lens.set({ ...traversal(), reverse: reverse === true ? true : undefined }) } as Lens<SceneValue>}
+          ranges={[RATE, RATE]}
+        />
+      </FieldRow>
+      <Show when={traversal().reverse}>
+        <p class="scene-note">Plays backwards: it starts where it would have ended, and ends on From.</p>
+      </Show>
       <p class="scene-note">
         {speedKind() === 'Duration'
           ? 'Its start and how long it takes are set by its bar on the timeline.'

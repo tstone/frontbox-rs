@@ -68,6 +68,10 @@ pub struct Traversal {
   /// Seconds into the cycle when it leaves `from`
   #[serde(default)]
   pub start: f32,
+  /// Plays its visits backwards: worked out from `from` as ever, then the node it would visit last is visited first,
+  /// at `start`, and `from` last. A fill closes in on `from` instead of spreading out from it.
+  #[serde(default, skip_serializing_if = "is_false")]
+  pub reverse: bool,
 }
 
 impl Traversal {
@@ -83,11 +87,18 @@ impl Traversal {
       algorithm,
       speed: speed.into(),
       start: 0.0,
+      reverse: false,
     }
   }
 
   pub fn start(mut self, start: f32) -> Self {
     self.start = start;
+    self
+  }
+
+  /// Plays its visits backwards, ending on `from`
+  pub fn reverse(mut self) -> Self {
+    self.reverse = true;
     self
   }
 
@@ -233,6 +244,13 @@ impl Traversal {
       }
     }
 
+    if self.reverse {
+      let longest = steps.iter().map(|&(_, steps)| steps).fold(0.0, f32::max);
+      steps
+        .iter_mut()
+        .for_each(|(_, steps)| *steps = longest - *steps);
+    }
+
     let rate = match &self.speed {
       Speed::Rate(_) => rate.unwrap_or_default(),
       Speed::Duration(duration) => {
@@ -275,7 +293,23 @@ impl Traversal {
       Some((_, best_at)) if best_at >= at => best,
       _ => Some((node, at)),
     });
-    let ends = last.map(|(end, _)| (graph.nodes()[from].pos, graph.nodes()[end].pos));
+    // reversed, it starts from the node it visits first, which is the one it would have ended on
+    let first = by_node
+      .iter()
+      .enumerate()
+      .filter_map(|(node, times)| Some((node, *times.first()?)));
+    let first = first.fold(None, |best: Option<(usize, f32)>, (node, at)| match best {
+      Some((_, best_at)) if best_at <= at => best,
+      _ => Some((node, at)),
+    });
+    let first = if self.reverse {
+      first.map(|(node, _)| node)
+    } else {
+      Some(from)
+    };
+    let ends = first
+      .zip(last)
+      .map(|(first, (end, _))| (graph.nodes()[first].pos, graph.nodes()[end].pos));
     TraversalVisits {
       name: self.name.clone(),
       rate,
@@ -283,6 +317,10 @@ impl Traversal {
       ends,
     }
   }
+}
+
+fn is_false(value: &bool) -> bool {
+  !*value
 }
 
 /// How fast a traversal goes
@@ -1281,5 +1319,42 @@ mod tests {
       .ends,
       None
     );
+  }
+
+  #[test]
+  fn a_reversed_traversal_visits_the_same_nodes_backwards_and_ends_on_from() {
+    let variables = Variables::new();
+    let env = Env {
+      timing: Some(Timing::new(10.0, Cycle::Forever)),
+      ..env(0.0, &variables)
+    };
+    let forward = Traversal::new(
+      "t",
+      NodeRef::name("0"),
+      TraversalAlgorithm::BreadthFirst { wander: 0.0.into() },
+      2.0,
+    )
+    .start(1.0);
+    let forwards = forward.visits(&row(4), &env);
+    let backwards = forward.clone().reverse().visits(&row(4), &env);
+    assert_eq!(
+      first(&forwards.by_node),
+      [Some(1.0), Some(1.5), Some(2.0), Some(2.5)]
+    );
+    assert_eq!(
+      first(&backwards.by_node),
+      [Some(2.5), Some(2.0), Some(1.5), Some(1.0)]
+    );
+    assert_eq!(backwards.ends, Some((Vec2::new(3.0, 0.0), Vec2::ZERO)));
+  }
+
+  #[test]
+  fn reverse_round_trips_through_ron_and_is_left_out_when_off() {
+    let forward = Traversal::new("t", NodeRef::name("0"), TraversalAlgorithm::DepthFirst, 2.0);
+    let written = ron::to_string(&forward).unwrap();
+    assert!(!written.contains("reverse"), "{written}");
+    assert!(!ron::from_str::<Traversal>(&written).unwrap().reverse);
+    let written = ron::to_string(&forward.reverse()).unwrap();
+    assert!(ron::from_str::<Traversal>(&written).unwrap().reverse);
   }
 }

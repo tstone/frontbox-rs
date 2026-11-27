@@ -18,6 +18,7 @@ Frontbox is a homebrew arcade framework, with pinball inclinations, built for [F
   - Ball management (trough, plunge lane, auto-plunger, ball search)
   - Competitive game management (game lifecycle, player tracking, turn tracking, extra ball, etc.)
   - Combined light + display + sound scenes with built-in editor
+  - High scores
   - Coin-based and free play game start
   - Music playback, sound effect playback, and callback playback with ducking
   - Operator config (adjustable game/hardware settings)
@@ -26,7 +27,6 @@ Frontbox is a homebrew arcade framework, with pinball inclinations, built for [F
   - Tilt, slam tilt, and cradled detection
 
 **Still Missing**: 
-  - High scores
   - Cooperative game management
   - Hardware support: motors and servos
   - Music loop points, effects, and multi-stem playback

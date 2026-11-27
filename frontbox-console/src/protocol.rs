@@ -321,6 +321,9 @@ pub struct ShapeGeneratorInfo {
   pub name: String,
   /// Whether it has a path a sweep can follow
   pub has_path: bool,
+  /// Whether what it draws is lines, with no inside, which only a stroke shows. Going by what it makes with every
+  /// setting at its default.
+  pub draws_lines: bool,
   /// Whether its outline changes with time when its settings don't
   pub is_animated: bool,
   pub settings: Vec<GeneratorSettingInfo>,

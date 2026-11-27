@@ -212,7 +212,7 @@ export function drawnLayer(tool: DrawnTool, scene: Scene, place: LayerPlace, sur
   const layer = newLayer(tool, scene, place, surfaces)
   const at: [number, number] = 'points' in drawn ? [0, 0] : drawn.center
   if (isShapeGenerator(tool)) {
-    return { ...layer, region: { base: { External: { generator: generatorName(tool) } }, transform: [{ Translate: { Fixed: at } }] } }
+    return { ...layer, region: { ...layer.region!, transform: [{ Translate: { Fixed: at } }] } }
   }
   if (isImageGenerator(tool)) {
     const onDisplay = place.startsWith('Display:')
@@ -368,8 +368,11 @@ function newLayer(tool: Exclude<Tool, 'Sound'>, scene: Scene, place: LayerPlace,
   if (tool === 'Image' || tool === 'Full') return layer
   if (tool === 'Graph') return { ...layer, graph: { traversals: [newTraversal(freshTraversalName(layer, 'walk'), [], surface)] } }
   if (tool === 'Sequence') return layer
-  // placed by whatever draws it
-  if (isShapeGenerator(tool)) return { ...layer, region: { base: { External: { generator: generatorName(tool) } } } }
+  // placed by whatever draws it, and stroked like any line if lines are what it makes
+  if (isShapeGenerator(tool)) {
+    const region = { base: { External: { generator: generatorName(tool) } } }
+    return isOpen(region.base) ? { ...layer, fill: { base: { Solid: { Fixed: CLEAR } } }, region: { ...region, adjust: [newStroke(surface)] } } : { ...layer, region }
+  }
   // sized and placed by whatever draws it
   if (isImageGenerator(tool)) return { ...layer, fill: { base: { External: { generator: generatorName(tool) } } } }
   const region = newShape(tool, surface)

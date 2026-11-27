@@ -410,8 +410,12 @@ export function shapePoints(base: ShapeNode): Prop<Vec2>[] {
   return 'Bezier' in base ? base.Bezier.points.map(({ point }) => point) : []
 }
 
-/** Whether a shape is a line that stops at its last point, and not an edge that comes back around to its first */
-export const isOpen = (base: ShapeNode) => 'Polyline' in base || 'Bezier' in base || 'Spiral' in base || 'Wave' in base
+/**
+ * Whether a shape is a line that stops at its last point, and not an edge that comes back around to its first. A
+ * generated shape is one when its generator draws lines.
+ */
+export const isOpen = (base: ShapeNode) =>
+  'Polyline' in base || 'Bezier' in base || 'Spiral' in base || 'Wave' in base || ('External' in base && (shapeGenerator(base.External.generator)?.draws_lines ?? false))
 
 /**
  * The region a sweep follows: the first drawn layer's by that name, as on the machine, which also says it's an error for
@@ -427,10 +431,15 @@ export function drawnOnSame(a: SceneLayer, b: SceneLayer) {
   return layerPlane(a) === layerPlane(b)
 }
 
-/** The layers a sweep in the layer at `index` can follow: others with a region, on the same thing. Any layer for `null`. */
+/**
+ * The layers a sweep in the layer at `index` can follow: others with a region, on the same thing. Any layer for `null`.
+ * A generated shape is left out when its generator has no path, as a scene sweeping along one fails to load. One the
+ * app doesn't have stays in, as there's no telling.
+ */
 export function sweepPaths(scene: Scene, index: number | null) {
   const own = index === null ? undefined : scene.layers[index]
-  return scene.layers.flatMap((layer, at) => (at !== index && layer.region && (!own || drawnOnSame(own, layer)) ? [at] : []))
+  const hasPath = ({ base }: Shape) => typeof base !== 'object' || !('External' in base) || (shapeGenerator(base.External.generator)?.has_path ?? true)
+  return scene.layers.flatMap((layer, at) => (at !== index && layer.region && hasPath(layer.region) && (!own || drawnOnSame(own, layer)) ? [at] : []))
 }
 
 /**
