@@ -305,7 +305,7 @@ impl CompetitiveGame {
     }
   }
 
-  /// Catches a drain that was never reported (e.g. a ball save's replacement that never left the trough). With no drain
+  /// Catches a turn left with no ball without a drain being reported (e.g. its last ball was locked). With no drain
   /// being decided and no ball on its way into play, finding nothing in play (held balls included) on two checks in a
   /// row is treated as a drain.
   fn check_balls_in_play(&mut self, ctx: &ServiceContext) {

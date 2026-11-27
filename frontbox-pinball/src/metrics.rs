@@ -85,7 +85,7 @@ pub static BALL_SAVES: LazyLock<Counter> = LazyLock::new(|| {
 pub static TROUGH_EJECT_FAILURES: LazyLock<Counter> = LazyLock::new(|| {
   Counter::new(
     "Trough Eject Failures",
-    "Trough ejects given up on after every retry",
+    "Times the trough couldn't get a ball out after every retry, before trying again later",
   )
   .key("trough_eject_failures")
   .category("Ball Management")

@@ -6,10 +6,14 @@ use crate::ball_management::trough::TroughSystem;
 use crate::ball_management::{
   AutoPlungerFired, AutoPlungerSystem, BallEnteredPlay, BallEnteredPlungeLane,
   BallExitedPlungeLane, BallManager, BallReenteredPlungeLane, BallsExitedPlay, BallsHeldChanged,
-  EjectCompleted, Launch, LaunchMethod, Launcher, MaxBallsInPlayChanged, PlungeLaneSystem,
+  EjectCompleted, EjectFailed, Launch, LaunchMethod, Launcher, MaxBallsInPlayChanged, PlungeLaneSystem,
   StandardBallManagerConfig, StandardBuilder, TroughEjectFailed, TroughOccupancyChanged,
 };
 use crate::{configs, metrics};
+
+/// Wait before trying the trough again after its first failed eject, doubling with each failure in a row
+const EJECT_RETRY_DELAY: Duration = Duration::from_secs(2);
+const EJECT_RETRY_DELAY_MAX: Duration = Duration::from_secs(30);
 
 /// Ball management for machines where every ball not in play comes to rest in a single trough, optionally ejecting
 /// into a plunge lane (with or without an autoplunger). Set up with `StandardBallManager::builder`.
@@ -27,9 +31,13 @@ pub struct StandardBallManager {
   /// Requests with balls not yet in play or given up on
   requests: Vec<EjectRequest>,
   last_eject_id: u64,
-  /// The request of the ball the trough is ejecting, until it reports the ball gone. This can overlap with the eject
-  /// state, as the trough's report can arrive after the ball has reached the plunge lane.
-  trough_ejecting: Option<u64>,
+  /// The ball the trough is ejecting, until it reports the ball gone. This can overlap with the eject state, as the
+  /// trough's report can arrive after the ball has reached the plunge lane.
+  trough_ejecting: Option<RequestedBall>,
+  /// Times in a row the trough has failed to get a ball out
+  eject_failures: u8,
+  /// Set while waiting to try the trough again after it failed. Nothing is ejected from the trough until it fires.
+  eject_retry_timer_id: Option<u64>,
   /// Where the ball being ejected is on its way into play, or the ball waiting in the plunge lane. Only one ball at a
   /// time.
   eject_state: EjectState,
@@ -127,6 +135,8 @@ impl StandardBallManager {
       requests: Vec::new(),
       last_eject_id: 0,
       trough_ejecting: None,
+      eject_failures: 0,
+      eject_retry_timer_id: None,
       eject_state: EjectState::Idle,
       launch_verify_timer_id: None,
       launch_retries: 0,
@@ -257,14 +267,17 @@ impl StandardBallManager {
       return;
     }
 
-    if self.trough_ejecting.is_some() || self.eject_state != EjectState::Idle {
+    if self.trough_ejecting.is_some()
+      || self.eject_state != EjectState::Idle
+      || self.eject_retry_timer_id.is_some()
+    {
       return;
     }
     let Some(next) = self.queue.pop_front() else {
       return;
     };
 
-    self.trough_ejecting = Some(next.eject_id);
+    self.trough_ejecting = Some(next);
     if self.config.plunge_lane().is_some() {
       self.eject_state = EjectState::EnRoute {
         ball: Some(next),
@@ -277,9 +290,10 @@ impl StandardBallManager {
 
   fn on_trough_ejected(&mut self, ctx: &SystemContext) {
     // Only ejects requested here are counted as exits by the trough, but guard against one we didn't ask for
-    let Some(eject_id) = self.trough_ejecting.take() else {
+    let Some(RequestedBall { eject_id, .. }) = self.trough_ejecting.take() else {
       return;
     };
+    self.eject_failures = 0;
     if self.config.plunge_lane().is_none() {
       ctx.emit(BallEnteredPlay {
         method: LaunchMethod::Auto,
@@ -293,18 +307,40 @@ impl StandardBallManager {
     self.process_queue(ctx);
   }
 
+  /// The trough gave up on the ball after its own retries. The ball goes back to the front of the queue, and the
+  /// trough is tried again after a wait that grows with each failure in a row, so a turn isn't left without a ball.
   fn on_trough_eject_failed(&mut self, ctx: &SystemContext) {
-    // TODO: re-queue with backoff and report it to the game, rather than dropping the ball (see TODO.md)
-    log::warn!(target: "frontbox::ball_management", "Trough eject failed, abandoning the ball");
-    let trough_eject_id = self.trough_ejecting.take();
+    let ejecting = self.trough_ejecting.take();
     let en_route = self.end_en_route(ctx);
-    // With a plunge lane, a ball that already reached it isn't abandoned
-    let abandoned = match self.config.plunge_lane() {
-      Some(_) => en_route.map(|ball| ball.eject_id),
-      None => trough_eject_id,
+    // With a plunge lane, a ball that already reached it did get out, whatever the trough saw
+    let stuck = match self.config.plunge_lane() {
+      Some(_) => en_route,
+      None => ejecting,
     };
-    self.finish_ball(abandoned, false, ctx);
-    self.process_queue(ctx);
+    // A ball dropped by `cancel_ejects` while the trough was ejecting it no longer has a request
+    let stuck = stuck.filter(|ball| self.requests.iter().any(|r| r.id == ball.eject_id));
+    let Some(ball) = stuck else {
+      self.process_queue(ctx);
+      return;
+    };
+
+    self.queue.push_front(ball);
+    self.eject_failures = self.eject_failures.saturating_add(1);
+    let retry_in = eject_retry_delay(self.eject_failures);
+    log::warn!(target: "frontbox::ball_management", "Trough eject failed ({} in a row), trying again in {:?}", self.eject_failures, retry_in);
+    ctx.timers.cancel(self.eject_retry_timer_id.take());
+    self.eject_retry_timer_id = Some(ctx.timers.start(EjectRetryDue, retry_in.once()));
+    ctx.emit(EjectFailed {
+      id: ball.eject_id,
+      failures: self.eject_failures,
+      retry_in,
+    });
+  }
+
+  fn on_eject_retry_due(&mut self, ctx: &SystemContext) {
+    if self.eject_retry_timer_id.take().is_some() {
+      self.process_queue(ctx);
+    }
   }
 
   /// (Re)start waiting for the en route ball to reach the plunge lane
@@ -583,6 +619,8 @@ impl BallManager for StandardBallManager {
   fn cancel_ejects(&mut self, ctx: &ServiceContext) {
     let ctx = &ctx.for_system(self.handle);
     self.queue.clear();
+    ctx.timers.cancel(self.eject_retry_timer_id.take());
+    self.eject_failures = 0;
 
     // An eject the trough hadn't started yet leaves its ball in the trough
     if ctx
@@ -765,6 +803,8 @@ impl System for StandardBallManager {
       }
     } else if event.is::<TroughEjectFailed>() {
       self.on_trough_eject_failed(ctx);
+    } else if event.is::<EjectRetryDue>() {
+      self.on_eject_retry_due(ctx);
     } else if event.is::<BallEnteredPlungeLane>() {
       self.on_ball_entered_lane(ctx);
     } else if event.is::<BallReenteredPlungeLane>() {
@@ -814,6 +854,10 @@ struct ReportedStatus {
   queue: Vec<RequestedBall>,
   /// The request of the ball the trough is ejecting
   trough_ejecting: Option<u64>,
+  /// Times in a row the trough has failed to get a ball out
+  eject_failures: u8,
+  /// Waiting to try the trough again after it failed
+  waiting_to_retry_eject: bool,
   eject: ReportedEject,
   /// Set from the autoplunger firing at the ball in the lane until it's checked that the ball left
   verifying_launch: bool,
@@ -843,7 +887,9 @@ impl ReportedStatus {
       locked: by_name(&manager.balls_locked),
       requests: manager.requests.clone(),
       queue: manager.queue.iter().copied().collect(),
-      trough_ejecting: manager.trough_ejecting,
+      trough_ejecting: manager.trough_ejecting.map(|ball| ball.eject_id),
+      eject_failures: manager.eject_failures,
+      waiting_to_retry_eject: manager.eject_retry_timer_id.is_some(),
       eject: ReportedEject::from(manager.eject_state),
       verifying_launch: manager.launch_verify_timer_id.is_some(),
       launch_retries: manager.launch_retries,
@@ -904,7 +950,17 @@ fn short_type_name(name: &str) -> String {
   short
 }
 
+/// How long to wait before trying the trough again after `failures` in a row: 2s, doubling up to 30s
+fn eject_retry_delay(failures: u8) -> Duration {
+  let doublings = failures.saturating_sub(1).min(4) as u32;
+  (EJECT_RETRY_DELAY * 2u32.pow(doublings)).min(EJECT_RETRY_DELAY_MAX)
+}
+
 // -- Signals --
+
+/// The wait after a failed trough eject is over
+#[derive(serde::Serialize, Event)]
+struct EjectRetryDue;
 
 #[derive(serde::Serialize, Event)]
 struct LaneArrivalTimedOut;
@@ -1013,6 +1069,17 @@ mod tests {
         .iter()
         .filter_map(|e| e.event.downcast_ref::<EjectCompleted>())
         .map(|e| (e.id, e.requested, e.launched))
+        .collect()
+    }
+
+    /// (id, failures, retry_in) of all eject failed events emitted since the last call
+    fn failed_events(&mut self) -> Vec<(u64, u8, Duration)> {
+      self
+        .ctx
+        .events_emitted()
+        .iter()
+        .filter_map(|e| e.event.downcast_ref::<EjectFailed>())
+        .map(|e| (e.id, e.failures, e.retry_in))
         .collect()
     }
 
@@ -1300,6 +1367,8 @@ mod tests {
         "requests": [],
         "queue": [],
         "trough_ejecting": null,
+        "eject_failures": 0,
+        "waiting_to_retry_eject": false,
         "eject": "Idle",
         "verifying_launch": false,
         "launch_retries": 0,
@@ -1551,17 +1620,76 @@ mod tests {
     assert!(f.launched_events().is_empty());
   }
 
+  // -- Failed trough ejects --
+
   #[test]
-  fn failed_eject_moves_on_to_next_ball() {
+  fn failed_eject_is_tried_again_after_a_wait() {
     let mut f = Fixture::with_lane(5, false, false);
-    f.eject_many(2, Launch::Auto);
+    let id = f.eject_many(2, Launch::Player);
     f.deliver(&TroughEjectFailed);
-    assert!(
-      f.system.trough_ejecting.is_some(),
-      "second ball is now ejecting"
-    );
+    assert_eq!(f.failed_events(), vec![(id, 1, Duration::from_secs(2))]);
+    assert!(f.system.trough_ejecting.is_none(), "waiting to retry");
+    assert_eq!(f.system.queue.len(), 2, "the ball is back in the queue");
+    assert_eq!(f.en_route(), None);
+    assert!(f.system.ejects_pending(), "so the turn isn't taken as over");
+
+    f.deliver(&EjectRetryDue);
+    assert!(f.system.trough_ejecting.is_some());
+    assert_eq!(f.system.queue.len(), 1);
+    assert_eq!(f.en_route(), Some(Launch::Player));
+  }
+
+  #[test]
+  fn nothing_is_ejected_while_waiting_to_retry() {
+    let mut f = Fixture::spawn(5);
+    f.eject_many(1, Launch::Auto);
+    f.deliver(&TroughEjectFailed);
+    f.eject_many(1, Launch::Auto);
+    assert!(f.system.trough_ejecting.is_none());
+    assert_eq!(f.system.queue.len(), 2);
+  }
+
+  #[test]
+  fn the_wait_grows_with_each_failure_in_a_row_and_starts_over_after_an_eject() {
+    let mut f = Fixture::spawn(5);
+    let id = f.eject_many(2, Launch::Auto);
+    let mut waits = Vec::new();
+    for _ in 0..6 {
+      f.deliver(&TroughEjectFailed);
+      waits.extend(f.failed_events().iter().map(|e| e.2.as_secs()));
+      f.deliver(&EjectRetryDue);
+    }
+    assert_eq!(waits, vec![2, 4, 8, 16, 30, 30]);
+
+    f.trough_ejected();
+    f.deliver(&TroughEjectFailed);
+    assert_eq!(f.failed_events(), vec![(id, 1, Duration::from_secs(2))]);
+  }
+
+  #[test]
+  fn cancelling_ejects_stops_the_retry() {
+    let mut f = Fixture::spawn(5);
+    let id = f.eject_many(1, Launch::Auto);
+    f.deliver(&TroughEjectFailed);
+    f.system.cancel_ejects(&f.ctx.svc_ctx());
+    assert_eq!(f.completed_events(), vec![(id, 1, 0)]);
+    assert!(!f.system.ejects_pending());
+
+    f.deliver(&EjectRetryDue);
+    assert!(f.system.trough_ejecting.is_none());
+  }
+
+  #[test]
+  fn a_ball_cancelled_while_ejecting_is_not_tried_again() {
+    let mut f = Fixture::spawn(5);
+    f.eject_many(1, Launch::Auto);
+    f.system.cancel_ejects(&f.ctx.svc_ctx());
+    f.ctx.events_emitted();
+
+    f.deliver(&TroughEjectFailed);
+    assert!(f.failed_events().is_empty());
     assert!(f.system.queue.is_empty());
-    assert_eq!(f.en_route(), Some(Launch::Auto));
+    assert!(f.system.eject_retry_timer_id.is_none());
   }
 
   // -- Launching from a plunge lane --
@@ -1896,14 +2024,17 @@ mod tests {
   }
 
   #[test]
-  fn failed_eject_still_completes_the_request() {
+  fn a_request_completes_once_its_failed_eject_gets_out() {
     let mut f = Fixture::with_lane(5, true, false);
-    let id = f.eject_many(2, Launch::Auto);
+    let id = f.eject_many(1, Launch::Auto);
     f.deliver(&TroughEjectFailed);
+    assert!(f.completed_events().is_empty());
+
+    f.deliver(&EjectRetryDue);
     f.trough_ejected();
     f.lane_entered();
     f.lane_exited();
-    assert_eq!(f.completed_events(), vec![(id, 2, 1)]);
+    assert_eq!(f.completed_events(), vec![(id, 1, 1)]);
   }
 
   #[test]

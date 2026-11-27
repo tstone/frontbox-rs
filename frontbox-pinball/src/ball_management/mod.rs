@@ -61,16 +61,33 @@ pub struct BallEnteredPlay {
   pub in_play: u8,
 }
 
-/// Emitted once every ball from an `eject` or `eject_many` request has gone into play or been given up on (e.g. a
-/// failed eject). `id` is the one the request returned, so a caller can tell its own request from others.
+/// Emitted once every ball from an `eject` or `eject_many` request has gone into play or been dropped by
+/// `BallManager::cancel_ejects`. `id` is the one the request returned, so a caller can tell its own request from
+/// others.
 ///
-/// A request for more balls than the trough holds waits for balls to drain, so this can be well after the request.
+/// A request for more balls than the trough holds waits for balls to drain, and a ball the trough can't get out is
+/// tried again (`EjectFailed`), so this can be well after the request.
 #[derive(serde::Serialize, Event)]
 pub struct EjectCompleted {
   pub id: u64,
   pub requested: u8,
-  /// Balls that went into play. Less than `requested` if any were given up on.
+  /// Balls that went into play. Less than `requested` if any were dropped.
   pub launched: u8,
+}
+
+/// Emitted when the trough couldn't get a requested ball out, after all of its own retries
+/// (`configs::TROUGH_EJECT_RETRIES`): a jam, a weak coil, a power blip. The ball stays requested, and ball management
+/// tries again after `retry_in`, waiting longer after each failure in a row, until a ball gets out or
+/// `BallManager::cancel_ejects` drops it. Nothing needs doing to keep it going; this is for telling the player or
+/// operator. Each one is counted in `metrics::TROUGH_EJECT_FAILURES`.
+#[derive(serde::Serialize, Event)]
+pub struct EjectFailed {
+  /// The request the ball is for, as `EjectCompleted` will carry
+  pub id: u64,
+  /// Failures in a row, including this one
+  pub failures: u8,
+  /// How long until the next try
+  pub retry_in: Duration,
 }
 
 // -- Plunge Lane Events --
@@ -111,8 +128,10 @@ struct TroughOccupancyChanged {
 #[derive(serde::Serialize, Event)]
 struct TroughEjectStarted;
 
+/// The trough gave up on an eject after its retries. Ball management tries again later, and tells the game with
+/// `EjectFailed`.
 #[derive(serde::Serialize, Event)]
-pub struct TroughEjectFailed;
+struct TroughEjectFailed;
 
 // -- Ball Search Events --
 

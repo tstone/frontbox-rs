@@ -1,4 +1,4 @@
-- Ball management: a failed trough eject (`TroughEjectFailed`) currently drops the ball, which can leave a turn with no ball. Re-queue it with a growing backoff (recovers from power blips and jams) and emit a public event so the game can show it and record it in audits. Kick strength can be escalated with `MachineSystem::configure_driver`. Needs: audits. Open questions: retry forever or give up, and should `Launch::Auto` balls (e.g. multiball) be skipped sooner than `Launch::Player`
+- Ball management: a failed trough eject is retried at the same kick strength. Escalate it on repeated failures with `MachineSystem::configure_driver`. Open question: should `Launch::Auto` balls (e.g. multiball) be dropped after a few failures, rather than retried until cancelled as `Launch::Player` balls are
 - ShotSystem which is a generalized system to handle emitting an event on shot hit (re-roll delay/dedupe, multi-entrance, optional hit scene)
 - Generalized systems: lane (single/multi-entrance), StartupEject (takes pairs of SwitchQ/DriverQ and fires drivers who have an active switch)
 - Menu: switch test mode

@@ -626,17 +626,29 @@ fn a_served_ball_that_drains_before_the_turn_goes_active_is_served_again() {
 }
 
 #[test]
-fn a_turn_with_nothing_in_play_ends_even_without_a_drain_reported() {
+fn a_ball_that_jams_in_the_trough_is_tried_again_until_it_gets_out() {
   let mut g = Game::start();
   let turns = g.record(|e: &RoutineStarted<TurnStarting>| e.routine.turn);
+  let failures = g.record(|e: &EjectFailed| (e.failures, e.retry_in));
   g.hit_switch(START);
   g.serve();
 
-  // The ball save's replacement jams in the trough: the eject fails, leaving nothing in play and no drain to report
+  // The ball save's replacement jams in the trough. The trough kicks at it five times, a second apart, and gives up.
   g.drain();
   assert_eq!(g.ejects(), 2);
-  g.advance(Duration::from_secs(20));
-  assert_eq!(turns.take(), [0, 1]);
+  g.advance(ms(5500));
+  assert_eq!(g.ejects(), 6);
+  assert_eq!(failures.take(), [(1, Duration::from_secs(2))]);
+
+  // Ball management tries again after a wait, and this time the ball gets out
+  g.advance(ms(2000));
+  assert_eq!(g.ejects(), 7);
+  g.serve();
+  assert_eq!(turns.take(), [0], "the turn went on, waiting for its ball");
+
+  g.outlast_ball_save();
+  g.drain();
+  assert_eq!(turns.take(), [1]);
 }
 
 #[test]

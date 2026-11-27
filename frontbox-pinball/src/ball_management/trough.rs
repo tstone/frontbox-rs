@@ -14,6 +14,8 @@ pub struct TroughSystem {
   last_occupancy: u8,
   /// Ejects verified since occupancy was last reported, used to separate exits from entries
   exits_since_report: u8,
+  /// Trough switches that changed while settling, with how many times each did
+  settling_changes: Vec<(&'static str, u8)>,
   reported: StatusReporter<ReportedStatus>,
 }
 
@@ -28,6 +30,7 @@ impl TroughSystem {
       occupancy_state: OccupancyState::Ready,
       last_occupancy: 0, // set on spawn
       exits_since_report: 0,
+      settling_changes: Vec::new(),
       reported: StatusReporter::new(),
     }
   }
@@ -224,7 +227,16 @@ impl TroughSystem {
     }
   }
 
-  fn queue_occupancy_settling(&mut self, ctx: &SystemContext) {
+  fn queue_occupancy_settling(&mut self, switch_name: &'static str, ctx: &SystemContext) {
+    match self
+      .settling_changes
+      .iter_mut()
+      .find(|(name, _)| *name == switch_name)
+    {
+      Some((_, changes)) => *changes = changes.saturating_add(1),
+      None => self.settling_changes.push((switch_name, 1)),
+    }
+
     let max_timer_id = match self.occupancy_state {
       OccupancyState::Settling {
         max_timer_id,
@@ -248,7 +260,9 @@ impl TroughSystem {
 
   /// This method gets triggered by a trough switch being hit, but after settling time has elapsed
   /// It should always end with a reset and only emit an event if occupancy did change
-  fn verify_occupancy(&mut self, ctx: &SystemContext) {
+  ///
+  /// * `hit_max` - The switches never went still, and settling ran to `occupancy_settling_max`
+  fn verify_occupancy(&mut self, hit_max: bool, ctx: &SystemContext) {
     // Either timer completes settling; cancel the other so it can't cut short a later settle
     let OccupancyState::Settling {
       settling_timer_id,
@@ -261,9 +275,22 @@ impl TroughSystem {
     ctx.timers.cancel(max_timer_id);
     self.occupancy_state = OccupancyState::Ready;
 
+    let changes = std::mem::take(&mut self.settling_changes);
+    if hit_max {
+      // A switch still changing this long after the first is likely chattering (e.g. a ball resting on the edge of
+      // it), and what's read now may not be what's there
+      let changes: Vec<String> = changes
+        .iter()
+        .map(|(name, changes)| format!("{name} x{changes}"))
+        .collect();
+      log::warn!(target: "frontbox::ball_management::trough", "Switches were still changing after {:?}, reading occupancy anyway (changes: {})", self.config.occupancy_settling_max, changes.join(", "));
+    }
+
     // While an eject is verifying, whether the ball has exited isn't known yet. Hold the report until the eject
     // completes so the exit is counted rather than mistaken for (or cancelling out) an entry.
-    if !matches!(self.eject_state, EjectState::Verifying { .. }) {
+    if matches!(self.eject_state, EjectState::Verifying { .. }) {
+      log::debug!(target: "frontbox::ball_management::trough", "Settled while an eject is verifying, holding the occupancy report until it completes");
+    } else {
       self.report_occupancy(ctx);
     }
     self.process_queued_ejects(ctx);
@@ -278,6 +305,19 @@ impl TroughSystem {
     // entered - exited == delta even if a ball vanished without an eject (e.g. a switch fault).
     let entered = (delta + self.exits_since_report as i8).max(0) as u8;
     let exited = (entered as i8 - delta) as u8;
+
+    let closed: Vec<&str> = self
+      .config
+      .trough_switch_names
+      .iter()
+      .copied()
+      .filter(|name| ctx.switches.is_closed(name).unwrap_or(false))
+      .collect();
+    if entered > 0 || exited > 0 {
+      log::debug!(target: "frontbox::ball_management::trough", "Occupancy read as {} (closed: {:?}), was {}: {} entered, {} exited", current_occupancy, closed, self.last_occupancy, entered, exited);
+    } else {
+      log::debug!(target: "frontbox::ball_management::trough", "Occupancy read as {} (closed: {:?}), no change", current_occupancy, closed);
+    }
 
     if entered > 0 || exited > 0 {
       ctx.emit(TroughOccupancyChanged {
@@ -314,11 +354,13 @@ impl System for TroughSystem {
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if event.is::<VerifyEject>() && matches!(self.eject_state, EjectState::Verifying { .. }) {
       self.verify_eject_fallback(ctx);
-    } else if event.is::<VerifyOccupancy>() || event.is::<MaxSettle>() {
-      self.verify_occupancy(ctx);
+    } else if event.is::<VerifyOccupancy>() {
+      self.verify_occupancy(false, ctx);
+    } else if event.is::<MaxSettle>() {
+      self.verify_occupancy(true, ctx);
     } else if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       if self.config.trough_switch_names.contains(&e.switch.name) {
-        self.queue_occupancy_settling(ctx);
+        self.queue_occupancy_settling(e.switch.name, ctx);
       } else if let Some(q) = &self.config.eject_verification_switches
         && q.matches(&e.switch)
       {
@@ -327,7 +369,7 @@ impl System for TroughSystem {
     } else if let Some(e) = event.downcast_ref::<SwitchOpened>()
       && self.config.trough_switch_names.contains(&e.switch.name)
     {
-      self.queue_occupancy_settling(ctx);
+      self.queue_occupancy_settling(e.switch.name, ctx);
     }
     self.report(ctx);
   }

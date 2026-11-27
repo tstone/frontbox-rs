@@ -38,7 +38,9 @@ use frontbox_core::prelude::*;
 /// ## Events
 /// - `BallsExitedPlay` - Emitted when one or more balls leave play
 /// - `BallEnteredPlay` - Emitted when a ball has been launched into play
-/// - `EjectCompleted` - Emitted when every ball from an `eject` or `eject_many` request is in play or given up on
+/// - `EjectCompleted` - Emitted when every ball from an `eject` or `eject_many` request is in play or was dropped
+///   by `cancel_ejects`
+/// - `EjectFailed` - Emitted when the trough couldn't get a requested ball out, each time before it's tried again
 /// - `MaxBallsInPlayChanged` - Emitted when the number of balls that could be in play changes (e.g. a ball is locked,
 ///   released from a lock, found or lost)
 /// - `BallsHeldChanged` - Emitted when a holder reports a change in the balls resting in it
