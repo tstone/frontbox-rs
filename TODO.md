@@ -1,4 +1,3 @@
-- Ball management: a failed trough eject is retried at the same kick strength. Escalate it on repeated failures with `MachineSystem::configure_driver`. Open question: should `Launch::Auto` balls (e.g. multiball) be dropped after a few failures, rather than retried until cancelled as `Launch::Player` balls are
 - ShotSystem which is a generalized system to handle emitting an event on shot hit (re-roll delay/dedupe, multi-entrance, optional hit scene)
 - Generalized systems: lane (single/multi-entrance), StartupEject (takes pairs of SwitchQ/DriverQ and fires drivers who have an active switch)
 - Menu: switch test mode
@@ -9,8 +8,7 @@
 - Config: No extra balls/points instead
 - RandSystem (interface) that manages seed per game.
 - Config overrides that last for the duration of a game (e.g. tournament mode)
-- Menu: decide what opening the coin door does to a game in progress, and whether the menu buttons do anything else
-  during a game.
+- Menu: decide what opening the coin door does to a game in progress, and whether the menu buttons do anything else during a game.
 - Menu: editing a setting saves on every press, with no way back. Restore a setting's default from its edit screen, and repeat inc/dec while the button is held.
 - Menu: metrics show on the DMD menu
 - Operator metrics can be reset (e.g. when a coil is replaced) lifetime vs current
