@@ -25,6 +25,7 @@ pub struct App {
   routines: HashMap<TypeId, RoutineDefinition>,
   planes: Vec<AppPlane>,
   resources: Resources,
+  os_shutdown: Box<dyn FnOnce() + Send>,
 }
 
 impl App {
@@ -42,6 +43,7 @@ impl App {
       boot_config,
       routines: HashMap::new(),
       planes: Vec::new(),
+      os_shutdown: Box::new(shut_down_os),
     }
   }
 
@@ -95,6 +97,22 @@ impl App {
   /// Register a tracer to monitor things
   pub fn tracer(&mut self, tracer: impl AppTracer + 'static) -> &mut Self {
     self.tracers.push(Box::new(tracer));
+    self
+  }
+
+  /// What shuts down the computer, in place of [`shut_down_os`]. It's called once the app has stopped, after a
+  /// [`ShutdownScope::OperatingSystem`] shutdown (the operator menu's "Shutdown", or `ctx.shutdown`). Use it when the
+  /// computer needs something else, such as a different command or a signal to a power board.
+  ///
+  /// ```rust,no_run
+  /// # use frontbox_core::prelude::*;
+  /// # let mut app = App::new(BootConfig::default());
+  /// app.on_os_shutdown(|| {
+  ///   let _ = std::process::Command::new("systemctl").arg("poweroff").status();
+  /// });
+  /// ```
+  pub fn on_os_shutdown(&mut self, shut_down: impl FnOnce() + Send + 'static) -> &mut Self {
+    self.os_shutdown = Box::new(shut_down);
     self
   }
 
@@ -223,14 +241,47 @@ impl App {
     // A panic in a system's handler is caught in the run loop. One that gets here came from the framework itself, so
     // nothing is left to run the game: leave the machine powered down and dark rather than frozen, then carry on
     // unwinding.
-    if let Err(payload) = AssertUnwindSafe(run).catch_unwind().await {
-      log::error!(
-        target: "frontbox::app",
-        "💥 Run loop panicked: {}. Powering down the machine.",
-        crate::systems::panic_message(payload.as_ref())
-      );
-      emergency_stop.run().await;
-      std::panic::resume_unwind(payload);
+    match AssertUnwindSafe(run).catch_unwind().await {
+      Ok(ShutdownScope::OperatingSystem) => (self.os_shutdown)(),
+      Ok(ShutdownScope::Process) => {}
+      Err(payload) => {
+        log::error!(
+          target: "frontbox::app",
+          "💥 Run loop panicked: {}. Powering down the machine.",
+          crate::systems::panic_message(payload.as_ref())
+        );
+        emergency_stop.run().await;
+        std::panic::resume_unwind(payload);
+      }
+    }
+  }
+}
+
+/// Shuts down the computer with its operating system's own command, which is what an [`App`] does unless
+/// [`App::on_os_shutdown`] gives it something else:
+///
+/// - Windows: `shutdown /s /t 0`
+/// - macOS: asks System Events to shut down
+/// - Anything else (Linux): `sudo shutdown -h now`, so the user running the game must be allowed to run it without a
+///   password
+pub fn shut_down_os() {
+  let (program, args): (&str, &[&str]) = if cfg!(target_os = "windows") {
+    ("shutdown", &["/s", "/t", "0"])
+  } else if cfg!(target_os = "macos") {
+    (
+      "osascript",
+      &["-e", "tell application \"System Events\" to shut down"],
+    )
+  } else {
+    ("sudo", &["shutdown", "-h", "now"])
+  };
+  match std::process::Command::new(program).args(args).status() {
+    Ok(status) if status.success() => {}
+    Ok(status) => {
+      log::error!(target: "frontbox::app", "Shutting down the computer with `{program}` failed: {status}")
+    }
+    Err(e) => {
+      log::error!(target: "frontbox::app", "Failed to run `{program}` to shut down the computer: {e}")
     }
   }
 }

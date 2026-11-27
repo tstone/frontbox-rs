@@ -38,7 +38,7 @@ impl IoAddress {
 }
 
 #[derive(Debug, Clone)]
-pub struct IoWired<D: HardwareDefinition + Clone + 'static> {
+pub(crate) struct IoWired<D: HardwareDefinition + Clone + 'static> {
   pub definition: &'static D,
   pub assignment: IoAddress,
 }
@@ -47,7 +47,7 @@ impl<T> IoWired<T>
 where
   T: HardwareDefinition + Clone + 'static,
 {
-  pub fn new(definition: &'static T, assignment: IoAddress) -> Self {
+  pub(crate) fn new(definition: &'static T, assignment: IoAddress) -> Self {
     IoWired {
       definition,
       assignment,
@@ -72,24 +72,6 @@ impl<T: HardwareDefinition + 'static> Clone for IoAddressed<T> {
 }
 
 // -- Exp --
-
-#[derive(Debug, Clone)]
-pub struct ExpWired<D: HardwareDefinition + Clone> {
-  pub definition: D,
-  pub assignment: ExpAddress,
-}
-
-impl<T> ExpWired<T>
-where
-  T: HardwareDefinition + Clone,
-{
-  pub fn new(definition: T, assignment: ExpAddress) -> Self {
-    ExpWired {
-      definition,
-      assignment,
-    }
-  }
-}
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]

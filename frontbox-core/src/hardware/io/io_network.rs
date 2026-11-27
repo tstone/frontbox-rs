@@ -25,7 +25,7 @@ impl IoNetwork {
   }
 }
 
-pub struct ResolvedIoNetwork {
+pub(crate) struct ResolvedIoNetwork {
   pub boards: Vec<ResolvedIoBoard>,
 }
 

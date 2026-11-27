@@ -1,18 +1,12 @@
 ## Headless
 
 - RandSystem (interface) that manages seed per game.
-- Shutdown should probably have some way of configuration an FnOnce instead of the current system that hard-codes linux-specific shutdown handling
 - Generalized systems: lane (single/multi-entrance), StartupEject (takes pairs of SwitchQ/DriverQ and fires drivers who have an active switch)
 - ShotSystem which is a generalized system to handle emitting an event on shot hit (re-roll delay/dedupe, multi-entrance, optional hit scene)
 - System::tagged as a "convention over configuration" alternative
 - FreePlay becomes the "you passed this score threshold and earn a game"/knocker hit
 - Config overrides that last for the duration of a game (e.g. tournament mode)
-
-## Design Choices/Core
-
 - Revisit if `Synchronize` event still makes sense or not
-- Should a "hold" (like how BallSave uses them) be a framework feature?
-- Clean up hardware exports
 
 ## Requires hardware/sensory QA
 
@@ -35,27 +29,20 @@
 ### Lighting
 
 - Alternate resolver doesn't work with animated inputs: key its state on declaration ids, not colors
-- `Mix` conflict resolution isn't an average: it folds with `mix_with(c, 0.5)`, weighting the last color 50%
-- Light and display frames at their own rate instead of once per tick. A higher LED rate needs a per-frame EXP bus budget (~80 chars/ms), sending the largest changes first.
-- `undeclare_by_system` leaves empty maps behind; clean them up as `undeclare` does.
-- Keep each light's declarations ordered by `(z, order)` to drop the per-tick sort.
-- `light_graph.rs` `GRAPHS` cache is never evicted (grows with each light position edit in the console).
 - Defining (hardware) an LED grid like strip, but with rows/cols and serpentine directions?
 - Alphanumeric/NeoSeg support
-- Evaluate if declaring named colors with FAST and reference by ID is worth itc
+- Evaluate if declaring named colors with FAST and reference by ID is worth it
 
 ### Sound
 
 - frontbox-sound loop point support
 - frontbox-sound multi-stem music support
-- Cut a scene's sounds off when its playback stops. Needs a handle per sound in the sound manager.
 - Schedule scene sound starts a tick ahead on the audio clock, for starts finer than a tick.
 - apply-able effects (warble, reverb, glitch)
 - legacy hardware emulation? built-in synthesis (frontbox-synth?) e.g. YM2610 FM
 
 ## DMD
 
-- DisplaySystem should listen for MachineDisconnected/Reconnected events and automatically show something on the DMD if that happens (z-index 100?)
 - Implement remaining menu sounds
 - Menu: editing a setting saves on every press, with no way back. Restore a setting's default from its edit screen, and repeat inc/dec while the button is held.
 - Menu: fire a coil from its settings' edit screen

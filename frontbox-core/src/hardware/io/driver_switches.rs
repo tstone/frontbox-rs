@@ -5,7 +5,7 @@ fn switch_id(name: &'static str, state: &AppState) -> Option<usize> {
 }
 
 /// Return the switch ID and invert status from trigger mode
-pub fn get_switch_id_and_invert(
+pub(crate) fn get_switch_id_and_invert(
   trigger_mode: &DriverTriggerMode,
   state: &AppState,
 ) -> (Option<usize>, Option<bool>) {
@@ -19,7 +19,7 @@ pub fn get_switch_id_and_invert(
 }
 
 /// Return both switch IDs and invert statuses from dual trigger mode
-pub fn get_switch_ids_and_inverts(
+pub(crate) fn get_switch_ids_and_inverts(
   trigger_mode: &DriverTriggerDualMode,
   state: &AppState,
 ) -> (Option<usize>, Option<bool>, Option<usize>, Option<bool>) {

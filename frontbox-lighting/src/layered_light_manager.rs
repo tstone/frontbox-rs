@@ -321,11 +321,7 @@ impl LayeredLightManager {
 
       match resolution_strategy {
         LightConflictResolution::FirstWins => top_declarations[0].1.color,
-        LightConflictResolution::Mix => top_declarations
-          .iter()
-          .map(|(_, d)| d.color)
-          .reduce(|acc, c| acc.mix_with(c, 0.5))
-          .unwrap_or(Rgba::default()),
+        LightConflictResolution::Mix => average(top_declarations.iter().map(|(_, d)| d.color)),
         LightConflictResolution::Alternate => {
           let colors = top_declarations.iter().map(|(_, d)| d.color).collect();
           alternate_resolver.resolve(light.clone(), colors)
@@ -400,9 +396,10 @@ impl LightManager for LayeredLightManager {
 
   fn undeclare_by_system(&mut self, system_id: u64) {
     log::debug!(target: "frontbox::lighting", "Removing all light declarations for {}", system_id);
-    for declarations in self.declarations.values_mut() {
+    self.declarations.retain(|_, declarations| {
       declarations.retain(|id, _| id.system_id != system_id);
-    }
+      !declarations.is_empty()
+    });
   }
 
   fn deactivate_by_system(&mut self, system_id: u64) {
@@ -637,6 +634,22 @@ fn lower(
     }
   }
   lowered
+}
+
+/// The average of `colors`, each weighing the same, channel by channel. Clear when there are none.
+fn average(colors: impl Iterator<Item = Rgba<u8>>) -> Rgba<u8> {
+  let mut sums = [0u32; 4];
+  let mut count = 0;
+  for color in colors {
+    for (sum, channel) in sums.iter_mut().zip(color.0) {
+      *sum += channel as u32;
+    }
+    count += 1;
+  }
+  if count == 0 {
+    return Rgba::default();
+  }
+  Rgba(sums.map(|sum| (sum / count) as u8))
 }
 
 /// A color's brightness from 0 to 1: its largest channel
@@ -908,6 +921,35 @@ mod tests {
     );
 
     assert_eq!(resolved_color, Rgba([127, 0, 127, 255]));
+  }
+
+  #[test]
+  fn mix_weighs_every_conflicting_color_the_same() {
+    let colors = [
+      Rgba([255, 0, 0, 255]),
+      Rgba([0, 255, 0, 255]),
+      Rgba([0, 0, 255, 255]),
+    ];
+    assert_eq!(average(colors.into_iter()), Rgba([85, 85, 85, 255]));
+    assert_eq!(average(std::iter::empty()), Rgba::default());
+  }
+
+  #[test]
+  fn undeclaring_a_system_leaves_no_empty_lights_behind() {
+    let mut system = LayeredLightManager::new();
+    let light = |index| LightAddress::rgb(LedAddress::new(ExpAddress::new(3, None), 0, index));
+    system.declare(
+      42,
+      0,
+      &[(light(1), Rgba::red()), (light(2), Rgba::red())],
+      LightMode::Solid,
+    );
+    system.declare(43, 0, &[(light(2), Rgba::blue())], LightMode::Solid);
+
+    system.undeclare_by_system(42);
+
+    assert!(!system.declarations.contains_key(&light(1)));
+    assert_eq!(system.declarations[&light(2)].len(), 1);
   }
 
   // alpha compositing test - top semi-transparent declaration should composite with the next highest declaration below it

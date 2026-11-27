@@ -1,0 +1,86 @@
+Scene(
+  version: 2,
+  variables: {
+    "message": Text("Hardware disconnected"),
+  },
+  layers: [
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Background",
+        fill: (
+          base: Solid(Fixed(0, 0, 0, 255)),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Bar",
+        fill: (
+          base: Solid(Fixed(200, 30, 30, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(64.0, 9.5)),
+          ],
+          base: Rect(
+            width: Fixed(124.0),
+            height: Fixed(9.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Title",
+        fill: (
+          base: Solid(Fixed(255, 255, 255, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(64.0, 9.5)),
+          ],
+          base: Text(
+            text: Fixed("WARNING"),
+            font: "frontbox/fonts/TinyPixie2.ttf",
+            size: Fixed(6.0),
+            width: Fixed(124.0),
+            height: Fixed(7.0),
+            align: Center,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Message",
+        fill: (
+          base: Solid(Fixed(255, 255, 77, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(64.0, 22.5)),
+          ],
+          base: Text(
+            text: Variable("message"),
+            font: "frontbox/fonts/TinyPixie2.ttf",
+            size: Fixed(6.0),
+            width: Fixed(124.0),
+            height: Fixed(7.0),
+            align: Center,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+            overflow: Ellipsis,
+          ),
+        ),
+      ),
+    ),
+  ],
+)

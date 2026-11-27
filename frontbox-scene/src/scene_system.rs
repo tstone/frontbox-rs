@@ -26,12 +26,15 @@ use crate::*;
 pub struct SceneSystem {
   /// In the order they started, which is also the order they're drawn in on the same z
   playbacks: Vec<HeldPlayback>,
+  /// Playbacks removed before they completed, to say so on the next tick
+  stopped: Vec<PlaybackId>,
 }
 
 impl SceneSystem {
   pub fn new() -> Self {
     Self {
       playbacks: Vec::new(),
+      stopped: Vec::new(),
     }
   }
 
@@ -61,9 +64,24 @@ impl SceneSystem {
     id
   }
 
-  /// Removes a playback. Nothing happens if it's already gone.
+  /// Removes a playback. Nothing happens if it's already gone. One that hadn't completed is reported with
+  /// [`ScenePlaybackStopped`] on the next tick.
   pub fn remove(&mut self, id: PlaybackId) {
-    self.playbacks.retain(|held| held.id != id);
+    self.remove_where(|held| held.id == id);
+  }
+
+  fn remove_where(&mut self, gone: impl Fn(&HeldPlayback) -> bool) {
+    let stopped = &mut self.stopped;
+    self.playbacks.retain(|held| {
+      if !gone(held) {
+        return true;
+      }
+      if !held.playback.is_complete() {
+        log::debug!(target: "frontbox::scene", "{:?} was stopped before it completed", held.id);
+        stopped.push(held.id);
+      }
+      false
+    });
   }
 
   /// A playback that's still here, to change its variables
@@ -106,6 +124,9 @@ impl System for SceneSystem {
   }
 
   fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
+    for playback in self.stopped.drain(..) {
+      ctx.emit(ScenePlaybackStopped { playback });
+    }
     for held in self.playbacks.iter_mut().filter(|held| held.owner_active) {
       let was_complete = held.playback.is_complete();
       held.playback.advance(delta);
@@ -118,7 +139,7 @@ impl System for SceneSystem {
 
   fn on_event(&mut self, event: &dyn Event, _ctx: &SystemContext) {
     if let Some(SystemDespawned { id, .. }) = event.downcast_ref::<SystemDespawned>() {
-      self.playbacks.retain(|held| held.owner != Some(*id));
+      self.remove_where(|held| held.owner == Some(*id));
     } else if let Some(SystemDeactivated { id, .. }) = event.downcast_ref::<SystemDeactivated>() {
       self
         .owned_by(*id)
@@ -229,6 +250,43 @@ mod tests {
         .collect::<Vec<_>>(),
       [id]
     );
+  }
+
+  fn stopped(context: &mut TestContext) -> Vec<PlaybackId> {
+    context
+      .events_emitted()
+      .iter()
+      .filter_map(|event| event.event.downcast_ref::<ScenePlaybackStopped>())
+      .map(|event| event.playback)
+      .collect()
+  }
+
+  #[test]
+  fn a_playback_removed_before_it_completes_says_it_was_stopped() {
+    let mut context = context();
+    let removed = start(&context, OWNER, timed(1.0, Cycle::Forever));
+    let despawned = start(&context, OWNER + 1, timed(1.0, Cycle::Once));
+    with_scenes(&context, |scenes| scenes.remove(removed));
+    send(&context, SystemDespawned::new(OWNER + 1));
+    tick(&context, Duration::ZERO);
+    assert_eq!(stopped(&mut context), [removed, despawned]);
+  }
+
+  #[test]
+  fn a_playback_that_completes_isnt_stopped() {
+    let mut context = context();
+    let held = start(
+      &context,
+      OWNER,
+      Scene::new(vec![])
+        .timing(Timing::new(0.5, Cycle::Once).end(EndBehavior::Hold))
+        .into(),
+    );
+    start(&context, OWNER, timed(0.5, Cycle::Once));
+    tick(&context, Duration::from_secs(1));
+    with_scenes(&context, |scenes| scenes.remove(held));
+    tick(&context, Duration::ZERO);
+    assert!(stopped(&mut context).is_empty());
   }
 
   #[test]

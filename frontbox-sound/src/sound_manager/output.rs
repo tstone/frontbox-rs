@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use cpal::StreamError;
 use frontbox_core::prelude::*;
+use frontbox_scene::PlaybackId;
 use kira::clock::{ClockHandle, ClockSpeed};
+use kira::sound::PlaybackState;
 use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle};
 use kira::track::{TrackBuilder, TrackHandle};
 use kira::{AudioManager, Decibels, ResourceLimitReached, StartTime, Tween};
@@ -30,6 +32,8 @@ pub(super) struct Output {
   /// Times music passes, so each loop starts on the audio thread's clock rather than on a tick
   clock: ClockHandle,
   active_music: Option<Music>,
+  /// The sounds each scene playback is still playing, to cut them off if it's stopped
+  playback_sfx: HashMap<PlaybackId, Vec<StaticSoundHandle>>,
   /// The line being said. The [`SoundManager`](super::SoundManager) moves through its queue with this.
   pub active_callout: Option<ActiveCallout>,
   /// When kira last heard from the audio driver
@@ -53,6 +57,7 @@ impl Output {
       callout_track,
       clock,
       active_music: None,
+      playback_sfx: HashMap::new(),
       active_callout: None,
       last_heartbeat: now,
     })
@@ -88,7 +93,8 @@ impl Output {
     Ok(())
   }
 
-  /// Play a sound at `volume`, where 1.0 is as recorded, from `skip` into it, and fade it out by `length` if given
+  /// Play a sound at `volume`, where 1.0 is as recorded, from `skip` into it, and fade it out by `length` if given.
+  /// One played for a `playback` is kept track of until it ends, for [`stop_playback_sfx`](Self::stop_playback_sfx).
   pub fn play_sfx(
     &mut self,
     key: &str,
@@ -96,6 +102,7 @@ impl Output {
     volume: f32,
     skip: Duration,
     length: Option<Duration>,
+    playback: Option<PlaybackId>,
   ) {
     log::debug!(target: "frontbox::sound", "🔊 Playing SFX '{}'", key);
     let mut sound = sound.volume(amplitude_to_db(volume));
@@ -118,9 +125,34 @@ impl Output {
             ..Default::default()
           });
         }
+        if let Some(playback) = playback {
+          self.playback_sfx.entry(playback).or_default().push(handle);
+        }
       }
       Err(e) => log::error!(target: "frontbox::sound", "Failed to play SFX '{}': {:?}", key, e),
     }
+  }
+
+  /// Fade out the sounds a scene playback is still playing
+  pub fn stop_playback_sfx(&mut self, playback: PlaybackId) {
+    let Some(handles) = self.playback_sfx.remove(&playback) else {
+      return;
+    };
+    log::debug!(target: "frontbox::sound", "🔊 Cutting off the sounds of {:?}", playback);
+    for mut handle in handles {
+      handle.stop(Tween {
+        duration: CUT_FADE,
+        ..Default::default()
+      });
+    }
+  }
+
+  /// Let go of the scene sounds that have ended
+  pub fn forget_ended_sfx(&mut self) {
+    self.playback_sfx.retain(|_, handles| {
+      handles.retain(|handle| handle.state() != PlaybackState::Stopped);
+      !handles.is_empty()
+    });
   }
 
   /// Start a line, with its lead-in unless it follows on from a line that already had it. Returns the handle of the

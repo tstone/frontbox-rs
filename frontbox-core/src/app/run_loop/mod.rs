@@ -18,7 +18,6 @@ mod timing;
 use fast_protocol::SwitchState;
 use std::any::TypeId;
 use std::ops::ControlFlow;
-use std::process::Command;
 use std::sync::Arc;
 
 use tokio::sync::{Notify, mpsc, watch};
@@ -80,7 +79,7 @@ impl RunLoop {
     }
   }
 
-  /// Spawn the initial systems and run until shut down
+  /// Spawn the initial systems and run until shut down. Returns what was asked to shut down.
   pub(crate) async fn run(
     base: AppState,
     initial_systems: Vec<SystemContainer>,
@@ -90,7 +89,7 @@ impl RunLoop {
     mut tracer_ctl_receiver: mpsc::UnboundedReceiver<TracerControlEvent>,
     machine_system_id: u64,
     routines: Routines,
-  ) {
+  ) -> ShutdownScope {
     let tracers = TracerSenders::new(app_tracers.iter().map(|tracer| tracer.sender()).collect());
     let mut run_loop = Self::new(
       base,
@@ -168,7 +167,8 @@ impl RunLoop {
       }
     };
 
-    run_loop.shutdown(shutdown_scope).await;
+    run_loop.shutdown().await;
+    shutdown_scope
   }
 
   /// Handle one message. Breaks when the message asks for a shutdown.
@@ -393,8 +393,8 @@ impl RunLoop {
     }
   }
 
-  /// Despawn every system, then close the metrics store and, if asked, shut down the OS
-  async fn shutdown(self, scope: ShutdownScope) {
+  /// Despawn every system, then close the metrics store
+  async fn shutdown(self) {
     self.despawn_all();
 
     // after despawning, so anything systems record on their way out is kept
@@ -402,12 +402,6 @@ impl RunLoop {
 
     // wait a sec to allow systems to process shutdown event and clear timers, etc.
     tokio::time::sleep(Duration::from_millis(1500)).await;
-
-    if scope == ShutdownScope::OperatingSystem {
-      if let Err(e) = Command::new("sudo").args(["shutdown"]).status() {
-        log::error!(target: "frontbox::run_loop", "Failed to invoke OS shutdown: {e}");
-      }
-    }
   }
 
   /// Call `on_despawn` on every system, regardless of whether it was active, in reverse spawn order. The systems

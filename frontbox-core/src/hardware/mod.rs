@@ -137,7 +137,7 @@ mod switch_query;
 
 pub use driver_query::*;
 pub use exp::*;
-pub use fast_platform::*;
+pub(crate) use fast_platform::*;
 pub use hardware::*;
 pub use hardware_definition::*;
 #[allow(unused)]

@@ -5,6 +5,7 @@ use std::time::Instant;
 
 use frontbox_core::connection_retry_wait;
 use frontbox_core::prelude::*;
+use frontbox_scene::PlaybackId;
 use kira::sound::PlaybackState;
 use kira::sound::static_sound::StaticSoundData;
 use tokio::sync::oneshot::error::TryRecvError;
@@ -81,8 +82,13 @@ impl SoundManager {
     match message {
       SoundManagerMessage::PreloadPath(name, path) => self.preload(name, path),
       SoundManagerMessage::PreloadEmbedded(name, bytes) => self.preload_embedded(name, bytes),
-      SoundManagerMessage::PlaySfx(key, volume, skip, length) => {
-        self.play_sfx(key, volume, skip, length)
+      SoundManagerMessage::PlaySfx(key, volume, skip, length, playback) => {
+        self.play_sfx(key, volume, skip, length, playback)
+      }
+      SoundManagerMessage::StopPlaybackSfx(playback) => {
+        if let Connection::Connected(output) = &mut self.connection {
+          output.stop_playback_sfx(playback);
+        }
       }
       SoundManagerMessage::PlayCallout(request) => self.play_callout(request),
       SoundManagerMessage::SetCalloutVolume(db) => self.set_callout_volume(db),
@@ -96,6 +102,7 @@ impl SoundManager {
     self.update_connection(now);
     if let Connection::Connected(output) = &mut self.connection {
       output.update_music();
+      output.forget_ended_sfx();
     }
 
     for key in self.callout_queue.take_stale(now) {
@@ -272,7 +279,14 @@ impl SoundManager {
     }
   }
 
-  fn play_sfx(&mut self, key: SoundKey, volume: f32, skip: Duration, length: Option<Duration>) {
+  fn play_sfx(
+    &mut self,
+    key: SoundKey,
+    volume: f32,
+    skip: Duration,
+    length: Option<Duration>,
+    playback: Option<PlaybackId>,
+  ) {
     let Some(sound) = self.sounds.get(&key) else {
       log::error!(target: "frontbox::sound", "🔊 Sound with key '{}' not found", key);
       return;
@@ -281,7 +295,7 @@ impl SoundManager {
       log::debug!(target: "frontbox::sound", "🔇 No audio output, skipped SFX '{}'", key);
       return;
     };
-    output.play_sfx(&key, sound.clone(), volume, skip, length);
+    output.play_sfx(&key, sound.clone(), volume, skip, length, playback);
   }
 
   fn play_callout(&mut self, request: CalloutRequest) {

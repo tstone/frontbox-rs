@@ -16,7 +16,7 @@ pub struct Hardware {
 }
 
 impl Hardware {
-  pub fn new(
+  pub(crate) fn new(
     switches: SwitchLookup,
     drivers: DriverLookup,
     lights: LightLookup,

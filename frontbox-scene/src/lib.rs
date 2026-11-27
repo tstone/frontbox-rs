@@ -68,6 +68,13 @@ pub struct ScenePlaybackCompleted {
   pub playback: PlaybackId,
 }
 
+/// A playback removed before it completed: its owner stopped it, or despawned. Emitted on the tick after. The sound
+/// system cuts the playback's sounds off on this; a playback that completes lets them play out.
+#[derive(serde::Serialize, Event, Debug, Clone, Copy)]
+pub struct ScenePlaybackStopped {
+  pub playback: PlaybackId,
+}
+
 /// What a system that plays scenes uses: opening, binding variables, playing, and checking what it sends
 pub mod prelude {
   pub use frontbox_gfx::animation::Curve;
@@ -76,7 +83,8 @@ pub mod prelude {
 
   pub use crate::{
     Behind, Completes, DisplayLayer, Fonts, ImageGenerators, Images, LightLayer, LightSurface,
-    PlayableScene, PlaybackId, Scene, SceneLayer, ScenePlaybackCompleted, ScenePlayer, SceneSystem,
-    SceneSystemExt, Scenes, Sends, SentVariable, ShapeGenerators, SoundLayer, Sounds,
+    PlayableScene, PlaybackId, Scene, SceneLayer, ScenePlaybackCompleted, ScenePlaybackStopped,
+    ScenePlayer, SceneSystem, SceneSystemExt, Scenes, Sends, SentVariable, ShapeGenerators,
+    SoundLayer, Sounds,
   };
 }

@@ -28,9 +28,9 @@ mod fast_codec;
 mod machine;
 pub mod machine_metrics;
 mod machine_system;
-pub mod neuron;
+pub(crate) mod neuron;
 pub(crate) mod serial_interface;
-pub mod vm; // virtual
+pub(crate) mod vm; // virtual
 
 use fast_protocol::{DriverConfig, DriverTriggerControlMode, FastBinaryDispatch, FastCommand};
 use std::time::Duration;

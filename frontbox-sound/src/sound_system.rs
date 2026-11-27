@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use frontbox_core::prelude::app_tracer::SoundPreviewRequested;
 use frontbox_core::prelude::*;
-use frontbox_scene::{PlaybackId, Scene, SceneSystem, Sounds};
+use frontbox_scene::{PlaybackId, Scene, ScenePlaybackStopped, SceneSystem, Sounds};
 use tokio::sync::mpsc;
 
 use crate::callout::CalloutRequest;
@@ -39,7 +39,7 @@ impl SoundSystem {
   /// it's tried again with a growing wait. Sounds can be preloaded and music asked for in the meantime, and carry over.
   ///
   /// It also plays the sound layers of the scenes the `SceneSystem` shows, loading their sounds from the app's content
-  /// folder.
+  /// folder. A playback that completes lets its sounds play out, and one stopped before then has them cut off.
   pub fn new(device_name: &'static str) -> Self {
     let (tx, rx) = mpsc::unbounded_channel();
     let (completed_tx, completed_rx) = mpsc::unbounded_channel();
@@ -79,7 +79,9 @@ impl SoundSystem {
 
   /// Play a pre-loaded wave file once all the way through
   pub fn play_sfx(&mut self, key: impl Into<SoundKey>) {
-    let _ = self.tx.send(PlaySfx(key.into(), 1.0, Duration::ZERO, None));
+    let _ = self
+      .tx
+      .send(PlaySfx(key.into(), 1.0, Duration::ZERO, None, None));
   }
 
   /// Play the wave AND duck any music that is currently playing, then restore the music volume after the sound finishes.
@@ -117,8 +119,15 @@ impl SoundSystem {
   }
 
   /// Play a sound from the content folder at `volume`, from `skip` seconds in, and cut off after `length` seconds if
-  /// given, loading it first if it hasn't been
-  fn play_from_content(&mut self, name: &str, volume: f32, skip: f32, length: Option<f32>) {
+  /// given, loading it first if it hasn't been. `playback` is the scene playback that plays it, if one does.
+  fn play_from_content(
+    &mut self,
+    name: &str,
+    volume: f32,
+    skip: f32,
+    length: Option<f32>,
+    playback: Option<PlaybackId>,
+  ) {
     if self.load_from_content(name) {
       let length = length.map(|length| Duration::from_secs_f32(length.max(0.0)));
       let skip = Duration::from_secs_f32(skip.max(0.0));
@@ -127,6 +136,7 @@ impl SoundSystem {
         volume,
         skip,
         length,
+        playback,
       ));
     }
   }
@@ -166,6 +176,7 @@ impl SoundSystem {
       let sounds = playback.scene().sounds_started(&moment, after);
       started.extend(sounds.into_iter().map(|start| {
         (
+          id,
           start.sound.to_string(),
           start.volume,
           start.skip,
@@ -177,8 +188,8 @@ impl SoundSystem {
     self.playback_times.retain(|id, _| scenes.contains(*id));
     drop(scenes);
 
-    for (sound, volume, skip, length) in started {
-      self.play_from_content(&sound, volume, skip, length);
+    for (playback, sound, volume, skip, length) in started {
+      self.play_from_content(&sound, volume, skip, length, Some(playback));
     }
   }
 }
@@ -237,7 +248,9 @@ impl System for SoundSystem {
       length,
     }) = event.downcast_ref::<SoundPreviewRequested>()
     {
-      self.play_from_content(sound, *volume, *skip, *length);
+      self.play_from_content(sound, *volume, *skip, *length, None);
+    } else if let Some(ScenePlaybackStopped { playback }) = event.downcast_ref() {
+      let _ = self.tx.send(StopPlaybackSfx(*playback));
     }
   }
 }
@@ -291,7 +304,7 @@ mod tests {
   ) -> Vec<(String, f32, Duration, Option<Duration>)> {
     let mut played = Vec::new();
     while let Ok(message) = rx.try_recv() {
-      if let PlaySfx(key, volume, skip, length) = message {
+      if let PlaySfx(key, volume, skip, length, _) = message {
         played.push((key.into_owned(), volume, skip, length));
       }
     }
@@ -369,10 +382,9 @@ mod tests {
   fn a_sound_is_loaded_from_the_content_folder_once() {
     let (context, mut rx) = context();
     for _ in 0..2 {
-      context
-        .sys_ctx()
-        .systems
-        .with::<SoundSystem, _>(|sound| sound.play_from_content("sounds/a.wav", 1.0, 0.0, None));
+      context.sys_ctx().systems.with::<SoundSystem, _>(|sound| {
+        sound.play_from_content("sounds/a.wav", 1.0, 0.0, None, None)
+      });
     }
     let mut loads = 0;
     while let Ok(message) = rx.try_recv() {
@@ -385,6 +397,29 @@ mod tests {
       }
     }
     assert_eq!(loads, 1);
+  }
+
+  #[test]
+  fn a_stopped_playbacks_sounds_are_cut_off() {
+    let (context, mut rx) = context();
+    let mut player = ScenePlayer::new(scene(Cycle::Forever));
+    player.start(&context.sys_ctx());
+    tick(&context, Duration::ZERO);
+    let Ok(PreloadPath(..)) = rx.try_recv() else {
+      panic!("the sound is loaded first");
+    };
+    let Ok(PlaySfx(.., Some(playing))) = rx.try_recv() else {
+      panic!("the sound says which playback plays it");
+    };
+
+    let ctx = context.sys_ctx();
+    ctx.systems.with::<SoundSystem, _>(|sound| {
+      sound.on_event(&ScenePlaybackStopped { playback: playing }, &ctx)
+    });
+    let Ok(StopPlaybackSfx(stopped)) = rx.try_recv() else {
+      panic!("its sounds are cut off");
+    };
+    assert_eq!(stopped, playing);
   }
 
   #[test]
