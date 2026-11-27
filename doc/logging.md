@@ -74,7 +74,7 @@ A filter matches every target that starts with it, so `frontbox::ball_management
 | `frontbox::game_manager` | Games, players, turns, the quit combo |
 | `frontbox::playfield_drivers` | Playfield drivers going live for a turn, and off after it |
 | `frontbox::credits` | Coins, credits, and start presses that add a player or are refused |
-| `frontbox::high_scores` | Saving high scores |
+| `frontbox::leaderboards` | Leaderboard submissions, placements, and saving them |
 
 ### Output
 

@@ -1,0 +1,94 @@
+Scene(
+  version: 2,
+  variables: {
+    "title": Text("Grand Champion"),
+    "name": Text("AAA"),
+    "value": Text("4,231,890"),
+  },
+  layers: [
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Background",
+        fill: (
+          base: Solid(Fixed(0, 0, 0, 255)),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Title",
+        fill: (
+          base: Solid(Fixed(255, 255, 255, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(64.0, 8.5)),
+          ],
+          base: Text(
+            text: Variable("title"),
+            font: "frontbox/fonts/TinyPixie2.ttf",
+            size: Fixed(6.0),
+            width: Fixed(118.0),
+            height: Fixed(7.0),
+            align: Left,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Name",
+        fill: (
+          base: Solid(Fixed(255, 255, 255, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(64.0, 8.5)),
+          ],
+          base: Text(
+            text: Variable("name"),
+            font: "frontbox/fonts/TinyPixie2.ttf",
+            size: Fixed(6.0),
+            width: Fixed(118.0),
+            height: Fixed(7.0),
+            align: Right,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Value",
+        fill: (
+          base: Solid(Fixed(255, 255, 255, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(64.0, 19.0)),
+          ],
+          base: Text(
+            text: Variable("value"),
+            font: "frontbox/fonts/TenFatGuys.ttf",
+            size: Fixed(16.0),
+            width: Fixed(118.0),
+            height: Fixed(16.0),
+            align: Left,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+  ],
+)

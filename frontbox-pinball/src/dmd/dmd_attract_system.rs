@@ -3,15 +3,17 @@ use frontbox_display::menu::DmdMenuSystem;
 use frontbox_display::prelude::*;
 
 use crate::dmd::open_scene;
-use crate::{GameEnding, GamePhase, PlayerEntry};
+use crate::{GameEnding, GamePhase, LeaderboardsSystem, PlayerEntry};
 
 const LAST_SCORE_SCENE: &str = "frontbox/128x32/attract/last_score.scene";
+const LEADERBOARD_SCENE: &str = "frontbox/128x32/attract/leaderboard.scene";
 const PRESS_START_SCENE: &str = "frontbox/128x32/attract/press_start.scene";
 
 /// Attract mode on the DMD: while no game is running and the operator menu isn't open, shows a list of screens one after
 /// another, and starts over at the end of the list. The flipper buttons step back and forward
 /// through them. When a game ends, it goes to the first of the last game's scores. A scene that plays a set number of
-/// times stays up until it ends; every other screen is shown for the same time.
+/// times stays up until it ends; every other screen is shown for the same time. `Leaderboards` is a screen for each
+/// entry on each leaderboard, one after another.
 ///
 /// ```rust,ignore
 /// app.system(
@@ -20,6 +22,7 @@ const PRESS_START_SCENE: &str = "frontbox/128x32/attract/press_start.scene";
 ///     AttractScreen::LastScore(0),
 ///     AttractScreen::PressStart,
 ///     AttractScreen::LastScore(1),
+///     AttractScreen::Leaderboards,
 ///   ])
 ///   .flippers(cabinet::LEFT_FLIPPER.name, cabinet::RIGHT_FLIPPER.name),
 /// );
@@ -34,6 +37,8 @@ pub struct DmdAttractSystem {
   z: i8,
   /// The screen that's shown, or is shown next if none is
   current: usize,
+  /// Which of the current screen's pages is shown. Only `Leaderboards` has more than one.
+  page: usize,
   player: Option<ScenePlayer>,
   last_scores: Vec<u64>,
   timer_id: Option<u64>,
@@ -48,6 +53,7 @@ impl DmdAttractSystem {
       screen_duration: Duration::from_secs(6),
       z: 0,
       current: 0,
+      page: 0,
       player: None,
       last_scores: Vec::new(),
       timer_id: None,
@@ -81,6 +87,15 @@ impl DmdAttractSystem {
       AttractScreen::Scene(_) => true,
       AttractScreen::LastScore(player) => player < self.last_scores.len(),
       AttractScreen::PressStart => ctx.states.is(PlayerEntry::Open),
+      AttractScreen::Leaderboards => !leaderboard_pages(ctx).is_empty(),
+    }
+  }
+
+  /// How many pages screen `index` has now
+  fn pages_of(&self, index: usize, ctx: &SystemContext) -> usize {
+    match self.screens[index] {
+      AttractScreen::Leaderboards => leaderboard_pages(ctx).len(),
+      _ => 1,
     }
   }
 
@@ -92,24 +107,38 @@ impl DmdAttractSystem {
       .find(|&at| self.can_show(at, ctx))
   }
 
-  /// Moves to the next screen that has something to show, `step` screens on (1, or -1 to go back), and shows it
+  /// Moves to the current screen's next page, or past its last to the next screen that has something to show. `step` is
+  /// 1, or -1 to go back, which comes into a screen at its last page.
   fn step(&mut self, step: isize, ctx: &SystemContext) {
     let count = self.screens.len() as isize;
     if count == 0 {
       return;
     }
+
+    let page = self.page as isize + step;
+    if self.player.is_some() && page >= 0 && (page as usize) < self.pages_of(self.current, ctx) {
+      self.show(self.current, page as usize, ctx);
+      return;
+    }
+
     let from = (self.current as isize + step).rem_euclid(count) as usize;
     if let Some(next) = self.showable_from(from, step, ctx) {
-      self.show(next, ctx);
+      let page = if step < 0 {
+        self.pages_of(next, ctx).saturating_sub(1)
+      } else {
+        0
+      };
+      self.show(next, page, ctx);
     }
   }
 
-  /// Shows screen `index` from the top
-  fn show(&mut self, index: usize, ctx: &SystemContext) {
+  /// Shows `page` of screen `index` from the top
+  fn show(&mut self, index: usize, page: usize, ctx: &SystemContext) {
     if let Some(player) = &mut self.player {
       player.stop(ctx);
     }
     self.current = index;
+    self.page = page;
     let Some(Some(scene)) = self.scenes.get(index) else {
       self.player = None;
       return;
@@ -121,6 +150,13 @@ impl DmdAttractSystem {
       scene = scene
         .variable("label", format!("Player {}", player + 1))
         .variable("score", Value::Int(*score as i64));
+    } else if self.screens[index] == AttractScreen::Leaderboards
+      && let Some(entry) = leaderboard_pages(ctx).into_iter().nth(page)
+    {
+      scene = scene
+        .variable("title", entry.title)
+        .variable("name", entry.name)
+        .variable("value", entry.value);
     }
     self.player = Some(ScenePlayer::started(scene, ctx));
   }
@@ -167,6 +203,9 @@ impl System for DmdAttractSystem {
         AttractScreen::LastScore(_) => {
           open_scene(resources, LAST_SCORE_SCENE, LAST_SCORE_SENDS, self.z)
         }
+        AttractScreen::Leaderboards => {
+          open_scene(resources, LEADERBOARD_SCENE, LEADERBOARD_SENDS, self.z)
+        }
         AttractScreen::PressStart => open_scene(
           resources,
           PRESS_START_SCENE,
@@ -198,7 +237,7 @@ impl System for DmdAttractSystem {
         .iter()
         .position(|screen| *screen == AttractScreen::LastScore(0))
       {
-        self.show(first, ctx);
+        self.show(first, 0, ctx);
         self.schedule_next(ctx);
       }
     } else if let Some(closed) = event.downcast_ref::<SwitchClosed>()
@@ -218,7 +257,7 @@ impl System for DmdAttractSystem {
   fn on_tick(&mut self, _delta: Duration, ctx: &SystemContext) {
     if self.player.is_none() || !self.can_show(self.current, ctx) {
       if let Some(next) = self.showable_from(self.current, 1, ctx) {
-        self.show(next, ctx);
+        self.show(next, 0, ctx);
       }
     }
   }
@@ -234,7 +273,67 @@ pub enum AttractScreen {
   LastScore(usize),
   /// `frontbox/128x32/attract/press_start.scene`, while a game can be started. Skipped otherwise.
   PressStart,
+  /// Every entry on every leaderboard (`LeaderboardsSystem`), one at a time, in the order the boards were added and
+  /// best first: `frontbox/128x32/attract/leaderboard.scene`, sent the entry's `title` ("Grand Champion", "High Scores
+  /// #1", or the board's name where it keeps a single entry), `name` and `value`. Skipped with no leaderboards, or
+  /// none with an entry.
+  Leaderboards,
 }
+
+/// What one page of `AttractScreen::Leaderboards` shows
+struct LeaderboardPage {
+  title: String,
+  name: String,
+  value: String,
+}
+
+/// A page for each entry on each leaderboard, as they stand now. Empty with no `LeaderboardsSystem`.
+fn leaderboard_pages(ctx: &SystemContext) -> Vec<LeaderboardPage> {
+  let Some(leaderboards) = ctx.systems.get::<LeaderboardsSystem>() else {
+    return Vec::new();
+  };
+  let mut pages = Vec::new();
+  for board in leaderboards.boards() {
+    for standing in leaderboards.standings(board) {
+      let title = if board.has_rank_title(standing.rank) {
+        board.rank_title(standing.rank)
+      } else if board.capacity == 1 {
+        board.label.to_string()
+      } else {
+        format!("{} {}", board.label, board.rank_title(standing.rank))
+      };
+      pages.push(LeaderboardPage {
+        title,
+        name: standing.name,
+        value: board.format(standing.value),
+      });
+    }
+  }
+  pages
+}
+
+const LEADERBOARD_SENDS: Sends = Sends {
+  variables: &[
+    SentVariable {
+      name: "title",
+      sent_as: VariableType::Text,
+      values: &[],
+      about: "What the entry holds, e.g. Grand Champion or Loop Champion",
+    },
+    SentVariable {
+      name: "name",
+      sent_as: VariableType::Text,
+      values: &[],
+      about: "The initials of the player who holds it",
+    },
+    SentVariable {
+      name: "value",
+      sent_as: VariableType::Text,
+      values: &[],
+      about: "What they earned, as it's shown: 4,231,890 or 1:05.25",
+    },
+  ],
+};
 
 const LAST_SCORE_SENDS: Sends = Sends {
   variables: &[
@@ -316,5 +415,71 @@ mod tests {
       LAST_SCORE_SENDS.check(&Scene::open(&resources, LAST_SCORE_SCENE).unwrap()),
       []
     );
+    assert_eq!(
+      LEADERBOARD_SENDS.check(&Scene::open(&resources, LEADERBOARD_SCENE).unwrap()),
+      []
+    );
+  }
+
+  #[test]
+  fn leaderboards_are_stepped_through_an_entry_at_a_time() {
+    use std::sync::LazyLock;
+
+    static SCORES: LazyLock<crate::Leaderboard<u64>> = LazyLock::new(|| {
+      crate::Leaderboard::highest("High Scores", 2)
+        .key("attract_scores")
+        .rank_titles(["Grand Champion"])
+        .defaults([("AAA", 2_000), ("BBB", 1_000)])
+    });
+    static LOOPS: LazyLock<crate::Leaderboard<u32>> = LazyLock::new(|| {
+      crate::Leaderboard::highest("Loop Champion", 1)
+        .key("attract_loops")
+        .defaults([("CCC", 7)])
+    });
+    static EMPTY: LazyLock<crate::Leaderboard<u32>> =
+      LazyLock::new(|| crate::Leaderboard::highest("Empty", 1).key("attract_empty"));
+
+    let mut context = TestContext::default();
+    let path = std::env::temp_dir().join(format!("frontbox-attract-{}.toml", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    context.insert_system(
+      LeaderboardsSystem::new(&path)
+        .board(&SCORES)
+        .board(&EMPTY)
+        .board(&LOOPS),
+    );
+    let screens = vec![
+      AttractScreen::Scene("frontbox/128x32/attract/press_start.scene"),
+      AttractScreen::Leaderboards,
+    ];
+    let mut attract = spawned(&mut context, screens);
+    let ctx = context.sys_ctx();
+
+    let pages = leaderboard_pages(&ctx);
+    let shown: Vec<_> = pages
+      .iter()
+      .map(|p| (p.title.as_str(), p.name.as_str(), p.value.as_str()))
+      .collect();
+    assert_eq!(
+      shown,
+      [
+        ("Grand Champion", "AAA", "2,000"),
+        ("High Scores #1", "BBB", "1,000"),
+        ("Loop Champion", "CCC", "7"),
+      ]
+    );
+
+    let mut at = |attract: &mut DmdAttractSystem, step| {
+      attract.step(step, &ctx);
+      (attract.current, attract.page)
+    };
+    assert_eq!((attract.current, attract.page), (0, 0));
+    assert_eq!(at(&mut attract, 1), (1, 0));
+    assert_eq!(at(&mut attract, 1), (1, 1));
+    assert_eq!(at(&mut attract, 1), (1, 2));
+    assert_eq!(at(&mut attract, 1), (0, 0));
+    // going back comes in at the last entry
+    assert_eq!(at(&mut attract, -1), (1, 2));
+    assert_eq!(at(&mut attract, -1), (1, 1));
   }
 }
