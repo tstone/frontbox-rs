@@ -1,6 +1,6 @@
 /// The framework's screens, by the name a file in a game's content folder replaces each under. Each is in a folder for
 /// the size of display it's made for.
-const SCENES: [(&str, &str); 12] = [
+const SCENES: [(&str, &str); 13] = [
   (
     "frontbox/128x32/attract/last_score.scene",
     include_str!("../assets/scenes/frontbox/128x32/attract/last_score.scene"),
@@ -12,6 +12,10 @@ const SCENES: [(&str, &str); 12] = [
   (
     "frontbox/128x32/attract/press_start.scene",
     include_str!("../assets/scenes/frontbox/128x32/attract/press_start.scene"),
+  ),
+  (
+    "frontbox/128x32/initials_entry.scene",
+    include_str!("../assets/scenes/frontbox/128x32/initials_entry.scene"),
   ),
   (
     "frontbox/128x32/menu/about.scene",

@@ -96,6 +96,19 @@ impl LeaderboardDefinition {
     rank < self.rank_titles.len()
   }
 
+  /// What holding a rank (from 0) is called on its own, away from the rest of the board: the rank's title ("Grand
+  /// Champion"), the board's name where it keeps a single entry ("Loop Champion"), or the board's name and the rank's
+  /// number ("High Scores #1")
+  pub fn place_title(&self, rank: usize) -> String {
+    if self.has_rank_title(rank) {
+      self.rank_title(rank)
+    } else if self.capacity == 1 {
+      self.label.to_string()
+    } else {
+      format!("{} {}", self.label, self.rank_title(rank))
+    }
+  }
+
   /// How a raw value is shown to players
   pub fn format(&self, value: u64) -> String {
     (self.formatter)(value)

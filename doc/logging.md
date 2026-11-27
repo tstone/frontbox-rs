@@ -74,7 +74,7 @@ A filter matches every target that starts with it, so `frontbox::ball_management
 | `frontbox::game_manager` | Games, players, turns, the quit combo |
 | `frontbox::playfield_drivers` | Playfield drivers going live for a turn, and off after it |
 | `frontbox::credits` | Coins, credits, and start presses that add a player or are refused |
-| `frontbox::leaderboards` | Leaderboard submissions, placements, and saving them |
+| `frontbox::leaderboards` | Leaderboard submissions, placements, initials entry, and saving them |
 
 ### Output
 
@@ -83,7 +83,7 @@ A filter matches every target that starts with it, so `frontbox::ball_management
 | `frontbox::scene` | Scene playbacks starting and ending, scenes that don't fit what the system playing them sends, variables pointed at values the scene doesn't have |
 | `frontbox::lighting` | Light declarations and rendering |
 | `frontbox::sound` | Audio output, sound effects, callouts, music |
-| `frontbox::display` | Opening and losing displays, scenes drawn on displays that weren't added, menus, initials entry, the DMD attract and points screens' scenes |
+| `frontbox::display` | Opening and losing displays, scenes drawn on displays that weren't added, menus, the DMD attract and points screens' scenes |
 | `frontbox::console` | The web console server, its clients, and commands sent from it |
 
 ## Adding a target

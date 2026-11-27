@@ -23,7 +23,7 @@ pub struct GameStarting;
 /// button) are active again and hear it, final scores included.
 ///
 /// ```rust,ignore
-/// app.routine::<GameEnding>(routine![MatchPresenter, HighScoreEntry]);
+/// app.routine::<GameEnding>(routine![MatchPresenter, LeaderboardsSystem]);
 /// ```
 ///
 /// It's started at the root, as no player is up. The playfield drivers are turned off on its `RoutineStarted`.

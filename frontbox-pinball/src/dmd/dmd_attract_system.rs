@@ -295,15 +295,8 @@ fn leaderboard_pages(ctx: &SystemContext) -> Vec<LeaderboardPage> {
   let mut pages = Vec::new();
   for board in leaderboards.boards() {
     for standing in leaderboards.standings(board) {
-      let title = if board.has_rank_title(standing.rank) {
-        board.rank_title(standing.rank)
-      } else if board.capacity == 1 {
-        board.label.to_string()
-      } else {
-        format!("{} {}", board.label, board.rank_title(standing.rank))
-      };
       pages.push(LeaderboardPage {
-        title,
+        title: board.place_title(standing.rank),
         name: standing.name,
         value: board.format(standing.value),
       });
@@ -469,7 +462,7 @@ mod tests {
       ]
     );
 
-    let mut at = |attract: &mut DmdAttractSystem, step| {
+    let at = |attract: &mut DmdAttractSystem, step| {
       attract.step(step, &ctx);
       (attract.current, attract.page)
     };

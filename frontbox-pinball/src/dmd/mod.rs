@@ -1,7 +1,9 @@
 mod dmd_attract_system;
+mod dmd_initials_entry_system;
 mod dmd_points_system;
 
 pub use dmd_attract_system::*;
+pub use dmd_initials_entry_system::*;
 pub use dmd_points_system::*;
 
 use frontbox_core::prelude::Resources;

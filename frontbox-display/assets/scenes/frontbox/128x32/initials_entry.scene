@@ -1,0 +1,206 @@
+Scene(
+  version: 2,
+  variables: {
+    "letter_1": Text("T"),
+    "letter_1_current": Bool(false),
+    "letter_2": Text("M"),
+    "letter_2_current": Bool(true),
+    "letter_3": Text(""),
+    "letter_3_current": Bool(false),
+    "player": Text("Player 1"),
+    "title": Text("Grand Champion"),
+  },
+  layers: [
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Background",
+        fill: (
+          base: Solid(Fixed(0, 0, 0, 255)),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Player",
+        fill: (
+          base: Solid(Fixed(255, 230, 120, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(64.0, 8.5)),
+          ],
+          base: Text(
+            text: Variable("player"),
+            font: "frontbox/fonts/TinyPixie2.ttf",
+            size: Fixed(6.0),
+            width: Fixed(118.0),
+            height: Fixed(7.0),
+            align: Left,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Title",
+        fill: (
+          base: Solid(Fixed(255, 255, 255, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(64.0, 8.5)),
+          ],
+          base: Text(
+            text: Variable("title"),
+            font: "frontbox/fonts/TinyPixie2.ttf",
+            size: Fixed(6.0),
+            width: Fixed(118.0),
+            height: Fixed(7.0),
+            align: Right,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Letter 1",
+        fill: (
+          base: Solid(Fixed(255, 255, 255, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(44.0, 19.0)),
+          ],
+          base: Text(
+            text: Variable("letter_1"),
+            font: "frontbox/fonts/TenFatGuys.ttf",
+            size: Fixed(16.0),
+            width: Fixed(18.0),
+            height: Fixed(16.0),
+            align: Center,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Letter 1 cursor",
+        visible: Variable("letter_1_current"),
+        fill: (
+          base: Solid(Fixed(255, 230, 120, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(44.0, 29.5)),
+          ],
+          base: Rect(
+            width: Fixed(14.0),
+            height: Fixed(1.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Letter 2",
+        fill: (
+          base: Solid(Fixed(255, 255, 255, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(64.0, 19.0)),
+          ],
+          base: Text(
+            text: Variable("letter_2"),
+            font: "frontbox/fonts/TenFatGuys.ttf",
+            size: Fixed(16.0),
+            width: Fixed(18.0),
+            height: Fixed(16.0),
+            align: Center,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Letter 2 cursor",
+        visible: Variable("letter_2_current"),
+        fill: (
+          base: Solid(Fixed(255, 230, 120, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(64.0, 29.5)),
+          ],
+          base: Rect(
+            width: Fixed(14.0),
+            height: Fixed(1.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Letter 3",
+        fill: (
+          base: Solid(Fixed(255, 255, 255, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(84.0, 19.0)),
+          ],
+          base: Text(
+            text: Variable("letter_3"),
+            font: "frontbox/fonts/TenFatGuys.ttf",
+            size: Fixed(16.0),
+            width: Fixed(18.0),
+            height: Fixed(16.0),
+            align: Center,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Letter 3 cursor",
+        visible: Variable("letter_3_current"),
+        fill: (
+          base: Solid(Fixed(255, 230, 120, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(84.0, 29.5)),
+          ],
+          base: Rect(
+            width: Fixed(14.0),
+            height: Fixed(1.0),
+          ),
+        ),
+      ),
+    ),
+  ],
+)

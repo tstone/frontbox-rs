@@ -63,7 +63,7 @@
 //! app.routine::<TurnStarting>(routine![PlayerUpPresenter]);
 //! app.routine::<BallDraining>(routine![BallSaveSystem]);
 //! app.routine::<TurnEnding>(routine![BonusPresenter]);
-//! app.routine::<GameEnding>(routine![MatchPresenter, HighScoreEntry]);
+//! app.routine::<GameEnding>(routine![MatchPresenter, LeaderboardsSystem]);
 //! ```
 //!
 //! With no `GameStarting` routine defined, the first turn begins right away; with no `TurnStarting` routine, the ball

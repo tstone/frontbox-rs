@@ -38,8 +38,11 @@
 //!   LeaderboardsSystem::new("leaderboards.toml")
 //!     .final_scores(&HIGH_SCORES)
 //!     .board(&LOOP_CHAMPION)
-//!     .board(&CRYPT_FASTEST),
+//!     .board(&CRYPT_FASTEST)
+//!     .initials_entry(LEFT_FLIPPER.q(), RIGHT_FLIPPER.q(), START_BUTTON.q()),
 //! );
+//! app.routine::<GameEnding>(routine![LeaderboardsSystem]);
+//! app.system(DmdInitialsEntrySystem::new());
 //! ```
 //!
 //! ### During a Game
@@ -55,8 +58,20 @@
 //!
 //! ### At Game End
 //!
-//! A `GameEnding` participant asks what was earned, with every player's submissions ranked together against the
-//! boards as they stand. A player's initials are entered once, and go on every board they made:
+//! Every player's submissions are ranked together against the boards as they stand. Each player who made one enters
+//! their initials once, in player order, and they go on every board the player made.
+//!
+//! [`LeaderboardsSystem`] takes the initials as its step of the `GameEnding` routine, with the buttons given to
+//! `initials_entry`: two change the letter (and keep changing it while held), and one accepts it. From the second
+//! letter on, `<` is among the choices, and accepting it goes back a letter. A player who presses nothing for the
+//! `INITIALS_ENTRY_TIMEOUT` operator config (a minute, unless changed) gets the initials as they stand. No initials
+//! are taken after a slam tilt. [`InitialsEntered`] is emitted for each player.
+//!
+//! What's being entered is an [`InitialsEntry`], which is the same whatever the machine shows it on. A system for the
+//! machine's display reads it from [`LeaderboardsSystem::entry`] and draws it: `DmdInitialsEntrySystem` for a DMD.
+//! Initials can be entered with nothing drawing them.
+//!
+//! A game that takes initials some other way leaves out `initials_entry`, and does it itself:
 //!
 //! ```rust,ignore
 //! let placements = boards.placements(); // who made which board, and at what rank
@@ -71,8 +86,21 @@
 //! so changing a board's defaults or size takes effect without touching the file. An earned entry has to beat a
 //! value to rank above it; on a tie the older entry stays ahead.
 
+mod initials_entry;
 mod leaderboard;
 mod leaderboards_system;
 
+pub use initials_entry::*;
 pub use leaderboard::*;
 pub use leaderboards_system::*;
+
+use frontbox_core::prelude::*;
+
+/// Emitted when a player's initials have gone on the boards they made, whether they entered them all or ran out of
+/// time
+#[derive(serde::Serialize, Event)]
+pub struct InitialsEntered {
+  /// 0 for player 1
+  pub player: u8,
+  pub initials: String,
+}

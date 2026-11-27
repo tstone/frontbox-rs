@@ -143,3 +143,13 @@ pub static MAX_CREDITS: LazyLock<Config<u8>> = LazyLock::new(|| {
   )
   .key("max_credits")
 });
+
+pub static INITIALS_ENTRY_TIMEOUT: LazyLock<Config<Duration>> = LazyLock::new(|| {
+  Config::new(
+    "Initials Entry Timeout",
+    "How long a player entering initials can go without pressing a button before the initials are taken as they are (0 for no limit)",
+    Duration::from_secs(60),
+    Ranges::seconds(0, 180),
+  )
+  .key("initials_entry_timeout")
+});

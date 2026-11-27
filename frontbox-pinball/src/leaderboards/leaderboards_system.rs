@@ -6,10 +6,17 @@ use frontbox_core::prelude::*;
 use frontbox_core::toml;
 
 use crate::{
-  GameEndReason, GameEnding, GameStarting, Leaderboard, LeaderboardDefinition, LeaderboardValue,
+  GameEndReason, GameEnding, GameStarting, InitialsEntered, InitialsEntry, Leaderboard,
+  LeaderboardDefinition, LeaderboardValue, configs,
 };
 
-/// Keeps the machine's leaderboards, saved to a file. See [leaderboards](crate::leaderboards).
+/// How long a button is held before the letter starts changing by itself
+const REPEAT_DELAY: Duration = Duration::from_millis(400);
+/// How often the letter changes while a button stays held
+const REPEAT_INTERVAL: Duration = Duration::from_millis(120);
+
+/// Keeps the machine's leaderboards, saved to a file, and takes the initials of the players who make them. See
+/// [leaderboards](crate::leaderboards).
 pub struct LeaderboardsSystem {
   path: PathBuf,
   /// In the order the app listed them, which is the order they're shown in
@@ -19,6 +26,14 @@ pub struct LeaderboardsSystem {
   saved: SavedLeaderboards,
   /// What players have earned in the game in progress, not yet saved
   submissions: Vec<Submission>,
+  /// The buttons initials are entered with. Without them, none are.
+  entry_switches: Option<EntrySwitches>,
+  /// The initials being entered now
+  entry: Option<InitialsEntry>,
+  /// The players (0 for player 1) who enter theirs after that, in order
+  entry_queue: Vec<u8>,
+  timeout_timer: Option<u64>,
+  repeat_timer: Option<u64>,
 }
 
 impl LeaderboardsSystem {
@@ -30,7 +45,30 @@ impl LeaderboardsSystem {
       boards: Vec::new(),
       final_scores: None,
       submissions: Vec::new(),
+      entry_switches: None,
+      entry: None,
+      entry_queue: Vec::new(),
+      timeout_timer: None,
+      repeat_timer: None,
     }
+  }
+
+  /// Take initials at the end of a game from each player who made a board, with these buttons: `previous` and `next`
+  /// change the letter (the flipper buttons, say), and `accept` takes it (the start button, an action button, or
+  /// both). The system also has to be listed in the `GameEnding` routine, which waits at its step until the initials
+  /// are in.
+  pub fn initials_entry(mut self, previous: SwitchQ, next: SwitchQ, accept: SwitchQ) -> Self {
+    self.entry_switches = Some(EntrySwitches {
+      previous,
+      next,
+      accept,
+    });
+    self
+  }
+
+  /// The initials being entered now, for a display to show. `None` when none are.
+  pub fn entry(&self) -> Option<&InitialsEntry> {
+    self.entry.as_ref()
   }
 
   /// Add a board. Boards are shown in the order they're added.
@@ -255,6 +293,143 @@ impl LeaderboardsSystem {
     }
   }
 
+  /// This system's step of `GameEnding`: each player who made a board enters their initials, in player order
+  fn on_entry_step(&mut self, game: &GameEnding, ctx: &SystemContext) {
+    // in case the step comes before `RoutineStarted` is heard
+    self.on_game_ending(game);
+
+    let mut players: Vec<u8> = self.placements().iter().map(|p| p.player).collect();
+    players.sort();
+    players.dedup();
+    if self.entry_switches.is_none() && !players.is_empty() {
+      log::warn!(
+        target: "frontbox::leaderboards",
+        "Players made the leaderboards, but no buttons were given to enter initials with (`initials_entry`)"
+      );
+      players.clear();
+    }
+    self.entry_queue = players;
+    self.start_next_entry(ctx);
+  }
+
+  /// Starts the next player's entry, or completes the `GameEnding` step when no one is left
+  fn start_next_entry(&mut self, ctx: &SystemContext) {
+    while !self.entry_queue.is_empty() {
+      let player = self.entry_queue.remove(0);
+      // ranked again, as the initials entered before this may have moved them
+      let made: Vec<Placement> = self
+        .placements()
+        .into_iter()
+        .filter(|p| p.player == player)
+        .collect();
+      if made.is_empty() {
+        continue;
+      }
+      log::info!(
+        target: "frontbox::leaderboards",
+        "Player {} is entering initials for {} leaderboard(s)",
+        player + 1,
+        made.len()
+      );
+      self.entry = Some(InitialsEntry::new(player, made));
+      self.restart_timeout(ctx);
+      return;
+    }
+    ctx.routines.complete_step::<GameEnding>();
+  }
+
+  /// Puts the initials on the boards, and moves on to the next player
+  fn complete_entry(&mut self, initials: String, ctx: &SystemContext) {
+    let Some(entry) = self.entry.take() else {
+      return;
+    };
+    ctx.timers.cancel(self.timeout_timer.take());
+    ctx.timers.cancel(self.repeat_timer.take());
+    self.enter_initials(entry.player(), &initials);
+    ctx.emit(InitialsEntered {
+      player: entry.player(),
+      initials,
+    });
+    self.start_next_entry(ctx);
+  }
+
+  /// A press of one of the entry buttons
+  fn on_entry_input(&mut self, input: EntryInput, ctx: &SystemContext) {
+    let Some(entry) = &mut self.entry else {
+      return;
+    };
+    ctx.timers.cancel(self.repeat_timer.take());
+    let initials = match input {
+      EntryInput::Previous => {
+        entry.previous();
+        None
+      }
+      EntryInput::Next => {
+        entry.next();
+        None
+      }
+      EntryInput::Accept => entry.accept(),
+    };
+    match initials {
+      Some(initials) => self.complete_entry(initials, ctx),
+      None => {
+        if input != EntryInput::Accept {
+          let repeat = Timer::Once(REPEAT_DELAY);
+          self.repeat_timer = Some(ctx.timers.start(EntryRepeated { input }, repeat));
+        }
+        self.restart_timeout(ctx);
+      }
+    }
+  }
+
+  /// A button is still held: the letter changes again
+  fn on_entry_repeated(&mut self, input: EntryInput, ctx: &SystemContext) {
+    let Some(entry) = &mut self.entry else {
+      return;
+    };
+    match input {
+      EntryInput::Previous => entry.previous(),
+      EntryInput::Next => entry.next(),
+      EntryInput::Accept => return,
+    }
+    let repeat = Timer::Once(REPEAT_INTERVAL);
+    self.repeat_timer = Some(ctx.timers.start(EntryRepeated { input }, repeat));
+    self.restart_timeout(ctx);
+  }
+
+  /// Counts the `INITIALS_ENTRY_TIMEOUT` operator config from now
+  fn restart_timeout(&mut self, ctx: &SystemContext) {
+    ctx.timers.cancel(self.timeout_timer.take());
+    let timeout = ctx.config.get(&configs::INITIALS_ENTRY_TIMEOUT);
+    if !timeout.is_zero() {
+      self.timeout_timer = Some(ctx.timers.start(EntryTimedOut, Timer::Once(timeout)));
+    }
+  }
+
+  fn on_switch(&mut self, switch: &Switch, closed: bool, ctx: &SystemContext) {
+    if self.entry.is_none() {
+      return;
+    }
+    let Some(switches) = &self.entry_switches else {
+      return;
+    };
+    let input = if switches.previous.matches(switch) {
+      EntryInput::Previous
+    } else if switches.next.matches(switch) {
+      EntryInput::Next
+    } else if switches.accept.matches(switch) {
+      EntryInput::Accept
+    } else {
+      return;
+    };
+    if closed {
+      self.on_entry_input(input, ctx);
+    } else {
+      // let go: the letter stops changing by itself
+      ctx.timers.cancel(self.repeat_timer.take());
+    }
+  }
+
   fn write(&self) {
     if let Err(e) = toml::save(&self.path, &self.saved) {
       log::error!(
@@ -267,12 +442,34 @@ impl LeaderboardsSystem {
 }
 
 impl System for LeaderboardsSystem {
-  fn on_event(&mut self, event: &dyn Event, _ctx: &SystemContext) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if event.is::<RoutineStarted<GameStarting>>() {
       // left over when the last game's initials were never entered
       self.submissions.clear();
     } else if let Some(started) = event.downcast_ref::<RoutineStarted<GameEnding>>() {
       self.on_game_ending(&started.routine);
+    } else if let Some(SwitchClosed { switch }) = event.downcast_ref::<SwitchClosed>() {
+      self.on_switch(switch, true, ctx);
+    } else if let Some(SwitchOpened { switch }) = event.downcast_ref::<SwitchOpened>() {
+      self.on_switch(switch, false, ctx);
+    } else if let Some(repeated) = event.downcast_ref::<EntryRepeated>() {
+      self.on_entry_repeated(repeated.input, ctx);
+    } else if event.is::<EntryTimedOut>()
+      && let Some(entry) = &self.entry
+    {
+      log::info!(
+        target: "frontbox::leaderboards",
+        "Player {} ran out of time entering initials",
+        entry.player() + 1
+      );
+      self.complete_entry(entry.initials(), ctx);
+    }
+  }
+
+  /// The system's step in `GameEnding`, which is held until every player who made a board has entered initials
+  fn on_routine(&mut self, routine: &dyn Event, ctx: &SystemContext) {
+    if let Some(game) = routine.downcast_ref::<GameEnding>() {
+      self.on_entry_step(game, ctx);
     }
   }
 
@@ -315,6 +512,31 @@ pub struct Placement {
   /// The raw value. Show it with [`LeaderboardDefinition::format`].
   pub value: u64,
 }
+
+/// The buttons initials are entered with
+struct EntrySwitches {
+  previous: SwitchQ,
+  next: SwitchQ,
+  accept: SwitchQ,
+}
+
+/// What a press of an entry button does
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+enum EntryInput {
+  Previous,
+  Next,
+  Accept,
+}
+
+/// A button that changes the letter has been held long enough to change it again
+#[derive(serde::Serialize, Event)]
+struct EntryRepeated {
+  input: EntryInput,
+}
+
+/// The player hasn't pressed a button for the `INITIALS_ENTRY_TIMEOUT` operator config
+#[derive(serde::Serialize, Event)]
+struct EntryTimedOut;
 
 /// A player's best value for a board in the game in progress
 struct Submission {
@@ -359,6 +581,7 @@ mod tests {
   use std::sync::LazyLock;
 
   use super::*;
+  use crate::INITIALS_LENGTH;
 
   static SCORES: LazyLock<Leaderboard<u64>> = LazyLock::new(|| {
     Leaderboard::highest("High Scores", 3)
@@ -519,5 +742,84 @@ mod tests {
     let mut boards = LeaderboardsSystem::new(test_path("unknown")).board(&SCORES);
     boards.submit(&LOOPS, 0, 3);
     assert!(boards.placements().is_empty());
+  }
+
+  fn with_entry(path: &Path) -> LeaderboardsSystem {
+    system(path).initials_entry(
+      SwitchQ::name("left"),
+      SwitchQ::name("right"),
+      SwitchQ::name("start"),
+    )
+  }
+
+  fn ending(scores: Vec<u64>, reason: GameEndReason) -> GameEnding {
+    GameEnding { scores, reason }
+  }
+
+  #[test]
+  fn each_player_who_made_a_board_enters_initials_in_turn() {
+    let mut context = TestContext::default();
+    let mut boards = with_entry(&test_path("entry"));
+    let game = ending(vec![50, 400, 250], GameEndReason::Completed);
+    boards.on_routine(&game, &context.sys_ctx());
+
+    // player 1 made nothing, so player 2 goes first
+    let entry = boards.entry().unwrap();
+    assert_eq!(entry.player(), 1);
+    assert_eq!(placed(entry.placements()), [("scores", 1, 0)]);
+
+    boards.on_entry_input(EntryInput::Next, &context.sys_ctx());
+    for _ in 0..INITIALS_LENGTH {
+      boards.on_entry_input(EntryInput::Accept, &context.sys_ctx());
+    }
+    assert_eq!(boards.entry().unwrap().player(), 2);
+    assert!(!context.routine_step_completed::<GameEnding>());
+
+    // player 3 walks away, and gets what was showing
+    boards.on_event(&EntryTimedOut, &context.sys_ctx());
+    assert!(boards.entry().is_none());
+    assert!(context.routine_step_completed::<GameEnding>());
+    assert_eq!(names(&boards, SCORES.definition()), ["BAA", "AAA", "A"]);
+  }
+
+  #[test]
+  fn a_held_button_keeps_changing_the_letter() {
+    let context = TestContext::default();
+    let mut boards = with_entry(&test_path("held"));
+    let game = ending(vec![400], GameEndReason::Completed);
+    boards.on_routine(&game, &context.sys_ctx());
+
+    boards.on_entry_input(EntryInput::Next, &context.sys_ctx());
+    let repeated = EntryRepeated {
+      input: EntryInput::Next,
+    };
+    boards.on_event(&repeated, &context.sys_ctx());
+    boards.on_event(&repeated, &context.sys_ctx());
+    assert_eq!(boards.entry().unwrap().letters()[0], Some('D'));
+  }
+
+  #[test]
+  fn the_step_completes_at_once_with_no_initials_to_enter() {
+    let mut context = TestContext::default();
+
+    // no one made a board
+    let mut boards = with_entry(&test_path("none"));
+    let game = ending(vec![50], GameEndReason::Completed);
+    boards.on_routine(&game, &context.sys_ctx());
+    assert!(boards.entry().is_none());
+    assert!(context.routine_step_completed::<GameEnding>());
+
+    // a slam tilt drops what was made
+    let game = ending(vec![400], GameEndReason::SlamTilted);
+    boards.on_routine(&game, &context.sys_ctx());
+    assert!(boards.entry().is_none());
+    assert!(context.routine_step_completed::<GameEnding>());
+
+    // no buttons to enter them with
+    let mut boards = system(&test_path("no-buttons"));
+    let game = ending(vec![400], GameEndReason::Completed);
+    boards.on_routine(&game, &context.sys_ctx());
+    assert!(boards.entry().is_none());
+    assert!(context.routine_step_completed::<GameEnding>());
   }
 }
